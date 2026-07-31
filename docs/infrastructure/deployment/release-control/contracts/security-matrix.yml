@@ -1,0 +1,91 @@
+schema_version: 1
+authentication:
+  scheme: bearer_jwt
+  api_routes_authenticated: true
+  health_routes_public: true
+  issuer_required: true
+  audience_required: true
+  algorithm_allowlist_required: true
+  rotation_required: true
+  mode_from_claim: false
+
+authorization:
+  routes:
+    - {mode: publisher, method: GET, path: /api/release-control/v1/capabilities, role: release:read, outbound_credential: publisher}
+    - {mode: publisher, method: GET, path: /api/release-publisher/v1/candidates, role: release:read, outbound_credential: publisher}
+    - {mode: publisher, method: GET, path: /api/release-publisher/v1/releases, role: release:read, outbound_credential: publisher}
+    - {mode: publisher, method: POST, path: /api/release-publisher/v1/releases, role: release:publish, outbound_credential: publisher}
+    - {mode: publisher, method: GET, path: "/api/release-publisher/v1/operations/{operationId}", role: release:read, outbound_credential: publisher}
+    - {mode: deployer, method: GET, path: /api/release-control/v1/capabilities, role: deployment:read, outbound_credential: deployer}
+    - {mode: deployer, method: GET, path: /api/deployment-control/v1/current, role: deployment:read, outbound_credential: deployer}
+    - {mode: deployer, method: GET, path: /api/deployment-control/v1/releases, role: deployment:read, outbound_credential: deployer}
+    - {mode: deployer, method: GET, path: "/api/deployment-control/v1/releases/{releaseId}/plan", role: deployment:read, outbound_credential: deployer}
+    - {mode: deployer, method: POST, path: /api/deployment-control/v1/deployments, role: deployment:execute, outbound_credential: deployer}
+    - {mode: deployer, method: GET, path: "/api/deployment-control/v1/deployments/{deploymentId}", role: deployment:read, outbound_credential: deployer}
+    - {mode: deployer, method: POST, path: /api/deployment-control/v1/rollbacks, role: deployment:rollback, outbound_credential: deployer}
+    - {mode: deployer, method: GET, path: "/api/deployment-control/v1/rollbacks/{operationId}", role: deployment:read, outbound_credential: deployer}
+
+outbound_credentials:
+  publisher:
+    shared_with: []
+    permissions: [commits:read, checks:read, artifacts:read, publication_workflow:dispatch]
+    forbidden: [production_workflow:dispatch, releases:write_direct, packages:write]
+  deployer:
+    shared_with: []
+    permissions: [releases:read, manifests:read, production_workflow:dispatch]
+    forbidden: [publication_workflow:dispatch, tags:write, releases:write]
+  vps:
+    shared_with: []
+    permissions: [packages:read]
+    forbidden: [packages:write]
+  build:
+    shared_with: []
+    permissions: [packages:write]
+    forbidden: [production_workflow:dispatch]
+  preferred_provider: github_app_least_privilege
+  initial_alternative: fine_grained_token_pending
+  injected_by: environment_or_secret_store
+  appears_in_logs_responses_database_or_tracked_files: false
+
+forbidden_request_fields:
+  - mode
+  - releaseControlMode
+  - image
+  - images
+  - digest
+  - digests
+  - tag
+  - tags
+  - component
+  - components
+  - command
+  - commands
+  - path
+  - paths
+  - url
+  - workflow
+  - repository
+  - owner
+  - environment
+  - env
+
+prohibitions:
+  client_selects_mode: false
+  component_selection: false
+  local_git_access: false
+  docker_socket_access: false
+  direct_ssh: false
+  arbitrary_workflow: false
+  arbitrary_repository: false
+  arbitrary_url: false
+  secrets_in_logs: false
+
+transport:
+  cors: configured_allowlist
+  mutation_rate_limit: required
+  polling_rate_limit: required
+  payload_limit: required
+  accepted_content_types: [application/json]
+  unexpected_content_type: reject
+  mutation_audit: required
+  sanitized_errors: true

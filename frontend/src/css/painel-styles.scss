@@ -1,0 +1,278 @@
+// ============================================
+// CaféTech - Estilos Padrão para Painéis
+// ============================================
+// Baseado no design refinado do PainelVendasPeriodo
+// Paleta: Espresso, Caramelo, Latte, Bronze Dourado
+
+// ============================================
+// Cores da Paleta CaféTech
+// ============================================
+$cafe-latte-claro: #FBF6F2;
+$cafe-latte-suave: #D7B899;
+$cafe-latte-medio: #F5EDE6;
+$cafe-espresso: #6B3E26;
+$cafe-caramelo: #C67C48;
+$cafe-bronze: #B5854C;
+$cafe-dark-roast: #2A1F1B;
+$cafe-com-leite: #8B7355;
+$cafe-branco: #ffffff;
+
+// ============================================
+// Container e Card Principal
+// ============================================
+.dashboard-card-container {
+  width: 100%;
+}
+
+.dashboard-card {
+  border-radius: 16px;
+  box-shadow: 0 6px 25px rgba(107, 62, 38, 0.08);
+  transition: all 0.3s ease;
+  height: 100%;
+  overflow: hidden;
+  background-color: $cafe-latte-claro;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(107, 62, 38, 0.12);
+}
+
+// ============================================
+// Header Section
+// ============================================
+.header-section {
+  padding: 12px 16px 0;
+  background: linear-gradient(to right, $cafe-latte-claro, $cafe-branco);
+  border-bottom: 1px solid $cafe-latte-suave;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.panel-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: $cafe-dark-roast;
+}
+
+// ============================================
+// Metrics Section
+// ============================================
+.metrics-section {
+  padding: 8px 12px;
+}
+
+.metric-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-card {
+  padding: 10px;
+  border-radius: 10px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  background-color: $cafe-branco;
+  box-shadow: 0 2px 8px rgba(42, 31, 27, 0.06);
+  transition: all 0.2s ease;
+  border-bottom: 3px solid transparent;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(42, 31, 27, 0.10);
+}
+
+.metric-content {
+  flex: 1;
+}
+
+.metric-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: $cafe-com-leite;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.metric-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: $cafe-dark-roast;
+}
+
+// Variações de cores para metric-card
+.metric-card--espresso {
+  border-bottom-color: $cafe-espresso;
+}
+
+.metric-card--caramelo {
+  border-bottom-color: $cafe-caramelo;
+}
+
+.metric-card--bronze {
+  border-bottom-color: $cafe-bronze;
+}
+
+// Nomes semânticos (mantidos por compatibilidade)
+.faturamento-card {
+  border-bottom-color: $cafe-espresso;
+}
+
+.vendas-card {
+  border-bottom-color: $cafe-caramelo;
+}
+
+.ticket-card {
+  border-bottom-color: $cafe-bronze;
+}
+
+// ============================================
+// Progress Bar Section
+// ============================================
+.progress-section {
+  padding: 0 16px 8px;
+}
+
+.progress-container {
+  display: flex;
+  height: 18px;
+  width: 100%;
+  border-radius: 9px;
+  overflow: hidden;
+  background-color: $cafe-latte-medio;
+  box-shadow: inset 0 1px 3px rgba(42, 31, 27, 0.08);
+}
+
+.progress-segment {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+// ============================================
+// Payment Types Section
+// ============================================
+.payment-types-section {
+  padding: 8px 16px 12px;
+}
+
+.payment-type-col {
+  margin-bottom: 6px;
+}
+
+// Classes responsivas para colunas
+.col-2-items {
+  width: 50%;
+}
+
+.col-3-items {
+  width: 33.33%;
+}
+
+.col-4-items {
+  width: 50%;
+}
+
+.col-5-items {
+  width: 33.33%;
+}
+
+.col-6-items {
+  width: 33.33%;
+}
+
+.payment-type-wrapper {
+  display: flex;
+  align-items: flex-start;
+  padding: 5px 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.payment-type-wrapper:hover {
+  background-color: $cafe-latte-claro;
+}
+
+.payment-type-content {
+  flex: 1;
+  position: relative;
+}
+
+.indicator-line {
+  position: absolute;
+  left: -6px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 3px;
+}
+
+.payment-type-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: $cafe-dark-roast;
+  margin-bottom: 2px;
+  padding-left: 6px;
+  display: flex;
+  align-items: center;
+  text-transform: capitalize;
+}
+
+.percentage {
+  font-size: 0.7rem;
+  color: $cafe-com-leite;
+  font-weight: 400;
+  margin-left: 3px;
+}
+
+.payment-type-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: $cafe-dark-roast;
+  padding-left: 6px;
+}
+
+// ============================================
+// Loading State
+// ============================================
+.panel-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+.loading-text {
+  margin-left: 1rem;
+  color: #8B7355;
+}
+
+// ============================================
+// No Data State
+// ============================================
+.no-data-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 220px;
+  text-align: center;
+  opacity: 0.8;
+}

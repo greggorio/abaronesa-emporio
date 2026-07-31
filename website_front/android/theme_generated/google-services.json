@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "648681417982",
+    "project_id": "monicaleila-pwa-notificacoes",
+    "storage_bucket": "monicaleila-pwa-notificacoes.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:648681417982:android:ae663561d02c7f0b0209af",
+        "android_client_info": {
+          "package_name": "com.monicadepilacoes.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnLh3tUDKBZ-OSyX3q_YF8akGC9Kv-YFk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

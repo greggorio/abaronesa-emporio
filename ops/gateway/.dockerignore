@@ -1,0 +1,7 @@
+*
+!Dockerfile
+!nginx.conf
+!proxy-common.conf
+!proxy-websocket.conf
+!conf.d/
+!conf.d/emporio.conf

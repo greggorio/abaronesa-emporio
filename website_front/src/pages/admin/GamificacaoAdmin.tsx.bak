@@ -1,0 +1,525 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axios from '@/lib/axios';
+import { apiConfig } from '@/config/api';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Loader2, Trophy, Users, Calendar, RotateCcw, Search } from 'lucide-react';
+import AdminLayout from '@/layouts/AdminLayout';
+
+// Interfaces
+interface GamificacaoDashboardData {
+  kpis: {
+    recompensasAtivas: number;
+    participantesComPontos: number;
+    adesoesUltimos30Dias: number;
+    pontosEmitidosUltimos30Dias: number;
+    saldoTotalAtivo: number;
+  };
+  rankings: {
+    topPontuadoresUltimos30Dias: { 
+      clienteId: number;
+      nome: string; 
+      pontos: number 
+    }[];
+    topSaldosAtuais: { 
+      clienteId: number;
+      nome: string; 
+      saldo: number 
+    }[];
+  };
+}
+
+interface Cliente {
+  id: number;
+  nome: string;
+  email: string;
+}
+
+interface Recompensa {
+  id: number;
+  nome: string;
+  descricao: string;
+  pontosNecessarios: number;
+  podeResgatar: boolean;
+}
+
+interface ClienteGamificacaoData {
+  saldo: number;
+  recompensas: Recompensa[];
+}
+
+export default function GamificacaoAdmin() {
+  const navigate = useNavigate();
+  const [dashboardData, setDashboardData] = useState<GamificacaoDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
+  const [clienteGamificacaoData, setClienteGamificacaoData] = useState<ClienteGamificacaoData | null>(null);
+  const [resgateLoading, setResgateLoading] = useState(false);
+  const [selectedRecompensa, setSelectedRecompensa] = useState<Recompensa | null>(null);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      console.log('Chamando API:', `${apiConfig.erpBaseUrl}/api/admin/gamificacao/dashboard`);
+      
+      const response = await axios.get<GamificacaoDashboardData>(`${apiConfig.erpBaseUrl}/api/admin/gamificacao/dashboard`);
+      console.log('Resposta da API:', response.data);
+      
+      setDashboardData(response.data);
+      setError(null);
+    } catch (err: any) {
+      console.error('Erro ao carregar dados do dashboard de gamificação:', err);
+      
+      // Melhor tratamento de erro
+      let errorMessage = 'Erro ao carregar dados do dashboard de gamificação.';
+      
+      if (err.response) {
+        // Erro de resposta do servidor
+        if (err.response.status === 401 || err.response.status === 403) {
+          errorMessage = 'Acesso não autorizado. Por favor, faça login novamente.';
+        } else if (err.response.status === 404) {
+          errorMessage = 'Endpoint não encontrado. Entre em contato com o suporte.';
+        } else {
+          errorMessage += ` Servidor retornou código ${err.response.status}.`;
+        }
+      } else if (err.request) {
+        // Erro de rede
+        errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
+      } else {
+        // Outro tipo de erro
+        errorMessage = err.message || errorMessage;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Debounced client search
+  useEffect(() => {
+    const handler = setTimeout(async () => {
+      if (searchTerm.trim()) {
+        try {
+          // Use the clientes options endpoint, potentially with search parameters
+          // This is the pattern used in other admin components
+          const response = await axios.get<Cliente[]>(
+            `${apiConfig.erpBaseUrl}/api/clientes/options?search=${encodeURIComponent(searchTerm)}`
+          );
+          setClientes(response.data);
+        } catch (err: any) {
+          console.error('Erro ao buscar clientes:', err);
+          // If search with parameter fails, try general endpoint
+          try {
+            const response = await axios.get<Cliente[]>(
+              `${apiConfig.erpBaseUrl}/api/clientes/options`
+            );
+            // Filter clients on frontend if search parameter didn't work
+            const filtered = response.data.filter(cliente => 
+              cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              cliente.email.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            setClientes(filtered);
+          } catch (generalErr: any) {
+            console.error('Erro ao carregar clientes:', generalErr);
+            
+            // Show error notification but don't break the UI
+            if (generalErr.response?.status === 401 || generalErr.response?.status === 403) {
+              setError('Acesso não autorizado ao buscar clientes. Por favor, faça login novamente.');
+            }
+            setClientes([]);
+          }
+        }
+      } else {
+        setClientes([]);
+      }
+    }, 300); // Debounce for 300ms
+
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  const handleClienteSelect = async (cliente: Cliente) => {
+    setSelectedCliente(cliente);
+    setSearchTerm(cliente.nome); // Show selected client name
+    setClientes([]); // Clear suggestions
+    
+    try {
+      // Fetch client's gamification data including rewards
+      // Using the same endpoint as the client-side but for a specific client
+      const response = await axios.get<ClienteGamificacaoData>(
+        `${apiConfig.erpBaseUrl}/api/clientes/${cliente.id}/gamificacao/recompensas`
+      );
+      setClienteGamificacaoData(response.data);
+    } catch (err: any) {
+      console.error('Erro ao carregar dados de gamificação do cliente:', err);
+      
+      let errorMessage = 'Erro ao carregar dados de gamificação do cliente.';
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        errorMessage = 'Acesso não autorizado. Por favor, faça login novamente.';
+      } else if (err.response?.status === 404) {
+        errorMessage = 'Dados do cliente não encontrados.';
+      }
+      
+      setError(errorMessage);
+      setClienteGamificacaoData(null);
+    }
+  };
+
+  const handleResgateConfirm = async () => {
+    if (!selectedCliente || !selectedRecompensa) return;
+    
+    setResgateLoading(true);
+    try {
+      // Call the redemption API
+      const response = await axios.post(`${apiConfig.erpBaseUrl}/api/admin/gamificacao/resgates`, {
+        clienteId: selectedCliente.id,
+        recompensaId: selectedRecompensa.id
+      });
+      
+      console.log('Resgate realizado com sucesso:', response.data);
+      
+      // Reset the form
+      setSelectedCliente(null);
+      setClienteGamificacaoData(null);
+      setSelectedRecompensa(null);
+      setSearchTerm('');
+      
+      // Reload dashboard data to update KPIs
+      await loadDashboardData();
+      
+      // Show success feedback to user (in a real app you might want to use a toast notification)
+      alert('Resgate realizado com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao resgatar recompensa:', err);
+      
+      let errorMessage = 'Erro ao resgatar recompensa.';
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        errorMessage = 'Acesso não autorizado. Por favor, faça login novamente.';
+      } else if (err.response?.status === 400) {
+        errorMessage = err.response.data?.message || 'Dados inválidos para o resgate.';
+      } else if (err.response?.status === 409) {
+        errorMessage = 'Conflito: possível tentativa de resgate duplicado.';
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setResgateLoading(false);
+    }
+  };
+
+  return (
+    <AdminLayout>
+      <div className="p-6">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-forest-dark">Dashboard de Gamificação</h1>
+          <p className="text-forest-dark/70">Gestão e visualização de recompensas e pontos</p>
+        </div>
+
+        {error && (
+          <div className="mb-6">
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center">
+                  <p className="text-red-700">{error}</p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setError(null)}
+                >
+                  Fechar
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Refresh button */}
+        <div className="flex justify-end mb-6">
+          <Button 
+            variant="outline" 
+            onClick={loadDashboardData}
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Atualizando...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Atualizar dados
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Dashboard KPIs - render regardless of data, show 0 if no data */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+          <Card className="border border-forest-green/20 bg-gradient-to-br from-forest-dark to-emerald-600 text-white shadow-lg">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-white/80">Recompensas Ativas</p>
+                  <p className="text-3xl font-bold">{dashboardData?.kpis.recompensasAtivas ?? 0}</p>
+                </div>
+                <Trophy className="w-10 h-10 text-amber-300" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-forest-green/20 bg-white shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-forest-dark/60">Participantes com Pontos</p>
+                  <p className="text-3xl font-bold text-forest-dark">{dashboardData?.kpis.participantesComPontos ?? 0}</p>
+                </div>
+                <Users className="w-10 h-10 text-forest-green" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-forest-green/20 bg-white shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-forest-dark/60">Adesões (30 dias)</p>
+                  <p className="text-3xl font-bold text-forest-dark">{dashboardData?.kpis.adesoesUltimos30Dias ?? 0}</p>
+                </div>
+                <Calendar className="w-10 h-10 text-coral-accent" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-forest-green/20 bg-white shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-forest-dark/60">Pontos Emitidos (30 dias)</p>
+                  <p className="text-3xl font-bold text-forest-dark">{dashboardData?.kpis.pontosEmitidosUltimos30Dias ?? 0}</p>
+                </div>
+                <Trophy className="w-10 h-10 text-amber-500" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-forest-green/20 bg-white shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-forest-dark/60">Saldo Total Ativo</p>
+                  <p className="text-3xl font-bold text-forest-dark">{dashboardData?.kpis.saldoTotalAtivo ?? 0}</p>
+                </div>
+                <Trophy className="w-10 h-10 text-purple-500" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Rankings */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Top Pontuadores */}
+          <Card className="border border-forest-green/20 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center text-forest-dark">
+                <Trophy className="w-5 h-5 mr-2 text-amber-500" />
+                Top Pontuadores (30 dias)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {dashboardData?.rankings.topPontuadoresUltimos30Dias && dashboardData.rankings.topPontuadoresUltimos30Dias.length > 0 ? (
+                  dashboardData.rankings.topPontuadoresUltimos30Dias.map((pontuador, index) => (
+                    <div key={pontuador.clienteId || index} className="flex items-center justify-between p-3 bg-soft-white rounded-lg border border-forest-green/10">
+                      <span className="font-medium text-forest-dark">
+                        {index + 1}. {pontuador.nome}
+                      </span>
+                      <Badge variant="outline" className="bg-white border-forest-green/30">
+                        {pontuador.pontos} pts
+                      </Badge>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-forest-dark/60">
+                    {loading ? (
+                      <div className="flex justify-center">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                    ) : (
+                      'Nenhum dado disponível'
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Top Saldos Atuais */}
+          <Card className="border border-forest-green/20 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center text-forest-dark">
+                <Trophy className="w-5 h-5 mr-2 text-purple-500" />
+                Top Saldos Atuais
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {dashboardData?.rankings.topSaldosAtuais && dashboardData.rankings.topSaldosAtuais.length > 0 ? (
+                  dashboardData.rankings.topSaldosAtuais.map((saldo, index) => (
+                    <div key={saldo.clienteId || index} className="flex items-center justify-between p-3 bg-soft-white rounded-lg border border-forest-green/10">
+                      <span className="font-medium text-forest-dark">
+                        {index + 1}. {saldo.nome}
+                      </span>
+                      <Badge variant="outline" className="bg-white border-forest-green/30">
+                        {saldo.saldo} pts
+                      </Badge>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-forest-dark/60">
+                    {loading ? (
+                      <div className="flex justify-center">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                    ) : (
+                      'Nenhum dado disponível'
+                    )}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Redemption Section */}
+        <Card className="border border-forest-green/20 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center text-forest-dark">
+              <Trophy className="w-5 h-5 mr-2 text-coral-accent" />
+              Resgatar Recompensa
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Client Search */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cliente-search">Cliente</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-forest-green/40" />
+                    <Input 
+                      id="cliente-search"
+                      placeholder="Buscar cliente por nome ou e-mail..." 
+                      className="pl-10"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    
+                    {/* Client suggestions dropdown */}
+                    {clientes.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-forest-green/30 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        {clientes.map((cliente) => (
+                          <div
+                            key={cliente.id}
+                            className="p-3 hover:bg-soft-white cursor-pointer border-b border-forest-green/10 last:border-b-0"
+                            onClick={() => handleClienteSelect(cliente)}
+                          >
+                            <div className="font-medium text-forest-dark">{cliente.nome}</div>
+                            <div className="text-sm text-forest-dark/70">{cliente.email}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Selected Client Info */}
+                {selectedCliente && (
+                  <div className="p-4 bg-soft-white border border-forest-green/10 rounded-lg">
+                    <h3 className="font-medium text-forest-dark mb-2">Informações do Cliente</h3>
+                    <div className="space-y-1 text-sm">
+                      <p><span className="text-forest-dark/70">Nome:</span> <span className="text-forest-dark">{selectedCliente.nome}</span></p>
+                      <p><span className="text-forest-dark/70">Saldo Atual:</span> <span className="text-forest-dark">{clienteGamificacaoData?.saldo || 0} pontos</span></p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Rewards Selection */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Recompensas Elegíveis</Label>
+                  <div className="space-y-2 max-h-60 overflow-y-auto p-1">
+                    {clienteGamificacaoData ? (
+                      clienteGamificacaoData.recompensas.length > 0 ? (
+                        clienteGamificacaoData.recompensas
+                          .filter(recompensa => recompensa.podeResgatar) // Only show redeemable rewards
+                          .map((recompensa) => (
+                            <div 
+                              key={recompensa.id}
+                              className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                                selectedRecompensa?.id === recompensa.id
+                                  ? 'border-coral-accent bg-coral-accent/10'
+                                  : 'border-forest-green/10 hover:bg-soft-white'
+                              }`}
+                              onClick={() => setSelectedRecompensa(recompensa)}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="font-medium text-forest-dark">{recompensa.nome}</h4>
+                                  <p className="text-sm text-forest-dark/70">{recompensa.descricao}</p>
+                                </div>
+                                <Badge variant="outline" className="text-xs ml-2">
+                                  {recompensa.pontosNecessarios} pts
+                                </Badge>
+                              </div>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="p-3 bg-soft-white border border-forest-green/10 rounded-lg">
+                          <p className="text-sm text-forest-dark/60">Nenhuma recompensa elegível disponível</p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="p-3 bg-soft-white border border-forest-green/10 rounded-lg">
+                        <p className="text-sm text-forest-dark/60">Selecione um cliente para ver recompensas elegíveis</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <Button 
+                  className="w-full bg-coral-accent hover:bg-coral-accent/90" 
+                  disabled={!selectedCliente || !selectedRecompensa || resgateLoading}
+                  onClick={handleResgateConfirm}
+                >
+                  {resgateLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processando...
+                    </>
+                  ) : (
+                    `Confirmar Resgate - ${selectedRecompensa?.nome || 'Selecione uma recompensa'}`
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </AdminLayout>
+  );
+}

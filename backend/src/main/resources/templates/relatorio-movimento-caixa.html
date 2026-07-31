@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Relatório de Movimento de Caixa</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 1.5cm;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11pt;
+            color: #333;
+            line-height: 1.4;
+        }
+
+        /* Cabeçalho */
+        .header {
+            margin-bottom: 20px;
+            border-bottom: 2px solid #1976d2;
+            padding-bottom: 15px;
+        }
+
+        .header-content {
+            display: table;
+            width: 100%;
+        }
+
+        .logo-section {
+            display: table-cell;
+            width: 100px;
+            vertical-align: middle;
+        }
+
+        .logo {
+            max-width: 80px;
+            max-height: 80px;
+        }
+
+        .empresa-section {
+            display: table-cell;
+            vertical-align: middle;
+            padding-left: 15px;
+        }
+
+        .empresa-nome {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #1976d2;
+            margin-bottom: 5px;
+        }
+
+        .empresa-info {
+            font-size: 9pt;
+            color: #666;
+            line-height: 1.3;
+        }
+
+        /* Título e Data */
+        .titulo-relatorio {
+            text-align: center;
+            font-size: 14pt;
+            font-weight: bold;
+            margin: 20px 0 10px;
+            color: #1976d2;
+        }
+
+        .data-movimento {
+            text-align: center;
+            font-size: 12pt;
+            margin-bottom: 20px;
+            color: #666;
+        }
+
+        /* Resumo do dia */
+        .resumo-dia {
+            background-color: #f5f5f5;
+            border: 2px solid #1976d2;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .resumo-dia-grid {
+            display: table;
+            width: 100%;
+        }
+
+        .resumo-item {
+            display: table-cell;
+            text-align: center;
+            padding: 0 10px;
+            border-right: 1px solid #ddd;
+        }
+
+        .resumo-item:last-child {
+            border-right: none;
+        }
+
+        .resumo-label {
+            font-size: 10pt;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .resumo-valor {
+            font-size: 14pt;
+            font-weight: bold;
+        }
+
+        .valor-entrada {
+            color: #4caf50;
+        }
+
+        .valor-saida {
+            color: #f44336;
+        }
+
+        .valor-saldo {
+            color: #1976d2;
+        }
+
+        /* Tabelas */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th {
+            background-color: #1976d2;
+            color: white;
+            padding: 8px;
+            text-align: left;
+            font-size: 10pt;
+            font-weight: normal;
+        }
+
+        td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 10pt;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        /* Movimentações */
+        .movimentacoes {
+            margin-bottom: 30px;
+        }
+
+        .secao-titulo {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #1976d2;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #1976d2;
+        }
+
+        .entrada-valor {
+            color: #4caf50;
+            font-weight: bold;
+        }
+
+        .saida-valor {
+            color: #f44336;
+            font-weight: bold;
+        }
+
+        .saldo-valor {
+            font-weight: bold;
+        }
+
+        /* Resumos */
+        .resumos-container {
+            display: table;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .resumo-coluna {
+            display: table-cell;
+            width: 48%;
+            vertical-align: top;
+        }
+
+        .resumo-coluna:first-child {
+            padding-right: 2%;
+        }
+
+        .resumo-coluna:last-child {
+            padding-left: 2%;
+        }
+
+        .resumo-tabela {
+            background-color: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+
+        .resumo-tabela h3 {
+            font-size: 11pt;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        /* Rodapé */
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 9pt;
+            color: #666;
+            text-align: center;
+        }
+
+        /* Utilitários */
+        .currency {
+            font-family: 'Courier New', monospace;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+<!-- Cabeçalho -->
+<div class="header">
+    <div class="header-content">
+        <div class="logo-section" th:if="${logoBase64}">
+            <img class="logo" th:src="${logoBase64}" alt="Logo"/>
+        </div>
+        <div class="empresa-section">
+            <div class="empresa-nome" th:text="${empresa.nomeFantasia}">Nome da Empresa</div>
+            <div class="empresa-info">
+                <div th:text="${empresa.razaoSocial}">Razão Social</div>
+                <div>
+                    CNPJ: <span th:text="${empresa.getCnpjFormatado()}">00.000.000/0000-00</span> |
+                    IE: <span th:text="${empresa.inscricaoEstadual}">000000000</span>
+                </div>
+                <div th:text="${empresa.getEnderecoCompleto()}">Endereço completo</div>
+                <div>Telefone: <span th:text="${empresa.telefone}">00 0000-0000</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Título -->
+<h1 class="titulo-relatorio">RELATÓRIO DE MOVIMENTO DE CAIXA</h1>
+<div class="data-movimento">
+    Data: <strong th:text="${filtros.getDataFormatada()}">01/01/2024</strong>
+</div>
+
+<!-- Resumo do Dia -->
+<div class="resumo-dia">
+    <div class="resumo-dia-grid">
+        <div class="resumo-item">
+            <div class="resumo-label">Saldo Inicial</div>
+            <div class="resumo-valor currency" th:text="${resumo.saldoInicialFormatado}">R$ 0,00</div>
+        </div>
+        <div class="resumo-item">
+            <div class="resumo-label">Total de Entradas</div>
+            <div class="resumo-valor valor-entrada currency" th:text="${resumo.totalEntradasFormatado}">R$ 0,00</div>
+        </div>
+        <div class="resumo-item">
+            <div class="resumo-label">Total de Saídas</div>
+            <div class="resumo-valor valor-saida currency" th:text="${resumo.totalSaidasFormatado}">R$ 0,00</div>
+        </div>
+        <div class="resumo-item">
+            <div class="resumo-label">Saldo Final</div>
+            <div class="resumo-valor valor-saldo currency" th:text="${resumo.saldoFinalFormatado}">R$ 0,00</div>
+        </div>
+    </div>
+</div>
+
+<!-- Movimentações Detalhadas -->
+<div class="movimentacoes" th:if="${!movimentos.isEmpty()}">
+    <h2 class="secao-titulo">Movimentações Detalhadas</h2>
+
+    <table>
+        <thead>
+        <tr>
+            <th width="60">Hora</th>
+            <th width="120">Tipo</th>
+            <th>Descrição</th>
+            <th width="100">Pagamento</th>
+            <th width="120">Responsável</th>
+            <th width="90" class="text-right">Entrada</th>
+            <th width="90" class="text-right">Saída</th>
+            <th width="100" class="text-right">Saldo</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="mov : ${movimentos}">
+            <td class="text-center" th:text="${mov.getHoraFormatada()}">09:15</td>
+            <td th:text="${mov.tipo}">Venda</td>
+            <td th:text="${mov.descricao}">Venda #000123</td>
+            <td th:text="${mov.formaPagamento}">Dinheiro</td>
+            <td th:text="${mov.responsavel}">João</td>
+            <td class="text-right entrada-valor currency" th:text="${mov.entradaFormatada}"></td>
+            <td class="text-right saida-valor currency" th:text="${mov.saidaFormatada}"></td>
+            <td class="text-right saldo-valor currency" th:text="${mov.saldoFormatado}">R$ 350,00</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Mensagem quando não há movimentos -->
+<div th:if="${movimentos.isEmpty()}" class="no-data">
+    Nenhum movimento encontrado para esta data.
+    <br/>
+    Verifique se houve movimentações que afetam o caixa.
+    <br/>
+    (Gorjetas e movimentações sem impacto no saldo não aparecem aqui)
+</div>
+
+<!-- Resumos -->
+<div class="resumos-container" th:if="${!movimentos.isEmpty()}">
+    <!-- Resumo por Forma de Pagamento -->
+    <div class="resumo-coluna">
+        <div class="resumo-tabela" th:if="${!resumoPorFormaPagamento.isEmpty()}">
+            <h3>Resumo por Forma de Pagamento</h3>
+            <table>
+                <thead>
+                <tr>
+                    <th>Forma de Pagamento</th>
+                    <th width="100" class="text-right">Valor</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="forma : ${resumoPorFormaPagamento}">
+                    <td th:text="${forma.formaPagamento}">Dinheiro</td>
+                    <td class="text-right currency" th:text="${forma.valorFormatado}">R$ 450,00</td>
+                </tr>
+                </tbody>
+                <tfoot>
+                <tr style="font-weight: bold; border-top: 2px solid #1976d2;">
+                    <td>Total</td>
+                    <td class="text-right currency" th:text="${resumo.totalEntradasFormatado}">R$ 1.200,00</td>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- Resumo por Tipo de Movimento -->
+    <div class="resumo-coluna">
+        <div class="resumo-tabela" th:if="${!resumoPorTipo.isEmpty()}">
+            <h3>Resumo por Tipo de Movimento</h3>
+            <table>
+                <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th width="60" class="text-center">Qtd</th>
+                    <th width="100" class="text-right">Valor</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="tipo : ${resumoPorTipo}">
+                    <td th:text="${tipo.descricao}">Vendas</td>
+                    <td class="text-center" th:text="${tipo.quantidade}">15</td>
+                    <td class="text-right currency" th:text="${tipo.valorFormatado}">R$ 1.000,00</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Rodapé -->
+<div class="footer">
+    <div>
+        Relatório gerado em <span th:text="${#temporals.format(relatorio.dataGeracao, 'dd/MM/yyyy HH:mm')}">01/01/2024 10:00</span>
+        por <span th:text="${relatorio.usuarioGeracao}">Usuário</span>
+    </div>
+    <div>Sistema de Gestão - Smart Store</div>
+</div>
+</body>
+</html>

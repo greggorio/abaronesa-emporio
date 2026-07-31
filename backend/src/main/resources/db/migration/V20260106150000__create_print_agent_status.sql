@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS print_agent_status (
+    id BIGSERIAL PRIMARY KEY,
+    agent_id VARCHAR(255) NOT NULL UNIQUE,
+    last_heartbeat_at TIMESTAMP WITHOUT TIME ZONE,
+    status VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_print_agent_status_agent_id ON print_agent_status (agent_id);

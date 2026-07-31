@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abaronesa.invalid/schemas/deployment-workflow-outcome.schema.json",
+  "$defs": {
+    "errorCode": {
+      "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "controlSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "databaseRestoreRequired": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "deploymentState": {
+      "enum": [
+        "SUCCEEDED",
+        "ROLLED_BACK",
+        "FAILED",
+        null
+      ]
+    },
+    "errorCode": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/errorCode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "const": "deployment-workflow-outcome"
+    },
+    "operationId": {
+      "pattern": "^[A-Za-z0-9_-]{20,128}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "targetRelease": {
+      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "transportStatus": {
+      "enum": [
+        "CONFIRMED",
+        "INDETERMINATE"
+      ]
+    },
+    "workflowRunAttempt": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "workflowRunId": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "operationId",
+    "targetRelease",
+    "workflowRunId",
+    "workflowRunAttempt",
+    "controlSha",
+    "transportStatus",
+    "deploymentState",
+    "databaseRestoreRequired",
+    "errorCode"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "transportStatus": {
+            "const": "INDETERMINATE"
+          }
+        },
+        "required": [
+          "transportStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "databaseRestoreRequired": {
+            "type": "null"
+          },
+          "deploymentState": {
+            "type": "null"
+          },
+          "errorCode": {
+            "$ref": "#/$defs/errorCode"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "databaseRestoreRequired": {
+            "type": "boolean"
+          },
+          "deploymentState": {
+            "enum": [
+              "SUCCEEDED",
+              "ROLLED_BACK",
+              "FAILED"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "deploymentState": {
+            "const": "SUCCEEDED"
+          }
+        },
+        "required": [
+          "deploymentState"
+        ]
+      },
+      "then": {
+        "properties": {
+          "errorCode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "const": "REMOTE_CLEANUP_FAILED"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "deploymentState": {
+            "enum": [
+              "ROLLED_BACK",
+              "FAILED"
+            ]
+          }
+        },
+        "required": [
+          "deploymentState"
+        ]
+      },
+      "then": {
+        "properties": {
+          "errorCode": {
+            "$ref": "#/$defs/errorCode"
+          }
+        }
+      }
+    }
+  ],
+  "title": "Deployment workflow outcome",
+  "type": "object"
+}

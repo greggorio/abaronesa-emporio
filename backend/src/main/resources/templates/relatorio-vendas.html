@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Relatório de Vendas por Período</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 1.5cm;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11pt;
+            color: #333;
+            line-height: 1.4;
+        }
+
+        .header {
+            margin-bottom: 20px;
+            border-bottom: 2px solid #1976d2;
+            padding-bottom: 15px;
+        }
+
+        .header-content {
+            display: table;
+            width: 100%;
+        }
+
+        .logo-section {
+            display: table-cell;
+            width: 100px;
+            vertical-align: middle;
+        }
+
+        .logo {
+            max-width: 80px;
+            max-height: 80px;
+        }
+
+        .empresa-section {
+            display: table-cell;
+            vertical-align: middle;
+            padding-left: 15px;
+        }
+
+        .empresa-nome {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #1976d2;
+            margin-bottom: 5px;
+        }
+
+        .empresa-info {
+            font-size: 9pt;
+            color: #666;
+            line-height: 1.3;
+        }
+
+        .titulo-relatorio {
+            text-align: center;
+            font-size: 14pt;
+            font-weight: bold;
+            margin: 20px 0 10px;
+            color: #1976d2;
+        }
+
+        .data-movimento {
+            text-align: center;
+            font-size: 12pt;
+            margin-bottom: 20px;
+            color: #666;
+        }
+
+        .resumo-dia {
+            background-color: #f5f5f5;
+            border: 2px solid #1976d2;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .resumo-dia-grid {
+            display: table;
+            width: 100%;
+        }
+
+        .resumo-item {
+            display: table-cell;
+            text-align: center;
+            padding: 0 10px;
+            border-right: 1px solid #ddd;
+        }
+
+        .resumo-item:last-child {
+            border-right: none;
+        }
+
+        .resumo-label {
+            font-size: 10pt;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .resumo-valor {
+            font-size: 14pt;
+            font-weight: bold;
+        }
+
+        .valor-entrada {
+            color: #4caf50;
+        }
+
+        .valor-saida {
+            color: #f44336;
+        }
+
+        .valor-saldo {
+            color: #1976d2;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th {
+            background-color: #1976d2;
+            color: white;
+            padding: 8px;
+            text-align: left;
+            font-size: 10pt;
+            font-weight: normal;
+        }
+
+        td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 10pt;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .movimentacoes {
+            margin-bottom: 30px;
+        }
+
+        .secao-titulo {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #1976d2;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #1976d2;
+        }
+
+        .entrada-valor {
+            color: #4caf50;
+            font-weight: bold;
+        }
+
+        .saida-valor {
+            color: #f44336;
+            font-weight: bold;
+        }
+
+        .saldo-valor {
+            font-weight: bold;
+        }
+
+        .resumos-container {
+            display: table;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .resumo-coluna {
+            display: table-cell;
+            width: 48%;
+            vertical-align: top;
+        }
+
+        .resumo-coluna:first-child {
+            padding-right: 2%;
+        }
+
+        .resumo-coluna:last-child {
+            padding-left: 2%;
+        }
+
+        .resumo-tabela {
+            background-color: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+
+        .resumo-tabela h3 {
+            font-size: 11pt;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 9pt;
+            color: #666;
+            text-align: center;
+        }
+
+        .currency {
+            font-family: 'Courier New', monospace;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            font-style: italic;
+        }
+
+        .small {
+            font-size: 8pt;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <div class="header-content">
+        <div class="logo-section" th:if="${logoBase64}">
+            <img class="logo" th:src="${logoBase64}" alt="Logo"/>
+        </div>
+        <div class="empresa-section">
+            <div class="empresa-nome" th:text="${empresa.nomeFantasia}">Nome da Empresa</div>
+            <div class="empresa-info">
+                <div th:text="${empresa.razaoSocial}">Razão Social</div>
+                <div>
+                    CNPJ: <span th:text="${empresa.getCnpjFormatado()}">00.000.000/0000-00</span> |
+                    IE: <span th:text="${empresa.inscricaoEstadual}">000000000</span>
+                </div>
+                <div th:text="${empresa.getEnderecoCompleto()}">Endereço completo</div>
+                <div>Telefone: <span th:text="${empresa.telefone}">00 0000-0000</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h1 class="titulo-relatorio">RELATÓRIO DE VENDAS POR PERÍODO</h1>
+<div class="data-movimento">
+    Período: <strong th:text="${#temporals.format(filtros.dataInicio, 'dd/MM/yyyy')} + ' a ' + ${#temporals.format(filtros.dataFim, 'dd/MM/yyyy')}">01/01/2024 a 07/01/2024</strong>
+</div>
+
+<div class="resumo-dia">
+    <div class="resumo-dia-grid">
+        <div class="resumo-item">
+            <div class="resumo-label">Total Pago</div>
+            <div class="resumo-valor currency" th:text="${resumo.totalPagoFormatado}">R$ 0,00</div>
+        </div>
+        <div class="resumo-item">
+            <div class="resumo-label">Total Base</div>
+            <div class="resumo-valor currency" th:text="${resumo.totalBaseFormatado}">R$ 0,00</div>
+        </div>
+        <div class="resumo-item">
+            <div class="resumo-label">Taxa de Serviço</div>
+            <div class="resumo-valor currency" th:text="${resumo.totalTaxaServicoFormatada}">R$ 0,00</div>
+        </div>
+        <div class="resumo-item">
+            <div class="resumo-label">Número de Vendas</div>
+            <div class="resumo-valor" th:text="${resumo.numeroVendasFormatado}">0</div>
+        </div>
+        <div class="resumo-item">
+            <div class="resumo-label">Ticket Médio</div>
+            <div class="resumo-valor currency" th:text="${resumo.ticketMedioFormatado}">R$ 0,00</div>
+        </div>
+    </div>
+</div>
+
+<div class="movimentacoes" th:if="${!pagamentos.isEmpty()}">
+    <h2 class="secao-titulo">Pagamentos Detalhados</h2>
+    <table>
+        <thead>
+        <tr>
+            <th width="140">Data/Hora</th>
+            <th width="160">Método</th>
+            <th width="110" class="text-right">Valor</th>
+            <th>Pagante / Referência</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="pagamento : ${pagamentos}">
+            <td class="text-center" th:text="${pagamento.pagoEmFormatado}">09:15</td>
+            <td>
+                <div th:text="${pagamento.metodoFormatado}">Pix</div>
+                <div class="small" th:text="${pagamento.cartaoTipoFormatado}">Débito</div>
+            </td>
+            <td class="text-right currency" th:text="${pagamento.valorFormatado}">R$ 0,00</td>
+            <td>
+                <div th:text="${pagamento.paganteNomeFormatado}">Cliente</div>
+                <div class="small" th:text="${pagamento.referenciaFormatada}">REF123</div>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+
+<div th:if="${pagamentos.isEmpty()}" class="no-data">
+    Nenhum pagamento encontrado para o período informado.
+    <br/>
+    Verifique se existiram vendas registradas ou ajuste os filtros.
+</div>
+
+<div class="resumos-container" th:if="${!pagamentos.isEmpty()}">
+    <div class="resumo-coluna">
+        <div class="resumo-tabela" th:if="${!resumoPorFormaPagamento.isEmpty()}">
+            <h3>Resumo por Forma de Pagamento</h3>
+            <table>
+                <thead>
+                <tr>
+                    <th>Método</th>
+                    <th>Cartão</th>
+                    <th class="text-right">Valor</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr th:each="forma : ${resumoPorFormaPagamento}">
+                    <td th:text="${forma.metodoFormatado}">PIX</td>
+                    <td th:text="${forma.cartaoTipoFormatado}">Crédito</td>
+                    <td class="text-right currency" th:text="${forma.valorFormatado}">R$ 0,00</td>
+                </tr>
+                </tbody>
+                <tfoot>
+                <tr style="font-weight: bold; border-top: 2px solid #1976d2;">
+                    <td>Total</td>
+                    <td></td>
+                    <td class="text-right currency" th:text="${resumo.totalPagoFormatado}">R$ 0,00</td>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    <div class="resumo-coluna">
+        <div class="resumo-tabela">
+            <h3>Resumo Final</h3>
+            <table>
+                <tbody>
+                <tr>
+                    <td>Número de Vendas</td>
+                    <td class="text-right" th:text="${resumo.numeroVendasFormatado}">0</td>
+                </tr>
+                <tr>
+                    <td>Ticket Médio</td>
+                    <td class="text-right currency" th:text="${resumo.ticketMedioFormatado}">R$ 0,00</td>
+                </tr>
+                <tr>
+                    <td>Valor Base</td>
+                    <td class="text-right currency" th:text="${resumo.totalBaseFormatado}">R$ 0,00</td>
+                </tr>
+                <tr>
+                    <td>Taxa de Serviço</td>
+                    <td class="text-right currency" th:text="${resumo.totalTaxaServicoFormatada}">R$ 0,00</td>
+                </tr>
+                <tr>
+                    <td>Valor Couvert</td>
+                    <td class="text-right currency" th:text="${resumo.valorCouvertFormatado}">R$ 0,00</td>
+                </tr>
+                <tr>
+                    <td>Pagamentos com Couvert</td>
+                    <td class="text-right" th:text="${resumo.pagamentosComCouvertFormatado}">0</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="footer">
+    <div>
+        Relatório gerado em <span th:text="${#temporals.format(relatorio.dataGeracao, 'dd/MM/yyyy HH:mm')}">01/01/2024 10:00</span>
+        por <span th:text="${relatorio.usuarioGeracao}">Usuário</span>
+    </div>
+    <div>Sistema de Gestão - Smart Store</div>
+</div>
+</body>
+</html>

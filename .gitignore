@@ -1,0 +1,50 @@
+# Segredos e configuracoes locais
+.env
+.env.*
+**/.env
+**/.env.*
+ops/env/.env.production
+
+# Exemplos publicos permanecem elegiveis para versionamento
+!.env.example
+!**/.env.example
+!**/.env.*.example
+
+# Builds, dependencias e caches
+**/target/
+**/node_modules/
+**/.quasar/
+**/.gradle/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+**/*.pyc
+**/*.pyo
+
+# Dados e artefatos locais da aplicacao
+backend/uploads/
+backend/outputs/
+backend/nfe/xmls/
+backend/relatorio_*
+
+# Dumps e diagnosticos de processos
+**/*.hprof
+**/hs_err_pid*.log
+**/replay_pid*.log
+
+# Ferramentas locais de agentes
+quality/**/.ai-workflow/
+.ai-workflow/
+**/.ai-workflow/
+.claude/
+**/.claude/
+.opencode/
+**/.opencode/
+opencode.json
+
+# Certificados, PDFs e XMLs nao recebem regras globais: o projeto contem
+# schemas e recursos publicos legitimos que precisam continuar visiveis.

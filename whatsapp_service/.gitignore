@@ -1,0 +1,9 @@
+node_modules/
+session/
+.wwebjs_cache/
+.env
+.env.*
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+*.log

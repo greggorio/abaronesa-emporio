@@ -1,0 +1,399 @@
+openapi: 3.1.0
+info:
+  title: Emporio Deployment Control API
+  version: 1.1.0
+  description: Contrato implementado do runtime deployer.
+paths:
+  /health/live:
+    get:
+      operationId: deployerLiveness
+      security: []
+      responses:
+        "200": {description: Processo ativo sem detalhes internos, content: {application/json: {schema: {$ref: "#/components/schemas/HealthResponse"}}}}
+  /health/ready:
+    get:
+      operationId: deployerReadiness
+      security: []
+      responses:
+        "200": {description: Processo pronto sem detalhes internos, content: {application/json: {schema: {$ref: "#/components/schemas/HealthResponse"}}}}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/release-control/v1/capabilities:
+    get:
+      operationId: deployerCapabilities
+      x-required-role: deployment:read
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: Capacidades do deployer, content: {application/json: {schema: {$ref: "#/components/schemas/CapabilityResponse"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/deployment-control/v1/current:
+    get:
+      operationId: getCurrentInstallation
+      x-required-role: deployment:read
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: Instalacao reconciliada, content: {application/json: {schema: {$ref: "#/components/schemas/CurrentInstallation"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/CurrentInstallationUnreconciled"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/deployment-control/v1/releases:
+    get:
+      operationId: listDeployableReleases
+      x-required-role: deployment:read
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Limit"}
+        - {$ref: "#/components/parameters/Cursor"}
+      responses:
+        "200":
+          description: Releases globais elegiveis.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/GlobalReleaseSummary"}}
+                  nextCursor: {type: [string, "null"], maxLength: 256}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/deployment-control/v1/releases/{releaseId}/plan:
+    get:
+      operationId: getDeploymentPlan
+      x-required-role: deployment:read
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/ReleaseId"}
+      responses:
+        "200": {description: Plano informativo calculado no servidor, content: {application/json: {schema: {$ref: "#/components/schemas/DeploymentPlan"}}}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/deployment-control/v1/deployments:
+    post:
+      operationId: requestDeployment
+      x-required-role: deployment:execute
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/IdempotencyKey"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DeploymentRequest"}
+      responses:
+        "202":
+          description: Operacao criada ou replay idempotente.
+          headers:
+            Idempotency-Replayed: {schema: {type: boolean}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DeploymentOperation"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: IDEMPOTENCY_CONFLICT ou PRODUCTION_OPERATION_ACTIVE; activeOperationId somente para ator autorizado.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/DeploymentConflictProblem"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/deployment-control/v1/rollbacks/{operationId}:
+    get:
+      operationId: getRollbackStatus
+      x-required-role: deployment:read
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/RollbackOperationId"}
+      responses:
+        "200": {description: Estado local reconciliado do rollback, content: {application/json: {schema: {$ref: "#/components/schemas/RollbackOperation"}}}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/deployment-control/v1/deployments/{deploymentId}:
+    get:
+      operationId: getDeploymentStatus
+      x-required-role: deployment:read
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/DeploymentId"}
+      responses:
+        "200": {description: Estado local reconciliado, content: {application/json: {schema: {$ref: "#/components/schemas/DeploymentOperation"}}}}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/deployment-control/v1/rollbacks:
+    post:
+      operationId: requestRollback
+      x-required-role: deployment:rollback
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/RollbackIdempotencyKey"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RollbackRequest"}
+      responses:
+        "202":
+          description: Operacao de rollback criada ou replay idempotente.
+          headers:
+            Idempotency-Replayed: {schema: {type: boolean}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RollbackOperation"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: RELEASE_NOT_ELIGIBLE; rollback comercial indisponivel nesta versao.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/RollbackUnavailableProblem"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 16, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]+$"}
+    RollbackIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 54, maxLength: 54, pattern: "^deployer-rollback-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}
+    ReleaseId:
+      name: releaseId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/ReleaseId"}
+    DeploymentId:
+      name: deploymentId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OperationId"}
+    RollbackOperationId:
+      name: operationId
+      in: path
+      required: true
+      schema: {type: string, minLength: 36, maxLength: 36, pattern: "^rbk_[0-9a-f]{32}$"}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string, minLength: 1, maxLength: 256}
+  schemas:
+    ReleaseId: {type: string, pattern: "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"}
+    CommitSha: {type: string, pattern: "^[0-9a-f]{40}$"}
+    Digest: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+    OperationId: {type: string, minLength: 36, maxLength: 36, pattern: "^(dep|rbk)_[0-9a-f]{32}$"}
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [ok, unavailable]}
+    CapabilityResponse:
+      type: object
+      additionalProperties: false
+      examples:
+        - {mode: deployer, apiVersion: v1, capabilities: [deployment:read, deployment:execute, deployment:rollback]}
+      required: [mode, apiVersion, capabilities]
+      properties:
+        mode: {type: string, enum: [deployer]}
+        apiVersion: {type: string, const: v1}
+        capabilities:
+          type: array
+          minItems: 3
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, enum: [deployment:read, deployment:execute, deployment:rollback]}
+    GlobalReleaseSummary:
+      type: object
+      additionalProperties: false
+      required: [release, sourceCommit, publishedAt, eligible]
+      properties:
+        release: {$ref: "#/components/schemas/ReleaseId"}
+        sourceCommit: {$ref: "#/components/schemas/CommitSha"}
+        publishedAt: {type: string, format: date-time}
+        eligible: {type: boolean}
+    GlobalReleaseDetail:
+      type: object
+      additionalProperties: false
+      required: [release, sourceCommit, componentDigests]
+      properties:
+        release: {$ref: "#/components/schemas/ReleaseId"}
+        sourceCommit: {$ref: "#/components/schemas/CommitSha"}
+        componentDigests:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/Digest"}
+    CurrentInstallation:
+      type: object
+      additionalProperties: false
+      required: [release, sourceCommit, installedAt, reconciled]
+      properties:
+        release: {$ref: "#/components/schemas/ReleaseId"}
+        sourceCommit: {$ref: "#/components/schemas/CommitSha"}
+        installedAt: {type: string, format: date-time}
+        reconciled: {type: boolean, const: true}
+    ComponentPlanItem:
+      type: object
+      additionalProperties: false
+      required: [component, action, currentDigest, targetDigest]
+      properties:
+        component: {type: string, enum: [backend, website_back, frontend, website_front, whatsapp_service, gateway]}
+        action: {type: string, enum: [KEEP, UPDATE]}
+        currentDigest: {oneOf: [{$ref: "#/components/schemas/Digest"}, {type: "null"}]}
+        targetDigest: {$ref: "#/components/schemas/Digest"}
+    DeploymentPlan:
+      type: object
+      additionalProperties: false
+      required: [sourceRelease, targetRelease, components, migrationRequired, backupRequired]
+      properties:
+        sourceRelease:
+          oneOf:
+            - {$ref: "#/components/schemas/ReleaseId"}
+            - {type: "null"}
+        targetRelease: {$ref: "#/components/schemas/ReleaseId"}
+        components: {type: array, minItems: 6, maxItems: 6, items: {$ref: "#/components/schemas/ComponentPlanItem"}}
+        migrationRequired: {type: boolean}
+        backupRequired: {type: boolean}
+    DeploymentRequest:
+      type: object
+      additionalProperties: false
+      examples:
+        - {release: v1.4.0}
+      required: [release]
+      properties:
+        release: {$ref: "#/components/schemas/ReleaseId"}
+    RollbackRequest:
+      type: object
+      additionalProperties: false
+      examples:
+        - {release: v1.3.2, reason: Retorno ficticio a release anterior elegivel}
+      required: [release, reason]
+      properties:
+        release: {$ref: "#/components/schemas/ReleaseId"}
+        reason: {type: string, minLength: 10, maxLength: 1000}
+    RollbackOperation:
+      type: object
+      additionalProperties: false
+      required: [operationId, operationType, state, sourceRelease, targetRelease, databaseRestoreRequired, createdAt, updatedAt]
+      properties:
+        operationId: {type: string, pattern: "^rbk_[0-9a-f]{32}$"}
+        operationType: {type: string, const: rollback}
+        state: {type: string, enum: [QUEUED, PRECHECKING, RESTORING, SWITCHING, VERIFYING, SUCCEEDED, ROLLING_BACK, ROLLED_BACK, FAILED, UNCERTAIN]}
+        sourceRelease: {$ref: "#/components/schemas/ReleaseId"}
+        targetRelease: {$ref: "#/components/schemas/ReleaseId"}
+        databaseRestoreRequired: {type: boolean}
+        workflowRunUrl: {type: [string, "null"], format: uri, pattern: "^https://"}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        errorCode: {type: [string, "null"], maxLength: 100}
+    DeploymentOperation:
+      type: object
+      additionalProperties: false
+      required: [operationId, operationType, state, targetRelease, createdAt, updatedAt]
+      properties:
+        operationId: {$ref: "#/components/schemas/OperationId"}
+        operationType: {type: string, enum: [deployment, rollback]}
+        state: {type: string, enum: [QUEUED, PULLING, BACKING_UP, MIGRATING, UPDATING, VERIFYING, SUCCEEDED, ROLLING_BACK, ROLLED_BACK, FAILED]}
+        targetRelease: {$ref: "#/components/schemas/ReleaseId"}
+        workflowRunUrl: {type: [string, "null"], format: uri, pattern: "^https://"}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        errorCode: {type: [string, "null"], maxLength: 100}
+    ProblemDetails:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string, maxLength: 200}
+        status: {type: integer, minimum: 400, maximum: 599}
+        code:
+          type: string
+          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CURRENT_INSTALLATION_UNRECONCILED, IDEMPOTENCY_CONFLICT, PRODUCTION_OPERATION_ACTIVE, RELEASE_NOT_ELIGIBLE, UNPROCESSABLE, RATE_LIMITED, INTERNAL_ERROR, SERVICE_UNAVAILABLE]
+        detail: {type: string, maxLength: 1000}
+        traceId: {type: string, minLength: 8, maxLength: 128}
+    DeploymentConflictProblem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string, maxLength: 200}
+        status: {type: integer, const: 409}
+        code: {type: string, enum: [IDEMPOTENCY_CONFLICT, PRODUCTION_OPERATION_ACTIVE]}
+        detail: {type: string, maxLength: 1000}
+        traceId: {type: string, minLength: 8, maxLength: 128}
+        activeOperationId:
+          description: Presente somente em PRODUCTION_OPERATION_ACTIVE quando o ator esta autorizado a consultar a operacao ativa.
+          $ref: "#/components/schemas/OperationId"
+    RollbackUnavailableProblem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string, maxLength: 200}
+        status: {type: integer, const: 409}
+        code: {type: string, const: RELEASE_NOT_ELIGIBLE}
+        detail: {type: string, maxLength: 1000}
+        traceId: {type: string, minLength: 8, maxLength: 128}
+    CurrentInstallationUnreconciledProblem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string, maxLength: 200}
+        status: {type: integer, const: 409}
+        code: {type: string, const: CURRENT_INSTALLATION_UNRECONCILED}
+        detail: {type: string, maxLength: 1000}
+        traceId: {type: string, minLength: 8, maxLength: 128}
+  responses:
+    BadRequest: {description: BAD_REQUEST, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    Unauthorized: {description: UNAUTHORIZED, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    Forbidden: {description: FORBIDDEN, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    NotFound: {description: NOT_FOUND, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    Conflict: {description: PRODUCTION_OPERATION_ACTIVE, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    CurrentInstallationUnreconciled: {description: CURRENT_INSTALLATION_UNRECONCILED, content: {application/problem+json: {schema: {$ref: "#/components/schemas/CurrentInstallationUnreconciledProblem"}}}}
+    Unprocessable: {description: UNPROCESSABLE, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    TooManyRequests: {description: RATE_LIMITED, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    InternalError: {description: INTERNAL_ERROR sem stack trace, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    ServiceUnavailable: {description: Indisponivel sem detalhes internos, content: {application/json: {schema: {$ref: "#/components/schemas/HealthResponse"}}}}

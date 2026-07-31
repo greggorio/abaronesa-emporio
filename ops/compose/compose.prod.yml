@@ -1,0 +1,194 @@
+x-common: &common
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 30s
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  postgresql:
+    <<: *common
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    environment:
+      TZ: America/Sao_Paulo
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?required}
+      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:?required}
+      ERP_DB_NAME: ${ERP_DB_NAME:?required}
+      ERP_DB_USER: ${ERP_DB_USER:?required}
+      ERP_DB_PASSWORD: ${ERP_DB_PASSWORD:?required}
+      WEBSITE_DB_NAME: ${WEBSITE_DB_NAME:?required}
+      WEBSITE_DB_USER: ${WEBSITE_DB_USER:?required}
+      WEBSITE_DB_PASSWORD: ${WEBSITE_DB_PASSWORD:?required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../db/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    networks: [emporio-db]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    mem_limit: ${POSTGRES_MEM_LIMIT:-768m}
+    cpus: ${POSTGRES_CPUS:-1.0}
+    pids_limit: ${POSTGRES_PIDS_LIMIT:-256}
+
+  backend:
+    <<: *common
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
+    depends_on: {postgresql: {condition: service_healthy}}
+    environment:
+      TZ: America/Sao_Paulo
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_FLYWAY_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgresql:5432/${ERP_DB_NAME:?required}
+      SPRING_DATASOURCE_USERNAME: ${ERP_DB_USER:?required}
+      SPRING_DATASOURCE_PASSWORD: ${ERP_DB_PASSWORD:?required}
+      INTEGRATION_SYSTEM_TOKEN_SECRET: ${INTEGRATION_SYSTEM_TOKEN_SECRET:?required}
+      JAVA_TOOL_OPTIONS: ${BACKEND_JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75}
+      WHATSAPP_SERVICE_URL: http://whatsapp_service:3001
+      APP_CORS_ALLOWED_ORIGINS: ${ERP_CORS_ALLOWED_ORIGINS:-https://erp-emporio.abaronesa.net.br,https://emporio.abaronesa.net.br}
+      ERP_BASE_URL: ${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}
+      ECOMMERCE_BASE_URL: ${WEBSITE_PUBLIC_URL:-https://emporio.abaronesa.net.br}
+      ANDROID_BASE_URL: ${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}
+      WEBSITE_BASE_URL: ${WEBSITE_PUBLIC_URL:-https://emporio.abaronesa.net.br}
+      ESPRESSO_API_BASE_URL: ${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}
+      APP_FRONTEND_URL: ${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://erp-emporio.abaronesa.net.br/login/oauth2/code/google}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MANAGEMENT_HEALTH_MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      UBER_CLIENT_ID: ${UBER_CLIENT_ID:-}
+      UBER_CLIENT_SECRET: ${UBER_CLIENT_SECRET:-}
+      UBER_CUSTOMER_ID: ${UBER_CUSTOMER_ID:-}
+      UBER_ACCESS_TOKEN: ${UBER_ACCESS_TOKEN:-}
+      UBER_SCOPE: ${UBER_SCOPE:-}
+      UBER_PICKUP_NAME: ${UBER_PICKUP_NAME:-}
+      UBER_PICKUP_PHONE: ${UBER_PICKUP_PHONE:-}
+      UBER_PICKUP_ADDRESS: ${UBER_PICKUP_ADDRESS:-}
+      UBER_PICKUP_NOTES: ${UBER_PICKUP_NOTES:-}
+      UBER_PICKUP_READY_PATH: ${UBER_PICKUP_READY_PATH:-}
+      ESPRESSO_SYNC_BASE_URL: ${WEBSITE_INTERNAL_SYNC_URL:-http://website_back:8085}
+      ESPRESSO_SYNC_API_KEY: ${ERP_WEBSITE_SYNC_KEY:-}
+      WEBSITE_SYNC_API_KEY: ${ERP_WEBSITE_SYNC_KEY:-}
+      NFE_SCHEMA_PATH: /app/nfe/schemas
+      NFE_XML_PATH: /app/uploads/nfe/xmls
+      STORE_UPLOAD_DIR: /app/uploads
+      STORE_UPLOAD_CATEGORIA_DIR: /app/uploads/categorias
+      STORE_UPLOAD_SUBCATEGORIA_DIR: /app/uploads/subcategorias
+      STORE_UPLOAD_CERTIFICADO_DIR: /app/uploads/certificados
+      STORE_UPLOAD_PRODUTO_DIR: /app/uploads/produtos
+      STORE_UPLOAD_SIGNAGE_AI_DIR: /app/uploads/signage/ai
+      STORE_UPLOAD_SIGNAGE_DIR: /app/uploads/signage
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?required}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?required}
+      ROOT_BOOTSTRAP_ENABLED: ${ROOT_BOOTSTRAP_ENABLED:-false}
+      ROOT_BOOTSTRAP_NAME: ${ROOT_BOOTSTRAP_NAME:-}
+      ROOT_BOOTSTRAP_EMAIL: ${ROOT_BOOTSTRAP_EMAIL:-}
+      ROOT_BOOTSTRAP_PASSWORD: ${ROOT_BOOTSTRAP_PASSWORD:-}
+    volumes: [backend-uploads:/app/uploads]
+    networks: [emporio-app, emporio-db]
+    healthcheck: {test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"], interval: 15s, timeout: 5s, retries: 20, start_period: 60s}
+    mem_limit: ${BACKEND_MEM_LIMIT:-1g}
+    cpus: ${BACKEND_CPUS:-1.5}
+    pids_limit: ${BACKEND_PIDS_LIMIT:-256}
+
+  website_back:
+    <<: *common
+    image: ${WEBSITE_BACK_IMAGE:?WEBSITE_BACK_IMAGE is required}
+    depends_on: {postgresql: {condition: service_healthy}}
+    environment:
+      TZ: America/Sao_Paulo
+      SPRING_PROFILES_ACTIVE: prod
+      FLYWAY_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgresql:5432/${WEBSITE_DB_NAME:?required}
+      SPRING_DATASOURCE_USERNAME: ${WEBSITE_DB_USER:?required}
+      SPRING_DATASOURCE_PASSWORD: ${WEBSITE_DB_PASSWORD:?required}
+      INTEGRATION_SYSTEM_TOKEN_SECRET: ${INTEGRATION_SYSTEM_TOKEN_SECRET:?required}
+      JAVA_TOOL_OPTIONS: ${WEBSITE_BACK_JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75}
+      ERP_API_URL: http://backend:8080
+      APP_CORS_ALLOWED_ORIGINS: ${WEBSITE_CORS_ALLOWED_ORIGINS:-https://emporio.abaronesa.net.br,https://erp-emporio.abaronesa.net.br}
+      APP_WEBSOCKET_ALLOWED_ORIGINS: ${WEBSITE_WEBSOCKET_ALLOWED_ORIGINS:-https://emporio.abaronesa.net.br,https://erp-emporio.abaronesa.net.br}
+      APP_FIREBASE_ENABLED: ${APP_FIREBASE_ENABLED:-false}
+      FIREBASE_CREDENTIALS_PATH: ${FIREBASE_CREDENTIALS_PATH:-/app/uploads/android-private/firebase-adminsdk.json}
+      STORE_UPLOAD_GALERIA_DIR: /app/uploads/galeria
+      STORE_UPLOAD_THEME_ASSETS_DIR: /app/uploads/theme-assets
+      STORE_UPLOAD_ANDROID_ASSETS_DIR: /app/uploads/android-assets
+      STORE_UPLOAD_ANDROID_PRIVATE_DIR: /app/uploads/android-private
+      WEBSITE_ERP_SYNC_KEY: ${ERP_WEBSITE_SYNC_KEY:-}
+      UBER_CLIENT_ID: ${UBER_CLIENT_ID:-}
+      UBER_CLIENT_SECRET: ${UBER_CLIENT_SECRET:-}
+      UBER_CUSTOMER_ID: ${UBER_CUSTOMER_ID:-}
+      UBER_ACCESS_TOKEN: ${UBER_ACCESS_TOKEN:-}
+      UBER_SCOPE: ${UBER_SCOPE:-}
+      UBER_PICKUP_NAME: ${UBER_PICKUP_NAME:-}
+      UBER_PICKUP_PHONE: ${UBER_PICKUP_PHONE:-}
+      UBER_PICKUP_ADDRESS: ${UBER_PICKUP_ADDRESS:-}
+      UBER_PICKUP_NOTES: ${UBER_PICKUP_NOTES:-}
+      UBER_PICKUP_READY_PATH: ${UBER_PICKUP_READY_PATH:-}
+    volumes: [website-uploads:/app/uploads]
+    networks: [emporio-app, emporio-db]
+    healthcheck: {test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8085/actuator/health"], interval: 15s, timeout: 5s, retries: 20, start_period: 60s}
+    mem_limit: ${WEBSITE_BACK_MEM_LIMIT:-1g}
+    cpus: ${WEBSITE_BACK_CPUS:-1.5}
+    pids_limit: ${WEBSITE_BACK_PIDS_LIMIT:-256}
+
+  frontend:
+    <<: *common
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
+    environment: {TZ: America/Sao_Paulo, VITE_BASE_API_URL: "${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}"}
+    networks: [emporio-app]
+    healthcheck: {test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/healthz"], interval: 15s, timeout: 5s, retries: 10}
+    mem_limit: ${FRONTEND_MEM_LIMIT:-256m}
+    cpus: ${FRONTEND_CPUS:-0.5}
+    pids_limit: ${FRONTEND_PIDS_LIMIT:-128}
+
+  website_front:
+    <<: *common
+    image: ${WEBSITE_FRONT_IMAGE:?WEBSITE_FRONT_IMAGE is required}
+    environment: {TZ: America/Sao_Paulo, VITE_ERP_API_URL: "${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}", VITE_WEBSITE_API_URL: "${WEBSITE_PUBLIC_URL:-https://emporio.abaronesa.net.br}"}
+    networks: [emporio-app]
+    healthcheck: {test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/healthz"], interval: 15s, timeout: 5s, retries: 10}
+    mem_limit: ${WEBSITE_FRONT_MEM_LIMIT:-256m}
+    cpus: ${WEBSITE_FRONT_CPUS:-0.5}
+    pids_limit: ${WEBSITE_FRONT_PIDS_LIMIT:-128}
+
+  whatsapp_service:
+    <<: *common
+    image: ${WHATSAPP_IMAGE:?WHATSAPP_IMAGE is required}
+    environment: {TZ: America/Sao_Paulo, NODE_ENV: production, PORT: "3001", SESSION_DIR: /data/session, BASE_COUNTRY_CODE: "${BASE_COUNTRY_CODE:-55}"}
+    volumes: [whatsapp-session:/data/session]
+    networks: [emporio-app]
+    healthcheck: {test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"], interval: 15s, timeout: 5s, retries: 20, start_period: 20s}
+    mem_limit: ${WHATSAPP_MEM_LIMIT:-768m}
+    cpus: ${WHATSAPP_CPUS:-1.0}
+    pids_limit: ${WHATSAPP_PIDS_LIMIT:-256}
+
+  gateway:
+    <<: *common
+    image: ${GATEWAY_IMAGE:?GATEWAY_IMAGE is required}
+    depends_on: {backend: {condition: service_healthy}, website_back: {condition: service_healthy}, frontend: {condition: service_healthy}, website_front: {condition: service_healthy}, whatsapp_service: {condition: service_healthy}}
+    ports: ["127.0.0.1:${GATEWAY_LOOPBACK_PORT:-8120}:8080"]
+    networks: [emporio-app]
+    healthcheck: {test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"], interval: 10s, timeout: 5s, retries: 10}
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    mem_limit: ${GATEWAY_MEM_LIMIT:-128m}
+    cpus: ${GATEWAY_CPUS:-0.5}
+    pids_limit: ${GATEWAY_PIDS_LIMIT:-128}
+
+networks:
+  emporio-app: {name: "${APP_NETWORK_NAME:-emporio-app}"}
+  emporio-db: {name: "${DB_NETWORK_NAME:-emporio-db}", internal: true}
+volumes:
+  postgres-data: {name: "${POSTGRES_VOLUME_NAME:-emporio-postgres-data}"}
+  backend-uploads: {name: "${BACKEND_UPLOADS_VOLUME_NAME:-emporio-backend-uploads}"}
+  website-uploads: {name: "${WEBSITE_UPLOADS_VOLUME_NAME:-emporio-website-uploads}"}
+  whatsapp-session: {name: "${WHATSAPP_SESSION_VOLUME_NAME:-emporio-whatsapp-session}"}

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title>Comprovante Consumo</title>
+    <style th:inline="text">
+        @page { size: 80mm [[${pageHeight}]]mm; margin: 0mm; }
+        body { font-family: monospace; font-size: 10px; width: 76mm; margin: 10mm auto 0 auto; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .bold { font-weight: bold; }
+        .header { border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; text-align: center; }
+        .title { font-size: 12px; font-weight: bold; margin: 5px 0; border: 1px solid #000; padding: 3px; }
+        .consumo-info { margin: 10px 0; }
+        .cliente { margin: 5px 0; }
+        .valor { font-size: 14px; font-weight: bold; margin: 10px 0; text-align: center; }
+        .footer { margin-top: 10px; text-align: center; font-size: 8px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="bold" th:text="${empresaRazaoSocial}">EMPRESA</div>
+        <div th:text="${empresaEndereco}">Endereço</div>
+        <div th:text="'CNPJ: ' + ${empresaCnpj}">CNPJ</div>
+    </div>
+    <div class="title text-center">
+        COMPROVANTE CONSUMO
+    </div>
+    <div class="info">
+        <div>Data: <span th:text="${data}">Data</span></div>
+        <div>Hora: <span th:text="${hora}">Hora</span></div>
+    </div>
+    <div class="cliente" th:if="${nomeCliente}">
+        <div>Cliente: <span th:text="${nomeCliente}"></span></div>
+    </div>
+    <div class="consumo-info">
+        <div class="text-center">Consumo</div>
+    </div>
+    <div class="valor">
+        R$ <span th:text="${#numbers.formatDecimal(valorTotal, 1, 2)}">0.00</span>
+    </div>
+    <div class="footer">
+        <p>OBRIGADO E VOLTE SEMPRE!</p>
+    </div>
+</body>
+</html>

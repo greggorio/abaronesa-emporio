@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greggorio/abaronesa-emporio/ops/deploy/schemas/deployment-plan.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "environment",
+    "sourceRelease",
+    "targetRelease",
+    "targetSourceCommit",
+    "targetManifestSha256",
+    "plannedAt",
+    "firstInstallation",
+    "components",
+    "servicesToPull",
+    "servicesToUpdate",
+    "databases",
+    "migrationRequired",
+    "backupRequired",
+    "executionOrder"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "deployment-plan"},
+    "environment": {"const": "production"},
+    "sourceRelease": {
+      "oneOf": [
+        {"$ref": "#/$defs/semver"},
+        {"type": "null"}
+      ]
+    },
+    "targetRelease": {"$ref": "#/$defs/semver"},
+    "targetSourceCommit": {"$ref": "#/$defs/commitSha"},
+    "targetManifestSha256": {"$ref": "#/$defs/digest"},
+    "plannedAt": {"$ref": "#/$defs/utcSecond"},
+    "firstInstallation": {"type": "boolean"},
+    "components": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        {"$ref": "#/$defs/backendPlan"},
+        {"$ref": "#/$defs/websiteBackPlan"},
+        {"$ref": "#/$defs/frontendPlan"},
+        {"$ref": "#/$defs/websiteFrontPlan"},
+        {"$ref": "#/$defs/whatsappPlan"},
+        {"$ref": "#/$defs/gatewayPlan"}
+      ],
+      "items": false
+    },
+    "servicesToPull": {"$ref": "#/$defs/services"},
+    "servicesToUpdate": {"$ref": "#/$defs/services"},
+    "databases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {"$ref": "#/$defs/erpDatabasePlan"},
+        {"$ref": "#/$defs/websiteDatabasePlan"}
+      ],
+      "items": false
+    },
+    "migrationRequired": {"type": "boolean"},
+    "backupRequired": {"type": "boolean"},
+    "executionOrder": {
+      "const": [
+        "VALIDATE",
+        "PULL",
+        "BACKUP",
+        "MIGRATE",
+        "UPDATE",
+        "VERIFY",
+        "COMMIT_STATE"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"firstInstallation": {"const": true}},
+        "required": ["firstInstallation"]
+      },
+      "then": {
+        "properties": {
+          "sourceRelease": {"type": "null"},
+          "servicesToPull": {
+            "const": [
+              "backend",
+              "website_back",
+              "frontend",
+              "website_front",
+              "whatsapp_service",
+              "gateway"
+            ]
+          },
+          "servicesToUpdate": {
+            "const": [
+              "backend",
+              "website_back",
+              "frontend",
+              "website_front",
+              "whatsapp_service",
+              "gateway"
+            ]
+          },
+          "migrationRequired": {"const": true},
+          "backupRequired": {"const": true}
+        }
+      },
+      "else": {
+        "properties": {"sourceRelease": {"$ref": "#/$defs/semver"}}
+      }
+    }
+  ],
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+    },
+    "commitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "utcSecond": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "path", "sha256"],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:[._][0-9]+)*$"
+        },
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "services": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 6,
+      "items": {
+        "enum": [
+          "backend",
+          "website_back",
+          "frontend",
+          "website_front",
+          "whatsapp_service",
+          "gateway"
+        ]
+      }
+    },
+    "componentPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "service",
+        "imageVariable",
+        "action",
+        "currentDigest",
+        "targetDigest",
+        "targetImmutableRef"
+      ],
+      "properties": {
+        "component": {"type": "string"},
+        "service": {"type": "string"},
+        "imageVariable": {"type": "string"},
+        "action": {"enum": ["KEEP", "UPDATE"]},
+        "currentDigest": {
+          "oneOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "targetDigest": {"$ref": "#/$defs/digest"},
+        "targetImmutableRef": {"type": "string"}
+      }
+    },
+    "backendPlan": {
+      "allOf": [
+        {"$ref": "#/$defs/componentPlan"},
+        {
+          "properties": {
+            "component": {"const": "backend"},
+            "service": {"const": "backend"},
+            "imageVariable": {"const": "BACKEND_IMAGE"},
+            "targetImmutableRef": {
+              "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-backend@sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "websiteBackPlan": {
+      "allOf": [
+        {"$ref": "#/$defs/componentPlan"},
+        {
+          "properties": {
+            "component": {"const": "website_back"},
+            "service": {"const": "website_back"},
+            "imageVariable": {"const": "WEBSITE_BACK_IMAGE"},
+            "targetImmutableRef": {
+              "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-website-backend@sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "frontendPlan": {
+      "allOf": [
+        {"$ref": "#/$defs/componentPlan"},
+        {
+          "properties": {
+            "component": {"const": "frontend"},
+            "service": {"const": "frontend"},
+            "imageVariable": {"const": "FRONTEND_IMAGE"},
+            "targetImmutableRef": {
+              "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-frontend@sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "websiteFrontPlan": {
+      "allOf": [
+        {"$ref": "#/$defs/componentPlan"},
+        {
+          "properties": {
+            "component": {"const": "website_front"},
+            "service": {"const": "website_front"},
+            "imageVariable": {"const": "WEBSITE_FRONT_IMAGE"},
+            "targetImmutableRef": {
+              "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-website-frontend@sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "whatsappPlan": {
+      "allOf": [
+        {"$ref": "#/$defs/componentPlan"},
+        {
+          "properties": {
+            "component": {"const": "whatsapp_service"},
+            "service": {"const": "whatsapp_service"},
+            "imageVariable": {"const": "WHATSAPP_IMAGE"},
+            "targetImmutableRef": {
+              "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-whatsapp-service@sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "gatewayPlan": {
+      "allOf": [
+        {"$ref": "#/$defs/componentPlan"},
+        {
+          "properties": {
+            "component": {"const": "gateway"},
+            "service": {"const": "gateway"},
+            "imageVariable": {"const": "GATEWAY_IMAGE"},
+            "targetImmutableRef": {
+              "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-gateway@sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "databasePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "ownerComponent",
+        "changed",
+        "currentMigrationSetSha256",
+        "targetMigrationSetSha256",
+        "pendingMigrations"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "ownerComponent": {"type": "string"},
+        "changed": {"type": "boolean"},
+        "currentMigrationSetSha256": {
+          "oneOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "targetMigrationSetSha256": {"$ref": "#/$defs/digest"},
+        "pendingMigrations": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/migration"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"changed": {"const": true}},
+            "required": ["changed"]
+          },
+          "then": {
+            "properties": {"pendingMigrations": {"minItems": 1}}
+          },
+          "else": {
+            "properties": {"pendingMigrations": {"maxItems": 0}}
+          }
+        }
+      ]
+    },
+    "erpDatabasePlan": {
+      "allOf": [
+        {"$ref": "#/$defs/databasePlan"},
+        {
+          "properties": {
+            "id": {"const": "erp"},
+            "ownerComponent": {"const": "backend"}
+          }
+        }
+      ]
+    },
+    "websiteDatabasePlan": {
+      "allOf": [
+        {"$ref": "#/$defs/databasePlan"},
+        {
+          "properties": {
+            "id": {"const": "website"},
+            "ownerComponent": {"const": "website_back"}
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"controlSha":"0123456789abcdef0123456789abcdef01234567","databaseRestoreRequired":false,"deploymentState":"SUCCEEDED","errorCode":null,"kind":"deployment-workflow-outcome","operationId":"deployment_0123456789abcdef","schemaVersion":1,"targetRelease":"v1.2.3","transportStatus":"CONFIRMED","workflowRunAttempt":1,"workflowRunId":123456789}

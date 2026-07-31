@@ -1,0 +1,298 @@
+openapi: 3.1.0
+info:
+  title: Emporio Release Publisher API
+  version: 1.0.0
+  description: Contrato do modo publisher; nao representa implementacao ativa.
+paths:
+  /health/live:
+    get:
+      operationId: publisherLiveness
+      security: []
+      responses:
+        "200":
+          description: Processo ativo, sem detalhes internos.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HealthResponse"}
+  /health/ready:
+    get:
+      operationId: publisherReadiness
+      security: []
+      responses:
+        "200":
+          description: Processo pronto, sem detalhes internos.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/HealthResponse"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /api/release-control/v1/capabilities:
+    get:
+      operationId: publisherCapabilities
+      x-required-role: release:read
+      security: [{bearerAuth: []}]
+      responses:
+        "200":
+          description: Capacidades do modo publisher.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CapabilityResponse"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/release-publisher/v1/candidates:
+    get:
+      operationId: listCandidates
+      x-required-role: release:read
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Limit"}
+        - {$ref: "#/components/parameters/Cursor"}
+        - name: eligibility
+          in: query
+          schema: {type: string, enum: [NOT_ELIGIBLE, READY]}
+      responses:
+        "200":
+          description: Candidatos consultaveis.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 100
+                    items: {$ref: "#/components/schemas/CandidateSummary"}
+                  nextCursor: {type: [string, "null"], maxLength: 256}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/release-publisher/v1/releases:
+    get:
+      operationId: listPublishedReleases
+      x-required-role: release:read
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Limit"}
+        - {$ref: "#/components/parameters/Cursor"}
+      responses:
+        "200":
+          description: Releases globais publicadas.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 100
+                    items: {$ref: "#/components/schemas/GlobalReleaseSummary"}
+                  nextCursor: {type: [string, "null"], maxLength: 256}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+    post:
+      operationId: publishRelease
+      x-required-role: release:publish
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/IdempotencyKey"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublishReleaseRequest"}
+      responses:
+        "202":
+          description: Operacao criada ou replay idempotente.
+          headers:
+            Idempotency-Replayed:
+              schema: {type: boolean}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationOperation"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409":
+          description: IDEMPOTENCY_CONFLICT ou VERSION_RESERVATION_CONFLICT.
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "422": {$ref: "#/components/responses/Unprocessable"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+  /api/release-publisher/v1/operations/{operationId}:
+    get:
+      operationId: getPublicationStatus
+      x-required-role: release:read
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: "#/components/parameters/OperationId"}
+      responses:
+        "200":
+          description: Estado local reconciliado da publicacao.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationOperation"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/TooManyRequests"}
+        "500": {$ref: "#/components/responses/InternalError"}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]+$"
+    OperationId:
+      name: operationId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OperationId"}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 25}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string, minLength: 1, maxLength: 256}
+  schemas:
+    ReleaseId:
+      type: string
+      pattern: "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    CommitSha:
+      type: string
+      pattern: "^[0-9a-f]{40}$"
+    OperationId:
+      type: string
+      minLength: 20
+      maxLength: 128
+      pattern: "^[A-Za-z0-9_-]+$"
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [ok, unavailable]}
+    CapabilityResponse:
+      type: object
+      additionalProperties: false
+      examples:
+        - {mode: publisher, apiVersion: v1, capabilities: [release:read, release:publish]}
+      required: [mode, apiVersion, capabilities]
+      properties:
+        mode: {type: string, enum: [publisher]}
+        apiVersion: {type: string, const: v1}
+        capabilities:
+          type: array
+          uniqueItems: true
+          items: {type: string, enum: [release:read, release:publish]}
+    CandidateSummary:
+      type: object
+      additionalProperties: false
+      required: [candidateId, sourceCommit, eligibility, ciStatus, manifestStatus, createdAt]
+      properties:
+        candidateId: {type: string, minLength: 12, maxLength: 128}
+        sourceCommit: {$ref: "#/components/schemas/CommitSha"}
+        eligibility: {type: string, enum: [NOT_ELIGIBLE, READY]}
+        ciStatus: {type: string, enum: [PENDING, PASSED, FAILED]}
+        manifestStatus: {type: string, enum: [PENDING, VALID, INVALID]}
+        createdAt: {type: string, format: date-time}
+    GlobalReleaseSummary:
+      type: object
+      additionalProperties: false
+      required: [release, sourceCommit, state, publishedAt]
+      properties:
+        release: {$ref: "#/components/schemas/ReleaseId"}
+        sourceCommit: {$ref: "#/components/schemas/CommitSha"}
+        state: {type: string, enum: [PUBLISHED]}
+        publishedAt: {type: string, format: date-time}
+    GlobalReleaseDetail:
+      type: object
+      additionalProperties: false
+      required: [release, sourceCommit, state, publishedAt, manifestSchemaVersion, componentDigests]
+      properties:
+        release: {$ref: "#/components/schemas/ReleaseId"}
+        sourceCommit: {$ref: "#/components/schemas/CommitSha"}
+        state: {type: string, enum: [PUBLISHED]}
+        publishedAt: {type: string, format: date-time}
+        manifestSchemaVersion: {type: integer, minimum: 1}
+        componentDigests:
+          type: object
+          additionalProperties:
+            type: string
+            pattern: "^sha256:[0-9a-f]{64}$"
+    PublishReleaseRequest:
+      type: object
+      additionalProperties: false
+      examples:
+        - candidateId: candidate_example_20260728
+          versionBump: PATCH
+          description: Correcao operacional validada
+          changelog: Ajustes ficticios para demonstracao do contrato.
+      required: [candidateId, versionBump, description, changelog]
+      properties:
+        candidateId: {type: string, minLength: 12, maxLength: 128}
+        versionBump: {type: string, enum: [MAJOR, MINOR, PATCH]}
+        description: {type: string, minLength: 1, maxLength: 500}
+        changelog: {type: string, minLength: 1, maxLength: 10000}
+    PublicationOperation:
+      type: object
+      additionalProperties: false
+      required: [operationId, state, candidateId, createdAt, updatedAt]
+      properties:
+        operationId: {$ref: "#/components/schemas/OperationId"}
+        state: {type: string, enum: [REQUESTED, VALIDATING, PUBLISHING, PUBLISHED, FAILED]}
+        candidateId: {type: string, minLength: 12, maxLength: 128}
+        release: {oneOf: [{$ref: "#/components/schemas/ReleaseId"}, {type: "null"}]}
+        workflowRunUrl: {type: [string, "null"], format: uri, pattern: "^https://"}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        errorCode: {type: [string, "null"], maxLength: 100}
+    ProblemDetails:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string, maxLength: 200}
+        status: {type: integer, minimum: 400, maximum: 599}
+        code:
+          type: string
+          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, IDEMPOTENCY_CONFLICT, VERSION_RESERVATION_CONFLICT, UNPROCESSABLE, RATE_LIMITED, INTERNAL_ERROR, SERVICE_UNAVAILABLE]
+        detail: {type: string, maxLength: 1000}
+        traceId: {type: string, minLength: 8, maxLength: 128}
+  responses:
+    BadRequest: {description: BAD_REQUEST, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    Unauthorized: {description: UNAUTHORIZED, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    Forbidden: {description: FORBIDDEN, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    NotFound: {description: NOT_FOUND, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    Unprocessable: {description: UNPROCESSABLE, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    TooManyRequests: {description: RATE_LIMITED, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    InternalError: {description: INTERNAL_ERROR sem stack trace, content: {application/problem+json: {schema: {$ref: "#/components/schemas/ProblemDetails"}}}}
+    ServiceUnavailable: {description: Indisponivel sem detalhes internos, content: {application/json: {schema: {$ref: "#/components/schemas/HealthResponse"}}}}

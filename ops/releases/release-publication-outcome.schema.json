@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greggorio/abaronesa-emporio/ops/releases/release-publication-outcome.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "status", "repository", "operationId", "candidateId", "release", "sourceCommit", "workflow", "githubRelease", "manifestSha256", "recordedAt"],
+  "properties": {
+    "schemaVersion": {"const": 1}, "kind": {"const": "release-publication-outcome"},
+    "status": {"enum": ["published", "already_published"]},
+    "repository": {"const": "greggorio/abaronesa-emporio"},
+    "operationId": {"type": "string", "minLength": 20, "maxLength": 128, "pattern": "^[A-Za-z0-9_-]+$"},
+    "candidateId": {"type": "string", "pattern": "^candidate-[0-9a-f]{40}-[1-9][0-9]*-[1-9][0-9]*$"},
+    "release": {"type": "string", "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"},
+    "sourceCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "manifestSha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "recordedAt": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "workflow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["runId", "attempt", "url", "actor", "actorId"],
+      "properties": {
+        "runId": {"type": "string", "pattern": "^[1-9][0-9]*$"}, "attempt": {"type": "integer", "minimum": 1},
+        "url": {"type": "string", "pattern": "^https://github\\.com/greggorio/abaronesa-emporio/actions/runs/[1-9][0-9]*$"},
+        "actor": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[^\\u0000-\\u001f\\u007f]+$"}, "actorId": {"type": "string", "pattern": "^[1-9][0-9]*$"}
+      }
+    },
+    "githubRelease": {
+      "type": "object", "additionalProperties": false, "required": ["id", "url", "tagName"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "url": {"type": "string", "pattern": "^https://github\\.com/greggorio/abaronesa-emporio/releases/tag/v[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "tagName": {"type": "string", "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"}
+      }
+    }
+  }
+}

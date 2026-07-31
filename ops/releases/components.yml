@@ -1,0 +1,168 @@
+schema_version: 1
+canonical_order:
+  - backend
+  - website_back
+  - frontend
+  - website_front
+  - whatsapp_service
+  - gateway
+unknown_path_policy: fail_closed_all
+global_paths:
+  - .github/workflows/**
+  - ops/releases/**
+  - ops/compose/**
+  - ops/deploy/**
+  - deploy/**
+documentation_paths:
+  - docs/**
+  - README.md
+excluded_operational_components:
+  - release_control
+
+components:
+  backend:
+    id: backend
+    readiness: ready
+    image_repository: ghcr.io/greggorio/abaronesa-emporio-backend
+    source_paths: [backend/**]
+    build:
+      context: backend
+      dockerfile: backend/Dockerfile
+      status: confirmed
+      command: mvn clean package -DskipTests
+    test:
+      status: confirmed
+      command: mvn -B verify
+    internal_port: 8080
+    health_check:
+      status: confirmed
+      path: /actuator/health
+    dependencies: [whatsapp_service]
+    runtime_dependencies: [postgresql, google_oauth, smtp]
+    migrations:
+      type: flyway
+      path: backend/src/main/resources/db/migration
+    persistence:
+      - {type: filesystem, path: /app/uploads, status: confirmed}
+      - {type: database, path: emporio_erp_db, status: confirmed}
+    readiness_gates: []
+
+  website_back:
+    id: website_back
+    readiness: ready
+    image_repository: ghcr.io/greggorio/abaronesa-emporio-website-backend
+    source_paths: [website_back/**]
+    build:
+      context: website_back
+      dockerfile: website_back/Dockerfile
+      status: confirmed
+      command: mvn clean package -DskipTests
+    test:
+      status: confirmed
+      command: mvn -B verify
+    internal_port: 8085
+    health_check:
+      status: confirmed
+      path: /actuator/health
+    dependencies: [backend]
+    runtime_dependencies: [postgresql, firebase]
+    migrations:
+      type: flyway
+      path: website_back/src/main/resources/db/migration
+    persistence:
+      - {type: filesystem, path: /app/uploads, status: confirmed}
+      - {type: database, path: emporio_website_db, status: confirmed}
+    readiness_gates: []
+
+  frontend:
+    id: frontend
+    readiness: ready
+    image_repository: ghcr.io/greggorio/abaronesa-emporio-frontend
+    source_paths: [frontend/**]
+    build:
+      context: frontend
+      dockerfile: frontend/Dockerfile
+      status: confirmed
+      command: npm run build
+    test:
+      status: confirmed
+      command: npm run test
+    internal_port: 80
+    health_check:
+      status: confirmed
+      path: /healthz
+    dependencies: [backend]
+    runtime_dependencies: []
+    migrations: {type: none, path: null}
+    persistence: []
+    readiness_gates: []
+
+  website_front:
+    id: website_front
+    readiness: ready
+    image_repository: ghcr.io/greggorio/abaronesa-emporio-website-frontend
+    source_paths: [website_front/**]
+    build:
+      context: website_front
+      dockerfile: website_front/Dockerfile
+      status: confirmed
+      command: npm run build
+    test:
+      status: confirmed
+      command: npm run test
+    internal_port: 80
+    health_check:
+      status: confirmed
+      path: /healthz
+    dependencies: [website_back]
+    runtime_dependencies: [firebase]
+    migrations: {type: none, path: null}
+    persistence: []
+    readiness_gates: []
+
+  whatsapp_service:
+    id: whatsapp_service
+    readiness: ready
+    image_repository: ghcr.io/greggorio/abaronesa-emporio-whatsapp-service
+    source_paths: [whatsapp_service/**]
+    build:
+      context: whatsapp_service
+      dockerfile: whatsapp_service/Dockerfile
+      status: confirmed
+      command: docker buildx build --platform linux/amd64 --load
+    test:
+      status: confirmed
+      command: npm run test
+    internal_port: 3001
+    health_check:
+      status: confirmed
+      path: /health/live
+    dependencies: []
+    runtime_dependencies: [chromium]
+    migrations: {type: none, path: null}
+    persistence:
+      - {type: filesystem, path: /data/session, status: confirmed}
+    readiness_gates: []
+
+  gateway:
+    id: gateway
+    readiness: ready
+    image_repository: ghcr.io/greggorio/abaronesa-emporio-gateway
+    source_paths: [ops/gateway/**]
+    build:
+      context: ops/gateway
+      dockerfile: ops/gateway/Dockerfile
+      status: confirmed
+      command: docker buildx build --platform linux/amd64 --load
+    test:
+      status: confirmed
+      command: python3 tools/gateway/validate_gateway.py
+    internal_port: 8080
+    health_check:
+      status: confirmed
+      path: /healthz
+    dependencies: [backend, website_back, frontend, website_front, whatsapp_service]
+    runtime_dependencies: []
+    migrations: {type: none, path: null}
+    persistence: []
+    readiness_gates: []

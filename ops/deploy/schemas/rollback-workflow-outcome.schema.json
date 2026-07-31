@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abaronesa.invalid/schemas/rollback-workflow-outcome.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "kind", "operationId", "sourceRelease", "targetRelease",
+    "rollbackState", "transportStatus", "databaseRestoreRequired", "errorCode",
+    "workflowRunId", "workflowRunAttempt", "controlSha", "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "rollback-workflow-outcome"},
+    "operationId": {"type": "string", "pattern": "^rbk_[0-9a-f]{32}$"},
+    "sourceRelease": {"type": "string", "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "targetRelease": {"type": "string", "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "rollbackState": {"enum": ["QUEUED", "PRECHECKING", "RESTORING", "SWITCHING", "VERIFYING", "SUCCEEDED", "ROLLING_BACK", "ROLLED_BACK", "FAILED", "UNCERTAIN"]},
+    "transportStatus": {"enum": ["CONFIRMED", "INDETERMINATE"]},
+    "databaseRestoreRequired": {"type": "boolean"},
+    "errorCode": {"type": ["string", "null"], "maxLength": 100},
+    "workflowRunId": {"type": "integer", "exclusiveMinimum": 0},
+    "workflowRunAttempt": {"type": "integer", "exclusiveMinimum": 0},
+    "controlSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backupId": {"type": "string", "maxLength": 128},
+        "databaseRestore": {"enum": ["NOT_REQUIRED", "RESTORED", "FAILED"]},
+        "targetStateSha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "reconciledCurrent": {"type": "boolean"}
+      }
+    }
+  }
+}

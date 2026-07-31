@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Espresso English Brand Palette - From Logo */
+    --background: 160 20% 12%;
+    --foreground: 40 20% 95%;
+
+    --card: 160 18% 16%;
+    --card-foreground: 40 20% 95%;
+
+    --popover: 160 18% 16%;
+    --popover-foreground: 40 20% 95%;
+
+    --primary: 160 25% 25%;
+    --primary-foreground: 40 20% 95%;
+
+    --secondary: 160 15% 20%;
+    --secondary-foreground: 40 20% 95%;
+
+    --muted: 160 12% 22%;
+    --muted-foreground: 40 15% 75%;
+
+    --accent: 15 55% 68%;
+    --accent-foreground: 160 25% 15%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 40 20% 95%;
+
+    --border: 160 15% 25%;
+    --input: 160 15% 25%;
+    --ring: 15 55% 68%;
+
+    --radius: 0.75rem;
+
+    /* Brand Tokens from Logo */
+    --forest-green: 160 25% 25%;
+    --forest-dark: 160 30% 18%;
+    --coral-accent: 15 55% 68%;
+    --cream: 40 20% 95%;
+    --warm-beige: 35 25% 85%;
+    --white: 0 0% 100%;
+    --soft-white: 0 0% 98%;
+
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(160 30% 18% / 0.95), hsl(160 20% 12% / 0.9));
+    --gradient-card: linear-gradient(180deg, hsl(160 18% 16%), hsl(160 20% 14%));
+
+    /* Shadows */
+    --shadow-glow: 0 0 30px hsl(15 55% 68% / 0.25);
+    --shadow-soft: 0 10px 30px -10px hsl(160 30% 5% / 0.5);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Aliases para compatibilidade de componentes compartilhados */
+    --viking-charcoal: var(--forest-dark);
+    --viking-red: var(--destructive);
+    --viking-gold: var(--coral-accent);
+    --viking-bone: var(--cream);
+  }
+
+  .dark {
+    /* Same palette for dark mode consistency */
+    --background: 160 20% 12%;
+    --foreground: 40 20% 95%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 20px hsl(var(--coral-accent) / 0.5);
+  }
+
+  .card-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .text-gold {
+    color: hsl(var(--coral-accent));
+  }
+}
+
+@layer components {
+  .date-picker-wrapper {
+    z-index: 9999;
+  }
+  .react-datepicker-popper {
+    z-index: 9999 !important;
+  }
+}

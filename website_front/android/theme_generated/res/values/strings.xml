@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EspressoCafe</string>
+    <string name="title_activity_main">PorraLoka</string>
+    <string name="package_name">com.monicadepilacoes.app</string>
+    <string name="custom_url_scheme">com.monicadepilacoes.app</string>
+</resources>

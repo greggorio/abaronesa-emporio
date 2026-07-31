@@ -1,0 +1,44 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        description: "Server-issued rollback operation identifier"
+        required: true
+        type: string
+      release:
+        description: "Server-selected predecessor release"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emporio-production
+  cancel-in-progress: false
+
+jobs:
+  protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Validate versioned rollback envelope
+        env:
+          OPERATION_ID: ${{ inputs.operation_id }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          python3 ops/deploy/rollback_protocol.py \
+            --operation-id "$OPERATION_ID" \
+            --state PRECHECKING \
+            --release "$RELEASE" \
+            --evidence-sha256 sha256:0000000000000000000000000000000000000000000000000000000000000000
+      - name: Emit bounded handoff marker
+        run: |
+          test -n "${{ inputs.operation_id }}"
+          test -n "${{ inputs.release }}"

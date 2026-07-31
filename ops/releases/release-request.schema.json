@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greggorio/abaronesa-emporio/ops/releases/release-request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidateId", "versionBump", "description", "changelog"],
+  "properties": {
+    "candidateId": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 128
+    },
+    "versionBump": {
+      "type": "string",
+      "enum": ["MAJOR", "MINOR", "PATCH"]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "changelog": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000,
+      "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]+$"
+    }
+  }
+}

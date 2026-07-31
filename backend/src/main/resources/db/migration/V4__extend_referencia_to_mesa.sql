@@ -1,0 +1,2 @@
+ALTER TABLE mesa
+ALTER COLUMN referencia TYPE VARCHAR(200);

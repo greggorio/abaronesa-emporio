@@ -1,0 +1,156 @@
+name: Deploy Production
+run-name: deploy-production-${{ inputs.operation_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        required: true
+        type: string
+      release:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: emporio-production
+  cancel-in-progress: false
+
+jobs:
+  trust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate trusted production dispatch
+        env:
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_OWNER: ${{ github.repository_owner }}
+          TRUSTED_EVENT: ${{ github.event_name }}
+          TRUSTED_REF: ${{ github.ref }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+          TRUSTED_OPERATION_ID: ${{ inputs.operation_id }}
+          TRUSTED_RELEASE: ${{ inputs.release }}
+          DEPLOYER_ACTOR_IDS: ${{ vars.DEPLOYER_ACTOR_IDS }}
+        run: python3 tools/deploy/deployment_transport.py trust --output trust
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deployment-trust
+          path: trust/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false
+
+  prepare:
+    needs: trust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: deployment-trust
+          path: trust
+      - name: Validate release and prepare immutable handoff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/deploy/deployment_transport.py prepare --trust trust --output handoff
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deployment-handoff
+          path: handoff/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false
+
+  deploy:
+    needs: prepare
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: deployment-handoff
+          path: handoff
+      - name: Validate handoff before SSH materialization and deploy
+        id: deployment
+        continue-on-error: true
+        env:
+          PRODUCTION_SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+          PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT }}
+          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: python3 tools/deploy/deployment_transport.py deploy --handoff handoff --output result
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: deployment-result
+          path: result/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+      - name: Apply deployment result after artifact upload
+        if: steps.deployment.outcome != 'success'
+        run: exit 1
+
+  outcome:
+    if: always()
+    needs: [trust, prepare, deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        if: needs.prepare.result == 'success'
+        continue-on-error: true
+        with:
+          name: deployment-handoff
+          path: handoff
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        if: needs.deploy.result != 'skipped'
+        continue-on-error: true
+        with:
+          name: deployment-result
+          path: result
+      - name: Reconcile workflow outcome
+        id: reconciliation
+        continue-on-error: true
+        env:
+          TRUST_RESULT: ${{ needs.trust.result }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: python3 tools/deploy/deployment_transport.py outcome --handoff handoff --result result --output outcome
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: deployment-workflow-outcome
+          path: outcome/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+      - name: Apply workflow outcome after artifact upload
+        if: steps.reconciliation.outcome != 'success'
+        run: exit 1

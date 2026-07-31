@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greggorio/abaronesa-emporio/ops/releases/release-publication-plan.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "mode", "repository", "operationId", "requestSha256", "workflow", "candidate", "historySnapshotSha256", "target"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "release-publication-plan"},
+    "mode": {"enum": ["publish", "already_published"]},
+    "repository": {"const": "greggorio/abaronesa-emporio"},
+    "operationId": {"type": "string", "minLength": 20, "maxLength": 128, "pattern": "^[A-Za-z0-9_-]+$"},
+    "requestSha256": {"$ref": "#/$defs/digest"},
+    "workflow": {"$ref": "#/$defs/workflow"},
+    "candidate": {"$ref": "#/$defs/candidate"},
+    "historySnapshotSha256": {"$ref": "#/$defs/digest"},
+    "target": {"$ref": "#/$defs/target"}
+  },
+  "$defs": {
+    "positive": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "semver": {"type": "string", "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"},
+    "workflow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["runId", "attempt", "actor", "actorId", "event"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/positive"}, "attempt": {"type": "integer", "minimum": 1},
+        "actor": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[^\\u0000-\\u001f\\u007f]+$"},
+        "actorId": {"$ref": "#/$defs/positive"}, "event": {"const": "workflow_dispatch"}
+      }
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidateId", "manifestSha256", "artifactId", "artifactDigest", "workflowRunId", "workflowAttempt"],
+      "properties": {
+        "candidateId": {"type": "string", "pattern": "^candidate-[0-9a-f]{40}-[1-9][0-9]*-[1-9][0-9]*$"},
+        "manifestSha256": {"$ref": "#/$defs/digest"}, "artifactId": {"$ref": "#/$defs/positive"},
+        "artifactDigest": {"$ref": "#/$defs/digest"}, "workflowRunId": {"$ref": "#/$defs/positive"},
+        "workflowAttempt": {"type": "integer", "minimum": 1}
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["release", "sourceCommit", "previousRelease", "manifestSha256", "existingReleaseId", "existingReleaseUrl"],
+      "properties": {
+        "release": {"$ref": "#/$defs/semver"}, "sourceCommit": {"$ref": "#/$defs/sha"},
+        "previousRelease": {"anyOf": [{"$ref": "#/$defs/semver"}, {"type": "null"}]},
+        "manifestSha256": {"$ref": "#/$defs/digest"},
+        "existingReleaseId": {"anyOf": [{"$ref": "#/$defs/positive"}, {"type": "null"}]},
+        "existingReleaseUrl": {"anyOf": [{"type": "string", "pattern": "^https://github\\.com/greggorio/abaronesa-emporio/releases/tag/v[0-9]+\\.[0-9]+\\.[0-9]+$"}, {"type": "null"}]}
+      }
+    }
+  }
+}

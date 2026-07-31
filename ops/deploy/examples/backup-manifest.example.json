@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "deployment-backup",
+  "operationId": "deployment_0123456789abcdef",
+  "sourceRelease": null,
+  "targetRelease": "v0.0.1",
+  "createdAt": "2026-07-31T12:00:00Z",
+  "databases": [
+    {
+      "id": "erp",
+      "file": "erp.dump",
+      "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 1024
+    },
+    {
+      "id": "website",
+      "file": "website.dump",
+      "sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size": 2048
+    }
+  ],
+  "complete": true
+}

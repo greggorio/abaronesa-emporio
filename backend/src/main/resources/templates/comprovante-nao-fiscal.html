@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title>Comprovante Não Fiscal</title>
+    <style th:inline="text">
+        @page { 
+            size: 80mm [[${pageHeight}]]mm; 
+            margin: 0mm; 
+        }
+        
+        body { 
+            font-family: 'Courier New', monospace; 
+            font-size: 9px; 
+            width: 76mm; 
+            margin: 5mm auto 2mm auto;
+            color: #000;
+        }
+        
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .bold { font-weight: bold; }
+        
+        /* Header Empresa */
+        .header { 
+            border-bottom: 1px solid #000; 
+            padding-bottom: 3px; 
+            margin-bottom: 5px; 
+            text-align: center; 
+        }
+        .header .bold { font-size: 10px; }
+        .header div { font-size: 7px; margin: 1px 0; }
+        
+        /* Título */
+        .title { 
+            font-size: 11px; 
+            font-weight: bold; 
+            margin: 5px 0; 
+            border: 2px solid #000; 
+            padding: 4px; 
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        .title-number { font-size: 9px; margin-top: 2px; }
+        
+        /* Aviso */
+        .warning {
+            background: #000;
+            color: #fff;
+            text-align: center;
+            padding: 3px;
+            margin: 4px 0;
+            font-weight: bold;
+            font-size: 8px;
+        }
+        
+        /* Info venda */
+        .info { 
+            margin: 5px 0; 
+            font-size: 8px;
+        }
+        
+        /* Items */
+        .items-header {
+            font-weight: bold;
+            border-bottom: 1px solid #000;
+            padding-bottom: 2px;
+            margin: 5px 0 3px 0;
+            text-align: center;
+        }
+        
+        .items table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 8px;
+        }
+        .items td { 
+            vertical-align: top; 
+            padding: 2px 0;
+        }
+        .items .item-desc { 
+            margin: 1px 0; 
+        }
+        .items .item-code { 
+            font-size: 7px; 
+            color: #333;
+        }
+        
+        /* Totals */
+        .totals { 
+            margin-top: 5px; 
+            border-top: 1px solid #000; 
+            padding-top: 3px; 
+        }
+        .totals div { 
+            margin: 2px 0; 
+        }
+        .total-final {
+            border-top: 1px dashed #000;
+            padding-top: 3px;
+            margin-top: 3px;
+            font-weight: bold;
+            font-size: 9px;
+        }
+        
+        /* Pagamentos */
+        .payments { 
+            margin-top: 5px; 
+            border-top: 1px dashed #000;
+            padding-top: 3px;
+        }
+        .payments-title {
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 3px;
+        }
+        .payments div { 
+            margin: 2px 0; 
+        }
+        
+        /* Footer */
+        .footer { 
+            margin-top: 8px; 
+            text-align: center; 
+            font-size: 7px;
+            border-top: 1px dashed #000;
+            padding-top: 5px;
+        }
+        .footer .bold { 
+            font-size: 8px; 
+            margin-bottom: 3px;
+        }
+    </style>
+</head>
+<body>
+    <!-- HEADER EMPRESA -->
+    <div class="header">
+        <div class="bold" th:text="${empresaRazaoSocial}">EMPRESA</div>
+        <div th:text="${empresaEndereco}">Endereço</div>
+        <div th:text="'CNPJ: ' + ${empresaCnpj}">CNPJ</div>
+    </div>
+    
+    <!-- TÍTULO -->
+    <div class="title">
+        COMPROVANTE NÃO FISCAL
+        <div class="title-number" th:text="'VENDA Nº ' + ${venda.codigo}">VENDA Nº 000</div>
+        <div style="font-size: 7px; margin-top: 2px;" th:text="${venda.dataVenda}">Data</div>
+    </div>
+    
+    <!-- AVISO -->
+    <div class="warning">
+        ⚠️ DOCUMENTO SEM VALIDADE FISCAL ⚠️
+    </div>
+
+    <!-- CLIENTE -->
+    <div class="info" th:if="${nomeCliente != null or documentoCliente != null}">
+        <div th:if="${nomeCliente != null}">
+            <span class="bold">Cliente:</span> <span th:text="${nomeCliente}">Nome do Cliente</span>
+        </div>
+        <div th:if="${documentoCliente != null}">
+            <span class="bold">CPF/CNPJ:</span> <span th:text="${documentoCliente}">000.000.000-00</span>
+        </div>
+    </div>
+    
+    <!-- ITEMS HEADER -->
+    <div class="items-header">ITENS DA VENDA</div>
+    
+    <!-- ITEMS -->
+    <div class="items">
+        <table>
+            <tbody>
+                <tr th:each="item : ${venda.itens}">
+                    <td>
+                        <div class="item-code" th:text="'Cód: ' + ${item.codigoProduto}">Cód: 001</div>
+                        <div class="item-desc" th:text="${item.descricaoProduto}">Produto</div>
+                    </td>
+                    <td class="text-right" style="white-space: nowrap;">
+                        <div th:text="${item.quantidade} + ' x ' + ${#numbers.formatDecimal(item.valorUnitario, 1, 2)}">1 x 10.00</div>
+                    </td>
+                    <td class="text-right bold" style="white-space: nowrap;">
+                        <div th:text="'R$ ' + ${#numbers.formatDecimal(item.valorTotal, 1, 2)}">R$ 10.00</div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- TOTALS -->
+    <div class="totals">
+        <div class="text-right" th:if="${subtotal != null}">
+            Subtotal: <span class="bold" th:text="'R$ ' + ${#numbers.formatDecimal(subtotal, 1, 2)}">R$ 0.00</span>
+        </div>
+        <div class="text-right" th:if="${valorTaxaServico != null and valorTaxaServico.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+            Serviço (10%): <span class="bold" th:text="'R$ ' + ${#numbers.formatDecimal(valorTaxaServico, 1, 2)}">R$ 0.00</span>
+        </div>
+        <div class="text-right" th:if="${valorCouvert != null and valorCouvert.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+            Couvert Art.: <span class="bold" th:text="'R$ ' + ${#numbers.formatDecimal(valorCouvert, 1, 2)}">R$ 0.00</span>
+        </div>
+        <div class="text-right total-final">
+            TOTAL A PAGAR: <span th:text="'R$ ' + ${#numbers.formatDecimal(totalGeral, 1, 2)}">R$ 0.00</span>
+        </div>
+    </div>
+    
+    <!-- PAGAMENTOS -->
+    <div class="payments">
+        <div class="payments-title">FORMA DE PAGAMENTO</div>
+        <div th:each="pg : ${venda.pagamentos}" class="text-right">
+            <span th:text="${pg.tipoPagamento.descricao}">Dinheiro</span> - 
+            <span class="bold" th:text="'R$ ' + ${#numbers.formatDecimal(pg.valor, 1, 2)}">R$ 0.00</span>
+        </div>
+    </div>
+
+    <!-- ESPAÇAMENTO PARA ITENS FALTANTES -->
+    <div th:if="${espacoItensMm != null and espacoItensMm > 0}"
+         th:style="'height: ' + ${espacoItensMm} + 'mm;'"></div>
+    
+    <!-- FOOTER -->
+    <div class="footer">
+        <div class="bold">OBRIGADO E VOLTE SEMPRE!</div>
+        <div style="margin: 3px 0;">══════════════════════════════════</div>
+        <div>Sistema SmartData</div>
+        <div style="margin-top: 3px; font-size: 7px;">Via do Cliente</div>
+    </div>
+</body>
+</html>

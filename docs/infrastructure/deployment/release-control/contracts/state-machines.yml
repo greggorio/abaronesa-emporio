@@ -1,0 +1,130 @@
+schema_version: 2
+bootstrap:
+  variable: RELEASE_CONTROL_MODE
+  allowed_values: [publisher, deployer]
+  client_selectable: false
+  immutable_at_runtime: true
+
+machines:
+  candidate_eligibility:
+    mode: publisher
+    states:
+      NOT_ELIGIBLE: {terminal: false, active: false, success: false, failure: true, ui_visible: true}
+      READY: {terminal: false, active: false, success: true, failure: false, ui_visible: true}
+    transitions:
+      - {from: NOT_ELIGIBLE, to: READY, actor: reconciler}
+      - {from: READY, to: NOT_ELIGIBLE, actor: reconciler}
+    main_flow: [NOT_ELIGIBLE, READY]
+
+  publication:
+    mode: publisher
+    states:
+      REQUESTED: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      VALIDATING: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      PUBLISHING: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      PUBLISHED: {terminal: true, active: false, success: true, failure: false, ui_visible: true}
+      FAILED: {terminal: true, active: false, success: false, failure: true, ui_visible: true}
+    transitions:
+      - {from: REQUESTED, to: VALIDATING, actor: reconciler}
+      - {from: VALIDATING, to: PUBLISHING, actor: reconciler}
+      - {from: PUBLISHING, to: PUBLISHED, actor: reconciler, requires_remote_evidence: true}
+      - {from: REQUESTED, to: FAILED, actor: reconciler}
+      - {from: VALIDATING, to: FAILED, actor: reconciler}
+      - {from: PUBLISHING, to: FAILED, actor: reconciler}
+    main_flow: [REQUESTED, VALIDATING, PUBLISHING, PUBLISHED]
+
+  deployment:
+    mode: deployer
+    states:
+      AVAILABLE: {terminal: false, active: false, success: false, failure: false, ui_visible: true}
+      QUEUED: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      PULLING: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      BACKING_UP: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      MIGRATING: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      UPDATING: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      VERIFYING: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      SUCCEEDED: {terminal: true, active: false, success: true, failure: false, ui_visible: true}
+      ROLLING_BACK: {terminal: false, active: true, success: false, failure: false, ui_visible: true}
+      ROLLED_BACK: {terminal: true, active: false, success: false, failure: true, ui_visible: true}
+      FAILED: {terminal: true, active: false, success: false, failure: true, ui_visible: true}
+    transitions:
+      - {from: AVAILABLE, to: QUEUED, actor: internal_request}
+      - {from: QUEUED, to: PULLING, actor: reconciler}
+      - {from: PULLING, to: BACKING_UP, actor: reconciler}
+      - {from: BACKING_UP, to: MIGRATING, actor: reconciler}
+      - {from: MIGRATING, to: UPDATING, actor: reconciler}
+      - {from: UPDATING, to: VERIFYING, actor: reconciler}
+      - {from: VERIFYING, to: SUCCEEDED, actor: reconciler, requires_remote_evidence: true}
+      - {from: QUEUED, to: SUCCEEDED, actor: reconciler, requires_remote_evidence: true}
+      - {from: QUEUED, to: ROLLED_BACK, actor: reconciler, requires_remote_evidence: true}
+      - {from: QUEUED, to: FAILED, actor: reconciler}
+      - {from: PULLING, to: FAILED, actor: reconciler}
+      - {from: BACKING_UP, to: FAILED, actor: reconciler}
+      - {from: MIGRATING, to: ROLLING_BACK, actor: reconciler}
+      - {from: UPDATING, to: ROLLING_BACK, actor: reconciler}
+      - {from: VERIFYING, to: ROLLING_BACK, actor: reconciler}
+      - {from: ROLLING_BACK, to: ROLLED_BACK, actor: reconciler, requires_remote_evidence: true}
+      - {from: ROLLING_BACK, to: FAILED, actor: reconciler}
+    main_flow: [QUEUED, PULLING, BACKING_UP, MIGRATING, UPDATING, VERIFYING, SUCCEEDED]
+
+idempotency:
+  required_operations:
+    - publisher:POST:/api/release-publisher/v1/releases
+    - deployer:POST:/api/deployment-control/v1/deployments
+    - deployer:POST:/api/deployment-control/v1/rollbacks
+  scope: [mode, route, actor_id, idempotency_key]
+  canonical_request_hash: true
+  replay_returns_existing_operation: true
+  conflict_code: IDEMPOTENCY_CONFLICT
+  retry_starts_second_workflow: false
+  key_is_public_operation_id: false
+  retention: pending_configuration
+
+concurrency:
+  semantic_version_reservation:
+    lock: publication_version
+    unique: true
+  production:
+    lock: production_global
+    shared_by: [deployment, rollback]
+    max_active: 1
+    new_request_cancels_active: false
+    conflict_code: PRODUCTION_OPERATION_ACTIVE
+    workflow_concurrency_complements_local_lock: true
+
+reconciliation:
+  persistence_technology: postgresql_16_sqlalchemy_2
+  operation_record_required:
+    - operationId
+    - operationType
+    - mode
+    - state
+    - actorId
+    - idempotencyKeyHash
+    - requestHash
+    - targetRelease
+    - createdAt
+    - updatedAt
+  operation_record_optional:
+    - sourceCommit
+    - workflowRunId
+    - workflowRunUrl
+    - workflowAttempt
+    - controlSha
+    - startedAt
+    - finishedAt
+    - errorCode
+    - errorMessageSanitized
+  github_token_persisted: false
+  workflow_run_binding:
+    optional_before_discovery: true
+    required_after_correlation: true
+    immutable_run_id_after_correlation: true
+    immutable_control_sha_after_correlation: true
+    same_run_rerun_may_increase_attempt: true
+    attempt_may_regress: false
+  reconcile_after_restart: true
+  terminal_state_regresses: false
+  success_requires_remote_evidence: true
+  remote_evidence_inconsistency: fail_closed_and_audit
+  ui_reads_reconciled_local_state: true

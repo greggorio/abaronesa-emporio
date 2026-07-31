@@ -1,0 +1,103 @@
+schema_version: 1
+contract_status: future_only
+runtime_consumer: none
+activation_slice: S26
+operation_type: rollback
+initial_state: QUEUED
+states:
+  QUEUED:
+    terminal: false
+    active: true
+    success: false
+    failure: false
+    uncertain: false
+  PRECHECKING:
+    terminal: false
+    active: true
+    success: false
+    failure: false
+    uncertain: false
+  RESTORING:
+    terminal: false
+    active: true
+    success: false
+    failure: false
+    uncertain: false
+  SWITCHING:
+    terminal: false
+    active: true
+    success: false
+    failure: false
+    uncertain: false
+  VERIFYING:
+    terminal: false
+    active: true
+    success: false
+    failure: false
+    uncertain: false
+  SUCCEEDED:
+    terminal: true
+    active: false
+    success: true
+    failure: false
+    uncertain: false
+  ROLLING_BACK:
+    terminal: false
+    active: true
+    success: false
+    failure: false
+    uncertain: false
+  ROLLED_BACK:
+    terminal: true
+    active: false
+    success: false
+    failure: true
+    uncertain: false
+  FAILED:
+    terminal: true
+    active: false
+    success: false
+    failure: true
+    uncertain: false
+  UNCERTAIN:
+    terminal: true
+    active: false
+    success: false
+    failure: false
+    uncertain: true
+transitions:
+  - {from: QUEUED, to: PRECHECKING, actor: reconciler}
+  - {from: PRECHECKING, to: RESTORING, actor: reconciler, requires: database_restore_required}
+  - {from: PRECHECKING, to: SWITCHING, actor: reconciler, requires: reversible_delta_proven}
+  - {from: PRECHECKING, to: FAILED, actor: reconciler, requires: precheck_failure_before_side_effect}
+  - {from: PRECHECKING, to: UNCERTAIN, actor: reconciler, requires: precheck_evidence_uncertain}
+  - {from: RESTORING, to: SWITCHING, actor: reconciler, requires: restore_verified}
+  - {from: RESTORING, to: FAILED, actor: reconciler, requires: restore_failed_before_side_effect}
+  - {from: RESTORING, to: ROLLING_BACK, actor: reconciler, requires: restore_side_effect_requires_compensation}
+  - {from: RESTORING, to: UNCERTAIN, actor: reconciler, requires: restore_evidence_uncertain}
+  - {from: SWITCHING, to: VERIFYING, actor: reconciler, requires: switch_evidence_recorded}
+  - {from: SWITCHING, to: ROLLING_BACK, actor: reconciler, requires: switch_side_effect_failed}
+  - {from: SWITCHING, to: UNCERTAIN, actor: reconciler, requires: switch_evidence_uncertain}
+  - {from: VERIFYING, to: SUCCEEDED, actor: reconciler, requires: target_database_links_and_components_verified}
+  - {from: VERIFYING, to: ROLLING_BACK, actor: reconciler, requires: verification_side_effect_failed}
+  - {from: VERIFYING, to: UNCERTAIN, actor: reconciler, requires: verification_evidence_uncertain}
+  - {from: ROLLING_BACK, to: ROLLED_BACK, actor: reconciler, requires: compensation_evidence_complete}
+  - {from: ROLLING_BACK, to: UNCERTAIN, actor: reconciler, requires: compensation_evidence_uncertain}
+main_flow:
+  - QUEUED
+  - PRECHECKING
+  - RESTORING
+  - SWITCHING
+  - VERIFYING
+  - SUCCEEDED
+terminal_states: [SUCCEEDED, ROLLED_BACK, FAILED, UNCERTAIN]
+invariants:
+  only_reconciler_transitions: true
+  client_cannot_set_state: true
+  terminal_states_have_no_outgoing_transitions: true
+  terminal_states_repeat_side_effects: false
+  success_requires_reconciled_target: true
+  success_requires_restore_evidence_when_required: true
+  database_restore_required_stays_true_until_terminal_restore_evidence: true
+  uncertainty_blocks_new_operation_until_human_reconciliation: true
+  compensating_rollback_is_not_commercial_rollback_success: true

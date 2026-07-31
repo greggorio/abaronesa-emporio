@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greggorio/abaronesa-emporio/ops/releases/global-release.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "deployable", "release", "repository", "sourceCommit", "publishedAt", "description", "changelog", "candidate", "publication", "previousRelease", "catalog", "components", "databases"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "global-release"},
+    "deployable": {"const": true},
+    "release": {"$ref": "#/$defs/semver"},
+    "repository": {"const": "greggorio/abaronesa-emporio"},
+    "sourceCommit": {"$ref": "#/$defs/sha"},
+    "publishedAt": {"$ref": "#/$defs/time"},
+    "description": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": "^[^\\u0000-\\u001f\\u007f]+$"},
+    "changelog": {"type": "string", "minLength": 1, "maxLength": 10000, "pattern": "^[^\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]+$"},
+    "candidate": {"$ref": "#/$defs/candidate"},
+    "publication": {"$ref": "#/$defs/publication"},
+    "previousRelease": {"anyOf": [{"$ref": "#/$defs/semver"}, {"type": "null"}]},
+    "catalog": {"$ref": "#/$defs/catalog"},
+    "components": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/component"}
+    },
+    "databases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/database"}
+    }
+  },
+  "$defs": {
+    "semver": {"type": "string", "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"},
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "time": {"type": "string", "format": "date-time", "pattern": "Z$"},
+    "positiveString": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateId", "manifestSha256", "artifactId", "artifactDigest", "workflowRunId", "workflowAttempt"],
+      "properties": {
+        "candidateId": {"type": "string", "pattern": "^candidate-[a-z0-9._-]+$"},
+        "manifestSha256": {"$ref": "#/$defs/digest"},
+        "artifactId": {"$ref": "#/$defs/positiveString"},
+        "artifactDigest": {"$ref": "#/$defs/digest"},
+        "workflowRunId": {"$ref": "#/$defs/positiveString"},
+        "workflowAttempt": {"type": "integer", "minimum": 1}
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workflowRunId", "workflowAttempt", "actor", "actorId", "event"],
+      "properties": {
+        "workflowRunId": {"$ref": "#/$defs/positiveString"},
+        "workflowAttempt": {"type": "integer", "minimum": 1},
+        "actor": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[^\\u0000-\\u001f\\u007f]+$"},
+        "actorId": {"$ref": "#/$defs/positiveString"},
+        "event": {"const": "workflow_dispatch"}
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "sha256"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "test", "scan"],
+      "properties": {
+        "build": {"const": "passed"},
+        "test": {"const": "passed"},
+        "scan": {"const": "passed"}
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["org.opencontainers.image.source", "org.opencontainers.image.revision", "org.opencontainers.image.version", "org.opencontainers.image.created"],
+      "properties": {
+        "org.opencontainers.image.source": {"const": "https://github.com/greggorio/abaronesa-emporio"},
+        "org.opencontainers.image.revision": {"$ref": "#/$defs/sha"},
+        "org.opencontainers.image.version": {"type": "string", "minLength": 1},
+        "org.opencontainers.image.created": {"$ref": "#/$defs/time"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attestationId", "attestationUrl", "verifiedSubject", "verifiedAt"],
+      "properties": {
+        "attestationId": {"$ref": "#/$defs/positiveString"},
+        "attestationUrl": {"type": "string", "pattern": "^https://github\\.com/greggorio/abaronesa-emporio/attestations/[1-9][0-9]*$"},
+        "verifiedSubject": {"type": "string", "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-[a-z0-9-]+@sha256:[0-9a-f]{64}$"},
+        "verifiedAt": {"$ref": "#/$defs/time"}
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "imageRepository", "tag", "digest", "immutableRef", "commitSha", "workflowRunId", "workflowAttempt", "builtAt", "state", "originCandidateId", "labels", "checks", "provenance"],
+      "properties": {
+        "id": {"enum": ["backend", "website_back", "frontend", "website_front", "whatsapp_service", "gateway"]},
+        "imageRepository": {"type": "string", "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-[a-z0-9-]+$"},
+        "tag": {"type": "string", "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-[a-z0-9-]+:sha-[0-9a-f]{40}$"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "immutableRef": {"type": "string", "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-[a-z0-9-]+@sha256:[0-9a-f]{64}$"},
+        "commitSha": {"$ref": "#/$defs/sha"},
+        "workflowRunId": {"$ref": "#/$defs/positiveString"},
+        "workflowAttempt": {"type": "integer", "minimum": 1},
+        "builtAt": {"$ref": "#/$defs/time"},
+        "state": {"enum": ["built", "inherited"]},
+        "originCandidateId": {"anyOf": [{"type": "string", "pattern": "^candidate-[a-z0-9._-]+$"}, {"type": "null"}]},
+        "labels": {"$ref": "#/$defs/labels"},
+        "checks": {"$ref": "#/$defs/checks"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"state": {"const": "built"}}},
+          "then": {"properties": {"originCandidateId": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"state": {"const": "inherited"}}},
+          "then": {"properties": {"originCandidateId": {"type": "string", "pattern": "^candidate-[a-z0-9._-]+$"}}}
+        }
+      ]
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "path", "sha256"],
+      "properties": {
+        "version": {"type": "string", "pattern": "^[0-9]+(?:[._][0-9]+)*$"},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ownerComponent", "engine", "location", "latestVersion", "migrationSetSha256", "backupPolicy", "rollbackPolicy", "migrations"],
+      "properties": {
+        "id": {"enum": ["erp", "website"]},
+        "ownerComponent": {"enum": ["backend", "website_back"]},
+        "engine": {"const": "flyway"},
+        "location": {"enum": ["backend/src/main/resources/db/migration", "website_back/src/main/resources/db/migration"]},
+        "latestVersion": {"type": "string", "pattern": "^[0-9]+(?:[._][0-9]+)*$"},
+        "migrationSetSha256": {"$ref": "#/$defs/digest"},
+        "backupPolicy": {"const": "required_on_change"},
+        "rollbackPolicy": {"const": "restore_required"},
+        "migrations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/migration"}}
+      }
+    }
+  }
+}

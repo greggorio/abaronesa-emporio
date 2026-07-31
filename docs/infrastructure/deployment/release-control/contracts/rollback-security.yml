@@ -1,0 +1,110 @@
+schema_version: 1
+contract_status: future_only
+runtime_consumer: none
+activation_slice: S26
+current_runtime:
+  deployer_capabilities_exact: [deployment:read, deployment:execute]
+  rollback_capability: absent
+  rollback_route: reserved_and_unavailable
+  ui: unchanged_and_unavailable
+authorization:
+  future_scope: deployment:rollback
+  route_method: POST
+  route_path: /api/deployment-control/v1/rollbacks
+  server_calculates_eligibility: true
+  operator_selects_component: false
+  operator_selects_digest: false
+  operator_selects_tag: false
+  operator_selects_image: false
+  capability_enabled_by_this_contract: false
+eligibility:
+  current_installation:
+    reconciled_required: true
+    snapshot_required: true
+    source_commit_verified: true
+    manifest_verified: true
+  target_release:
+    kind: global-release
+    published_required: true
+    deployable_required: true
+    immutable_required: true
+    previous_required: true
+    strictly_before_current: true
+    immediate_predecessor_required: true
+    same_chain_required: true
+    candidate_allowed: false
+    non_deployable_allowed: false
+    divergent_predecessor_allowed: false
+    skipped_release_allowed: false
+  readiness:
+    no_active_production_operation: true
+    all_six_components_bound: true
+    both_migration_inventories_bound: true
+    backup_decision_verified_before_side_effect: true
+migrations:
+  databases_in_order: [erp, website]
+  compare_fields: [version, path, sha256]
+  applied_since_target_requires_restore: true
+  reversible_delta_exception_requires_integral_explicit_proof: true
+  absent_proof_requires_restore: true
+  restore_required_is_sticky_until_terminal_evidence: true
+  image_revert_without_restore_is_not_success: true
+backup:
+  canonical_fields: [backupId, sourceRelease, sourceStateSha256, databases, artifactSha256, createdAt, expiresAt]
+  databases_exact: [erp, website]
+  retention_minimum_days: 365
+  silent_renewal: false
+  required_before_restore: true
+  required_properties:
+    backupId: opaque_identifier
+    sourceRelease: current_reconciled_release
+    sourceStateSha256: sha256_digest
+    databases: [erp, website]
+    artifactSha256: sha256_digest
+    createdAt: utc_timestamp
+    expiresAt: utc_timestamp
+  forbidden_fields: [path, credential, credentials, dump, dumpContent, privateUrl, url]
+data_and_sessions:
+  uploads:
+    deleted_implicitly: false
+    restored_implicitly: false
+    restore_requires_explicit_evidence: true
+    restore_requires_contracted_operation: true
+  whatsapp_session:
+    restored_automatically: false
+    incompatibility_state: safe_and_manual_repair_required
+api:
+  request_exact_fields: [release, reason]
+  request_additional_properties: false
+  reason_min_length: 10
+  reason_max_length: 1000
+  idempotency:
+    header: Idempotency-Key
+    pattern: '^deployer-rollback-<UUID v4>$'
+    replay_identical_request: same_operation
+    divergent_request_same_key: IDEMPOTENCY_CONFLICT
+    automatic_retry_after_network_or_invalid_response: false
+  operation_type: rollback
+  lock:
+    name: production_global
+    shared_with: [deployment]
+    max_active: 1
+    conflict_code: PRODUCTION_OPERATION_ACTIVE
+    cancels_active_operation: false
+recovery:
+  states: [QUEUED, PRECHECKING, RESTORING, SWITCHING, VERIFYING, SUCCEEDED, ROLLING_BACK, ROLLED_BACK, FAILED, UNCERTAIN]
+  failed_before_switch: FAILED
+  side_effect_failure_requires_compensation: true
+  complete_compensation: ROLLED_BACK
+  uncertainty_sources: [database, links, volume, operation, journal]
+  uncertainty_state: UNCERTAIN
+  uncertainty_blocks_new_operation: true
+  terminal_states_repeat_side_effects: false
+forbidden_activation:
+  runtime_import: false
+  backend_route: false
+  frontend_surface: false
+  publisher_change: false
+  workflow_change: false
+  docker_change: false
+  production_access: false

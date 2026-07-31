@@ -1,0 +1,2 @@
+ALTER TABLE pagamento
+ADD COLUMN valor_couvert NUMERIC(10, 2) NOT NULL DEFAULT 0;

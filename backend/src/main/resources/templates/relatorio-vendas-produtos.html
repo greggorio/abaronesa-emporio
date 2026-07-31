@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title>Relatório de Vendas por Produto</title>
+
+    <style>
+        @page {
+            size: A4;
+            margin: 1.5cm;
+
+            @bottom-center {
+                content: element(footer);
+            }
+        }
+
+        div.header {
+            padding-bottom: 14px;
+            border-bottom: 1px solid #c8c8c8;
+            margin-bottom: 20px;
+        }
+
+        div.footer {
+            position: running(footer);
+            margin-top: 28px;
+            padding-top: 10px;
+            border-top: 0.5px solid #d4d4d4;
+            display: table;
+            width: 100%;
+        }
+
+        .footer-right::after {
+            content: "Página " counter(page) " de " counter(pages);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            color: #1a1a1a;
+            background: #fff;
+        }
+
+        /* ── HEADER ── */
+
+        .header-top {
+            display: table;
+            width: 100%;
+        }
+
+        .empresa {
+            display: table-cell;
+            vertical-align: top;
+        }
+
+        .empresa-nome {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+        }
+
+        .empresa-info {
+            font-family: Arial, sans-serif;
+            font-size: 9.5px;
+            color: #888;
+            line-height: 1.6;
+        }
+
+        .geracao {
+            display: table-cell;
+            text-align: right;
+            vertical-align: top;
+            font-family: Arial, sans-serif;
+            font-size: 9.5px;
+            color: #888;
+            line-height: 1.7;
+        }
+
+        /* ── TÍTULO ── */
+        .titulo-bloco {
+            text-align: center;
+            margin-top: 16px;
+        }
+
+        .titulo {
+            font-family: Arial, sans-serif;
+            font-size: 10.5px;
+            font-weight: bold;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #1a1a1a;
+            margin-bottom: 6px;
+        }
+
+        .titulo-divider {
+            width: 28px;
+            height: 1px;
+            background: #aaa;
+            margin: 6px auto;
+        }
+
+        .periodo {
+            font-family: Arial, sans-serif;
+            font-size: 9.5px;
+            color: #888;
+        }
+
+        /* ── KPI CARDS ── */
+        .kpi-container {
+            display: table;
+            width: 100%;
+            margin-bottom: 22px;
+            margin-top: 22px;
+        }
+
+        .kpi {
+            display: table-cell;
+            width: 33.33%;
+            padding: 0 6px;
+        }
+
+        .kpi:first-child { padding-left: 0; }
+        .kpi:last-child  { padding-right: 0; }
+
+        .kpi-box {
+            border: 0.5px solid #d4d4d4;
+            border-radius: 3px;
+            padding: 12px 14px;
+            background: #f8f8f7;
+        }
+
+        .kpi-label {
+            font-family: Arial, sans-serif;
+            font-size: 8px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #999;
+            margin-bottom: 5px;
+        }
+
+        .kpi-valor {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 19px;
+            font-weight: normal;
+            color: #1a1a1a;
+            letter-spacing: -0.01em;
+        }
+
+        /* ── TABELA ── */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead tr {
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        th {
+            font-family: Arial, sans-serif;
+            font-size: 8px;
+            font-weight: bold;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #666;
+            padding: 8px 10px;
+            text-align: left;
+            background: transparent;
+        }
+
+        td {
+            font-family: Arial, sans-serif;
+            font-size: 10.5px;
+            color: #1a1a1a;
+            padding: 6.5px 10px;
+            border-bottom: 0.5px solid #e8e8e8;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .td-muted {
+            color: #666;
+        }
+
+        /* linha de total */
+        tfoot tr {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        tfoot td {
+            font-family: Arial, sans-serif;
+            font-size: 10.5px;
+            font-weight: bold;
+            color: #1a1a1a;
+            padding: 8px 10px;
+            border-bottom: none;
+        }
+
+        /* ── FOOTER ── */
+        .footer-left {
+            display: table-cell;
+            font-family: Arial, sans-serif;
+            font-size: 8.5px;
+            color: #aaa;
+        }
+
+        .footer-right {
+            display: table-cell;
+            text-align: right;
+            font-family: Arial, sans-serif;
+            font-size: 8.5px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+<!-- FOOTER (running) -->
+<div class="footer">
+    <div class="footer-left">Sistema de Gestão — Smart Store</div>
+    <div class="footer-right"></div>
+</div>
+
+<!-- HEADER (running) -->
+<div class="header">
+    <div class="header-top">
+        <div class="empresa">
+            <div class="empresa-nome" th:text="${relatorio.empresa.nomeFantasia}">Nome da Empresa</div>
+            <div class="empresa-info">
+                <div th:text="${relatorio.empresa.razaoSocial}">Razão Social</div>
+                <div>CNPJ: <span th:text="${relatorio.empresa.cnpj}"></span></div>
+            </div>
+        </div>
+        <div class="geracao">
+            <div>Gerado em: <strong th:text="${#temporals.format(relatorio.dataGeracao, 'dd/MM/yyyy HH:mm')}">01/01/2026 10:00</strong></div>
+            <div>Usuário: <span th:text="${relatorio.usuarioGeracao}">Admin</span></div>
+        </div>
+    </div>
+
+    <div class="titulo-bloco">
+        <div class="titulo">Relatório de Vendas por Produto</div>
+        <div class="titulo-divider"></div>
+        <div class="periodo"
+             th:text="'Período: ' + ${#temporals.format(relatorio.filtros.dataInicio, 'dd/MM/yyyy')} + ' até ' + ${#temporals.format(relatorio.filtros.dataFim, 'dd/MM/yyyy')}">
+            Período: 01/01/2026 até 31/01/2026
+        </div>
+    </div>
+</div>
+
+<!-- KPIs -->
+<div class="kpi-container">
+    <div class="kpi">
+        <div class="kpi-box">
+            <div class="kpi-label">Faturamento total</div>
+            <div class="kpi-valor"
+                 th:text="'R$ ' + ${#numbers.formatDecimal(relatorio.resumo.faturamentoTotal, 1, 'POINT', 2, 'COMMA')}">
+                R$ 0,00
+            </div>
+        </div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-box">
+            <div class="kpi-label">Itens vendidos</div>
+            <div class="kpi-valor" th:text="${relatorio.resumo.totalItensVendidos}">0</div>
+        </div>
+    </div>
+    <div class="kpi">
+        <div class="kpi-box">
+            <div class="kpi-label">Ticket médio</div>
+            <div class="kpi-valor"
+                 th:text="'R$ ' + ${#numbers.formatDecimal(relatorio.resumo.ticketMedio, 1, 'POINT', 2, 'COMMA')}">
+                R$ 0,00
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TABELA -->
+<table>
+    <thead>
+        <tr>
+            <th>Produto</th>
+            <th class="text-right">Qtd</th>
+            <th class="text-right">Unit. médio</th>
+            <th class="text-right">Total</th>
+            <th class="text-right">Participação</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr th:each="prod : ${relatorio.produtos}">
+            <td th:text="${prod.nome}">Produto</td>
+            <td class="text-right td-muted" th:text="${prod.quantidade}">0</td>
+            <td class="text-right td-muted"
+                th:text="'R$ ' + ${#numbers.formatDecimal(prod.valorUnitarioMedio, 1, 'POINT', 2, 'COMMA')}"></td>
+            <td class="text-right"
+                th:text="'R$ ' + ${#numbers.formatDecimal(prod.valorTotal, 1, 'POINT', 2, 'COMMA')}"></td>
+            <td class="text-right td-muted"
+                th:text="${#numbers.formatDecimal(prod.percentualParticipacao, 1, 'POINT', 2, 'COMMA')} + '%'"></td>
+        </tr>
+    </tbody>
+    <tfoot>
+        <tr>
+            <td>Total</td>
+            <td class="text-right" th:text="${relatorio.resumo.totalItensVendidos}">0</td>
+            <td class="text-right">—</td>
+            <td class="text-right"
+                th:text="'R$ ' + ${#numbers.formatDecimal(relatorio.resumo.faturamentoTotal, 1, 'POINT', 2, 'COMMA')}">
+                R$ 0,00
+            </td>
+            <td class="text-right">100,00%</td>
+        </tr>
+    </tfoot>
+</table>
+
+</body>
+</html>

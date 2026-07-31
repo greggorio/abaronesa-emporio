@@ -1,0 +1,1 @@
+ALTER TABLE mesa ADD COLUMN referencia VARCHAR(100);

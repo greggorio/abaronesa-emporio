@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abaronesa.invalid/schemas/rollback-command.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "schemaVersion", "operationId", "state", "targetRelease", "evidenceSha256"],
+  "properties": {
+    "protocol": {"const": "emporio-commercial-rollback-transport"},
+    "schemaVersion": {"const": 1},
+    "operationId": {"type": "string", "pattern": "^rbk_[0-9a-f]{32}$"},
+    "state": {"enum": ["PRECHECKING", "RESTORING", "SWITCHING", "VERIFYING", "ROLLING_BACK"]},
+    "targetRelease": {"type": "string", "pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "evidenceSha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

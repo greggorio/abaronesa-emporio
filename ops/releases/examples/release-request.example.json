@@ -1,0 +1,6 @@
+{
+  "candidateId": "candidate-1111111111111111111111111111111111111111-200-1",
+  "versionBump": "PATCH",
+  "description": "Correcao operacional ficticia",
+  "changelog": "Ajustes ficticios validados pelo pipeline."
+}

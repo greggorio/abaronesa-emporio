@@ -1,0 +1,8 @@
+{
+	"appId": "com.monicadepilacoes.app",
+	"appName": "MonicaLeila",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
+}

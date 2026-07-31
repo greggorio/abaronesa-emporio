@@ -1,0 +1,222 @@
+name: Publish Candidate
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: candidate-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  trust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+      head_mode: ${{ steps.verify.outputs.head_mode }}
+    steps:
+      - name: Persist untrusted event without interpolation
+        env: {RUN_JSON: "${{ toJSON(github.event.workflow_run) }}"}
+        run: python3 -c 'import os,pathlib; pathlib.Path("workflow-run.json").write_text(os.environ["RUN_JSON"]+"\n")'
+      - name: Checkout received SHA
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: {ref: "${{ github.event.workflow_run.head_sha }}", fetch-depth: 0, persist-credentials: false}
+      - name: Download the unique CI plan from the triggering run
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-plan, path: candidate-plan, run-id: "${{ github.event.workflow_run.id }}", github-token: "${{ github.token }}"}
+      - name: Validate event plan attempt and exact HEAD
+        id: verify
+        run: python3 tools/candidates/trust.py --event workflow-run.json --plan candidate-plan/candidate-plan.json
+
+  predecessor:
+    needs: trust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      mode: ${{ steps.resolve.outputs.mode }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      has_builds: ${{ steps.resolve.outputs.has_builds }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: {ref: "${{ needs.trust.outputs.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-plan, path: candidate-plan, run-id: "${{ github.event.workflow_run.id }}", github-token: "${{ github.token }}"}
+      - name: Resolve lineage and cumulative effective plan
+        id: resolve
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: python3 tools/candidates/previous_candidate.py --plan candidate-plan/candidate-plan.json --output effective --context predecessor-context --max-pages 10 --initial-mode "${{ needs.trust.outputs.head_mode }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: {name: candidate-effective-plan, path: effective/candidate-effective-plan.json, if-no-files-found: error, retention-days: 1, overwrite: false}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: {name: candidate-predecessor-context, path: predecessor-context/, if-no-files-found: error, retention-days: 1, overwrite: false}
+
+  build:
+    if: needs.predecessor.outputs.mode == 'continue' && needs.predecessor.outputs.has_builds == 'true'
+    needs: [trust, predecessor]
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.predecessor.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: {ref: "${{ needs.trust.outputs.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Build once and load exact local tag
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ matrix.repository }}:sha-${{ needs.trust.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/greggorio/abaronesa-emporio
+            org.opencontainers.image.revision=${{ needs.trust.outputs.sha }}
+            org.opencontainers.image.version=candidate-${{ needs.trust.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+            org.opencontainers.image.created=${{ github.event.workflow_run.updated_at }}
+      - name: Scan exact local image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with: {image-ref: "${{ matrix.repository }}:sha-${{ needs.trust.outputs.sha }}", severity: "HIGH,CRITICAL", ignore-unfixed: false, exit-code: "1", trivy-version: v0.70.0, cache: false}
+      - name: Authenticate only after scan
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ github.token }}"}
+      - name: Push once and inspect remote registry manifest
+        id: remote
+        env: {EFFECTIVE_SHA: "${{ needs.trust.outputs.sha }}"}
+        run: |
+          docker push "${{ matrix.repository }}:sha-${{ needs.trust.outputs.sha }}"
+          python3 tools/candidates/image_result.py remote --component "${{ matrix.component }}" --repository "${{ matrix.repository }}" --tag "${{ matrix.repository }}:sha-${{ needs.trust.outputs.sha }}" --output result/component-result.json
+      - name: Attest exact immutable subject
+        id: attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with: {subject-name: "${{ matrix.repository }}", subject-digest: "${{ steps.remote.outputs.digest }}", push-to-registry: true}
+      - name: Verify attestation then finalize result
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          gh attestation verify "oci://${{ matrix.repository }}@${{ steps.remote.outputs.digest }}" --repo greggorio/abaronesa-emporio
+          python3 tools/candidates/image_result.py attest --result result/component-result.json --attestation-id "${{ steps.attest.outputs.attestation-id }}" --attestation-url "${{ steps.attest.outputs.attestation-url }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: {name: "candidate-component-${{ matrix.component }}", path: result/component-result.json, if-no-files-found: error, retention-days: 1, overwrite: false}
+      - name: Logout remove exact tag and prove absence
+        if: always()
+        run: python3 tools/candidates/cleanup_image.py --reference "${{ matrix.repository }}:sha-${{ needs.trust.outputs.sha }}"
+
+  assemble:
+    if: always() && needs.predecessor.result == 'success' && needs.predecessor.outputs.mode == 'continue' && (needs.build.result == 'success' || (needs.predecessor.outputs.has_builds == 'false' && needs.build.result == 'skipped'))
+    needs: [trust, predecessor, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: {ref: "${{ needs.trust.outputs.sha }}", fetch-depth: 1, persist-credentials: false}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-effective-plan, path: effective}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-predecessor-context, path: predecessor-context}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        if: needs.predecessor.outputs.has_builds == 'true'
+        with: {pattern: candidate-component-*, path: component-results}
+      - name: Assemble strict pending bundle
+        env: {CANDIDATE_CREATED_AT: "${{ github.event.workflow_run.updated_at }}"}
+        run: python3 tools/candidates/assemble_candidate.py --effective effective/candidate-effective-plan.json --results component-results --context predecessor-context --output pending
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: {name: candidate-pending, path: pending/, if-no-files-found: error, retention-days: 1, overwrite: false}
+
+  integrated:
+    needs: [trust, assemble]
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env: {CANDIDATE_POSTGRES_IMAGE: "docker.io/library/postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297"}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: {ref: "${{ needs.trust.outputs.sha }}", fetch-depth: 1, persist-credentials: false}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-pending, path: pending}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-effective-plan, path: effective}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-predecessor-context, path: predecessor-context}
+      - name: Validate complete pending artifact before environment or Docker
+        run: python3 tools/candidates/validate_pending.py --pending-dir pending --effective effective/candidate-effective-plan.json --selection predecessor-context/selection.json --run "${{ github.run_id }}" --attempt "${{ github.run_attempt }}"
+      - name: Emit LF environment
+        run: python3 tools/candidates/compose_env.py --pending-dir pending --effective effective/candidate-effective-plan.json --selection predecessor-context/selection.json --run "${{ github.run_id }}" --attempt "${{ github.run_attempt }}"
+      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ github.token }}"}
+      - name: Pull test probe cleanup and receipt
+        run: python3 tools/candidates/integrated_harness.py --pending-dir pending --effective effective/candidate-effective-plan.json --selection predecessor-context/selection.json --run "${{ github.run_id }}" --attempt "${{ github.run_attempt }}" --compose ops/compose/docker-compose.emporio.yml --override ops/compose/testing/compose.candidate.yml --project "candidate-${{ github.run_id }}-${{ github.run_attempt }}" --output integration
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: {name: candidate-integration-result, path: integration/, if-no-files-found: error, retention-days: 1, overwrite: false}
+
+  publish:
+    if: always() && needs.predecessor.result == 'success'
+    needs: [trust, predecessor, integrated]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: {ref: "${{ needs.trust.outputs.sha }}", fetch-depth: 0, persist-credentials: false}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-effective-plan, path: effective}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with: {name: candidate-predecessor-context, path: predecessor-context}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        if: needs.predecessor.outputs.mode == 'continue'
+        with: {name: candidate-pending, path: pending}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        if: needs.predecessor.outputs.mode == 'continue'
+        with: {name: candidate-integration-result, path: integration}
+      - name: Validate expected integrated state
+        run: |
+          if [ "${{ needs.predecessor.outputs.mode }}" = continue ] && [ "${{ needs.integrated.result }}" != success ]; then exit 1; fi
+          if [ "${{ needs.predecessor.outputs.mode }}" != continue ] && [ "${{ needs.integrated.result }}" != skipped ]; then exit 1; fi
+      - name: Recheck HEAD lineage and idempotency
+        id: guard
+        if: needs.predecessor.outputs.mode == 'continue'
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: python3 tools/candidates/publish_guard.py --sha "${{ needs.trust.outputs.sha }}"
+      - name: Finalize exact candidate bundle
+        if: needs.predecessor.outputs.mode == 'continue' && steps.guard.outputs.mode == 'continue'
+        run: python3 tools/candidates/finalize_candidate.py --pending-dir pending --receipt-dir integration --effective effective/candidate-effective-plan.json --context predecessor-context --output final
+      - name: Upload final candidate
+        id: candidate
+        if: needs.predecessor.outputs.mode == 'continue' && steps.guard.outputs.mode == 'continue'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: {name: candidate-manifest, path: final/, if-no-files-found: error, retention-days: 30, overwrite: false}
+      - name: Read predecessor context
+        id: context
+        run: python3 tools/candidates/outcome_context.py --effective effective/candidate-effective-plan.json
+      - name: Create published outcome
+        if: steps.candidate.outcome == 'success'
+        run: python3 tools/candidates/outcome.py --status published --sha "${{ needs.trust.outputs.sha }}" --run "${{ github.run_id }}" --attempt "${{ github.run_attempt }}" --predecessor "${{ steps.context.outputs.predecessor_id }}" --candidate-id "candidate-${{ needs.trust.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}" --artifact-id "${{ steps.candidate.outputs.artifact-id }}" --artifact-digest "${{ steps.candidate.outputs.artifact-digest }}" --output outcome
+      - name: Create prior terminal outcome
+        if: needs.predecessor.outputs.mode != 'continue'
+        run: python3 tools/candidates/outcome.py --status "${{ needs.predecessor.outputs.mode }}" --sha "${{ needs.trust.outputs.sha }}" --run "${{ github.run_id }}" --attempt "${{ github.run_attempt }}" --predecessor "${{ steps.context.outputs.predecessor_id }}" ${{ needs.predecessor.outputs.mode == 'already_published' && format('--candidate-id \"{0}\" --artifact-id \"{1}\" --artifact-digest \"{2}\"', steps.context.outputs.predecessor_id, steps.context.outputs.predecessor_artifact_id, steps.context.outputs.predecessor_artifact_digest) || '' }} --output outcome
+      - name: Create final-guard terminal outcome
+        if: needs.predecessor.outputs.mode == 'continue' && steps.guard.outputs.mode != 'continue'
+        run: python3 tools/candidates/outcome.py --status "${{ steps.guard.outputs.mode }}" --sha "${{ needs.trust.outputs.sha }}" --run "${{ github.run_id }}" --attempt "${{ github.run_attempt }}" --predecessor "${{ steps.guard.outputs.mode == 'already_published' && steps.guard.outputs.candidate_id || steps.context.outputs.predecessor_id }}" ${{ steps.guard.outputs.mode == 'already_published' && format('--candidate-id \"{0}\" --artifact-id \"{1}\" --artifact-digest \"{2}\"', steps.guard.outputs.candidate_id, steps.guard.outputs.artifact_id, steps.guard.outputs.artifact_digest) || '' }} --output outcome
+      - name: Upload canonical outcome
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: {name: candidate-outcome, path: outcome/, if-no-files-found: error, retention-days: 30, overwrite: false}
+      - name: Record candidate artifact identity
+        if: steps.candidate.outcome == 'success'
+        run: |
+          printf 'candidate artifact id: %s\n\ncandidate artifact url: %s\n\ncandidate artifact digest: %s\n' "${{ steps.candidate.outputs.artifact-id }}" "${{ steps.candidate.outputs.artifact-url }}" "${{ steps.candidate.outputs.artifact-digest }}" >> "$GITHUB_STEP_SUMMARY"

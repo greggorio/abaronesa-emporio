@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "kind": "deployment-journal",
+  "operationId": "deployment_0123456789abcdef",
+  "operationType": "deployment",
+  "bundleIdentity": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sourceRelease": null,
+  "sourceStateSha256": null,
+  "targetRelease": "v0.0.1",
+  "state": "SUCCEEDED",
+  "createdAt": "2026-07-29T16:01:00Z",
+  "updatedAt": "2026-07-29T16:13:00Z",
+  "finishedAt": "2026-07-29T16:13:00Z",
+  "sequence": 7,
+  "steps": [
+    {
+      "name": "PULL",
+      "status": "SUCCEEDED",
+      "attempts": 1,
+      "startedAt": "2026-07-29T16:02:00Z",
+      "finishedAt": "2026-07-29T16:03:00Z",
+      "evidence": {
+        "status": "SUCCEEDED",
+        "evidenceId": "evidence_pull_0001",
+        "observedAt": "2026-07-29T16:03:00Z"
+      },
+      "errorCode": null
+    },
+    {
+      "name": "BACKUP",
+      "status": "SUCCEEDED",
+      "attempts": 1,
+      "startedAt": "2026-07-29T16:04:00Z",
+      "finishedAt": "2026-07-29T16:05:00Z",
+      "evidence": {
+        "status": "SUCCEEDED",
+        "evidenceId": "evidence_backup_0001",
+        "observedAt": "2026-07-29T16:05:00Z"
+      },
+      "errorCode": null
+    },
+    {
+      "name": "MIGRATE",
+      "status": "SUCCEEDED",
+      "attempts": 1,
+      "startedAt": "2026-07-29T16:06:00Z",
+      "finishedAt": "2026-07-29T16:07:00Z",
+      "evidence": {
+        "status": "SUCCEEDED",
+        "evidenceId": "evidence_migrate_0001",
+        "observedAt": "2026-07-29T16:07:00Z"
+      },
+      "errorCode": null
+    },
+    {
+      "name": "UPDATE",
+      "status": "SUCCEEDED",
+      "attempts": 1,
+      "startedAt": "2026-07-29T16:08:00Z",
+      "finishedAt": "2026-07-29T16:09:00Z",
+      "evidence": {
+        "status": "SUCCEEDED",
+        "evidenceId": "evidence_update_0001",
+        "observedAt": "2026-07-29T16:09:00Z"
+      },
+      "errorCode": null
+    },
+    {
+      "name": "VERIFY",
+      "status": "SUCCEEDED",
+      "attempts": 1,
+      "startedAt": "2026-07-29T16:10:00Z",
+      "finishedAt": "2026-07-29T16:11:00Z",
+      "evidence": {
+        "status": "SUCCEEDED",
+        "evidenceId": "evidence_verify_0001",
+        "observedAt": "2026-07-29T16:11:00Z"
+      },
+      "errorCode": null
+    },
+    {
+      "name": "COMMIT_STATE",
+      "status": "SUCCEEDED",
+      "attempts": 1,
+      "startedAt": "2026-07-29T16:12:00Z",
+      "finishedAt": "2026-07-29T16:13:00Z",
+      "evidence": {
+        "status": "SUCCEEDED",
+        "evidenceId": "state:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "observedAt": "2026-07-29T16:13:00Z"
+      },
+      "errorCode": null
+    },
+    {
+      "name": "ROLLBACK",
+      "status": "PENDING",
+      "attempts": 0,
+      "startedAt": null,
+      "finishedAt": null,
+      "evidence": null,
+      "errorCode": null
+    }
+  ],
+  "transitions": [
+    {"sequence": 1, "from": null, "to": "QUEUED", "at": "2026-07-29T16:01:00Z"},
+    {"sequence": 2, "from": "QUEUED", "to": "PULLING", "at": "2026-07-29T16:02:00Z"},
+    {"sequence": 3, "from": "PULLING", "to": "BACKING_UP", "at": "2026-07-29T16:04:00Z"},
+    {"sequence": 4, "from": "BACKING_UP", "to": "MIGRATING", "at": "2026-07-29T16:06:00Z"},
+    {"sequence": 5, "from": "MIGRATING", "to": "UPDATING", "at": "2026-07-29T16:08:00Z"},
+    {"sequence": 6, "from": "UPDATING", "to": "VERIFYING", "at": "2026-07-29T16:10:00Z"},
+    {"sequence": 7, "from": "VERIFYING", "to": "SUCCEEDED", "at": "2026-07-29T16:13:00Z"}
+  ],
+  "databaseRestoreRequired": true,
+  "errorCode": null,
+  "rollbackErrorCode": null,
+  "confirmedStateSha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}

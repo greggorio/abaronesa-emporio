@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Emporio commercial component catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "canonical_order",
+    "unknown_path_policy",
+    "global_paths",
+    "documentation_paths",
+    "excluded_operational_components",
+    "components"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "canonical_order": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "backend"},
+        {"const": "website_back"},
+        {"const": "frontend"},
+        {"const": "website_front"},
+        {"const": "whatsapp_service"},
+        {"const": "gateway"}
+      ],
+      "items": false,
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "unknown_path_policy": {"const": "fail_closed_all"},
+    "global_paths": {"$ref": "#/$defs/nonEmptyStrings"},
+    "documentation_paths": {"$ref": "#/$defs/nonEmptyStrings"},
+    "excluded_operational_components": {
+      "type": "array",
+      "prefixItems": [{"const": "release_control"}],
+      "items": false,
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "website_back", "frontend", "website_front", "whatsapp_service", "gateway"],
+      "properties": {
+        "backend": {"$ref": "#/$defs/component"},
+        "website_back": {"$ref": "#/$defs/component"},
+        "frontend": {"$ref": "#/$defs/component"},
+        "website_front": {"$ref": "#/$defs/component"},
+        "whatsapp_service": {"$ref": "#/$defs/component"},
+        "gateway": {"$ref": "#/$defs/component"}
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "command"],
+      "properties": {
+        "status": {"enum": ["confirmed", "pending"]},
+        "command": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context", "dockerfile", "status", "command"],
+      "properties": {
+        "context": {"type": "string", "minLength": 1},
+        "dockerfile": {"type": "string", "minLength": 1},
+        "status": {"enum": ["confirmed", "pending"]},
+        "command": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path"],
+      "properties": {
+        "status": {"enum": ["confirmed", "inferred", "pending"]},
+        "path": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path"],
+      "properties": {
+        "type": {"enum": ["flyway", "none"]},
+        "path": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path", "status"],
+      "properties": {
+        "type": {"enum": ["filesystem", "database"]},
+        "path": {"type": "string", "minLength": 1},
+        "status": {"enum": ["confirmed", "pending"]}
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "description", "status"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "description": {"type": "string", "minLength": 1},
+        "status": {"const": "pending"}
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "readiness",
+        "image_repository",
+        "source_paths",
+        "build",
+        "test",
+        "internal_port",
+        "health_check",
+        "dependencies",
+        "runtime_dependencies",
+        "migrations",
+        "persistence",
+        "readiness_gates"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "readiness": {"enum": ["ready", "blocked"]},
+        "image_repository": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-[a-z0-9-]+$"
+        },
+        "source_paths": {"$ref": "#/$defs/nonEmptyStrings"},
+        "build": {"$ref": "#/$defs/build"},
+        "test": {"$ref": "#/$defs/command"},
+        "internal_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "health_check": {"$ref": "#/$defs/health"},
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+        },
+        "runtime_dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "migrations": {"$ref": "#/$defs/migrations"},
+        "persistence": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/persistence"}
+        },
+        "readiness_gates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/gate"}
+        }
+      }
+    }
+  }
+}

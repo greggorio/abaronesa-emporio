@@ -1,0 +1,37 @@
+# Override exclusivamente local/efemero. Nunca usar como configuracao de producao.
+services:
+  backend:
+    image: abaronesa-emporio-backend:s10
+    environment:
+      ERP_BASE_URL: https://erp.s10.invalid
+      ECOMMERCE_BASE_URL: https://website.s10.invalid
+      ANDROID_BASE_URL: https://erp.s10.invalid
+      WEBSITE_BASE_URL: https://website.s10.invalid
+      ESPRESSO_API_BASE_URL: https://erp.s10.invalid
+      APP_FRONTEND_URL: https://erp.s10.invalid
+      APP_CORS_ALLOWED_ORIGINS: https://erp.s10.invalid,https://website.s10.invalid
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_REDIRECT_URI: https://erp.s10.invalid/login/oauth2/code/google
+      ROOT_BOOTSTRAP_ENABLED: "true"
+      ROOT_BOOTSTRAP_NAME: S10 Root
+      ROOT_BOOTSTRAP_EMAIL: ${S10_ROOT_EMAIL:?S10_ROOT_EMAIL required}
+      ROOT_BOOTSTRAP_PASSWORD: ${S10_ROOT_PASSWORD:?S10_ROOT_PASSWORD required}
+  website_back:
+    image: abaronesa-emporio-website-back:s10
+    environment:
+      APP_CORS_ALLOWED_ORIGINS: https://website.s10.invalid,https://erp.s10.invalid
+      APP_WEBSOCKET_ALLOWED_ORIGINS: https://website.s10.invalid,https://erp.s10.invalid
+  frontend:
+    image: abaronesa-emporio-frontend:s09
+    environment:
+      VITE_BASE_API_URL: https://erp.s10.invalid
+  website_front:
+    image: abaronesa-emporio-website-front:s09
+    environment:
+      VITE_ERP_API_URL: https://erp.s10.invalid
+      VITE_WEBSITE_API_URL: https://website.s10.invalid
+  whatsapp_service:
+    image: abaronesa-emporio-whatsapp-service:s09
+    environment:
+      WHATSAPP_INITIALIZATION_DISABLED: "true"
+  gateway:
+    image: abaronesa-emporio-gateway:s10

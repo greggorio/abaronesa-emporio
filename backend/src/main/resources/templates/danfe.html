@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title>DANFE - NF-e (Modelo 55)</title>
+  <style>
+    /* ====== Base ====== */
+    @page { size: A4; margin: 10mm; }
+    body{
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9pt;
+      margin: 0;
+      padding: 0;
+      color: #111;
+    }
+    table{ width: 100%; border-collapse: collapse; }
+    td{ vertical-align: top; padding: 0; }
+    .muted{ color:#666; }
+    .mono{ font-family: "Courier New", monospace; }
+    .box{
+      border: 1px solid #bdbdbd;
+      padding: 6px;
+    }
+    .box + .box{ border-top: 0; }
+    .row{ width:100%; }
+    .col{ display:inline-block; vertical-align: top; }
+    .col-60{ width:60%; }
+    .col-40{ width:39%; }
+    .col-50{ width:49%; }
+    .mt6{ margin-top:6px; }
+    .mt10{ margin-top:10px; }
+    .center{ text-align:center; }
+    .right{ text-align:right; }
+    .title{
+      font-weight: bold;
+      font-size: 10.5pt;
+      letter-spacing: .2px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .subtitle{
+      font-weight: bold;
+      font-size: 9pt;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .kv{
+      width:100%;
+      border-collapse: collapse;
+    }
+    .kv td{
+      padding: 2px 4px;
+      border: 1px solid #c7c7c7;
+      font-size: 8.6pt;
+    }
+    .kv td.label{
+      background: #f2f2f2;
+      font-weight: bold;
+      width: 34%;
+      white-space: nowrap;
+    }
+    .logo img{
+      width: 90px;
+      height: 60px;
+      max-width: 90px;
+      max-height: 60px;
+      object-fit: contain;
+      display: block;
+    }
+    /* ====== Items table ====== */
+    .items-table{
+      width: 100%;
+      border: 1px solid #bdbdbd;
+      border-collapse: collapse;
+      font-size: 8.4pt;
+      table-layout: fixed;
+    }
+    .items-table th, .items-table td{
+      border: 1px solid #c7c7c7;
+      padding: 3px 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .items-table th{
+      background: #f0f0f0;
+      font-weight: bold;
+      text-align: center;
+      font-size: 8.3pt;
+    }
+    .items-table td.left{ text-align:left; }
+    .items-table td.center{ text-align:center; }
+    .items-table td.right{ text-align:right; }
+    .nowrap{ white-space: nowrap; }
+    /* ====== Totals ====== */
+    .totals{
+      width:100%;
+      border-collapse: collapse;
+      font-size: 9pt;
+    }
+    .totals td{
+      border: 1px solid #c7c7c7;
+      padding: 3px 4px;
+    }
+    .totals td.label{
+      background:#f2f2f2;
+      font-weight:bold;
+      width: 65%;
+    }
+    .section-header{
+      background:#f7f7f7;
+      font-weight:bold;
+      text-transform: uppercase;
+      border:1px solid #bdbdbd;
+      padding: 4px 6px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ====== CABEÇALHO (EMITENTE + IDENTIFICAÇÃO DANFE) ====== -->
+  <div class="box">
+    <div class="row">
+      <div class="col" style="width:105px;">
+        <div class="logo">
+          <img th:if="${not #strings.isEmpty(logoBase64)}" th:src="${logoBase64}" alt="Logo Empresa"/>
+        </div>
+      </div>
+
+      <div class="col col-60" style="padding-left:6px;">
+        <div class="title">DANFE - Documento Auxiliar da NF-e</div>
+        <div class="subtitle muted">NF-e (Modelo 55) - Documento auxiliar (não substitui a NF-e)</div>
+
+        <div style="font-weight:bold;" th:text="${danfe.nomeEmitente}">NOME DO EMITENTE</div>
+        <div th:text="${danfe.enderecoEmitente}">ENDEREÇO DO EMITENTE</div>
+        <div th:text="${danfe.cidadeEmitente}">CIDADE - UF</div>
+        <div><span style="font-weight:bold;">CNPJ:</span> <span th:text="${danfe.cnpjEmitente}">00.000.000/0000-00</span>
+          &nbsp;&nbsp; <span style="font-weight:bold;">IE:</span> <span th:text="${danfe.ieEmitente}">ISENTO</span>
+        </div>
+      </div>
+
+      <div class="col col-40">
+        <table class="kv">
+          <tr>
+            <td class="label">Número</td>
+            <td th:text="${danfe.numero}">000000001</td>
+          </tr>
+          <tr>
+            <td class="label">Série</td>
+            <td th:text="${danfe.serie}">1</td>
+          </tr>
+          <tr>
+            <td class="label">Data/Hora Emissão</td>
+            <td th:text="${danfe.dataEmissao}">29/01/2026 14:19:03</td>
+          </tr>
+          <tr>
+            <td class="label">Natureza da Operação</td>
+            <td th:text="${danfe.naturezaOperacao ?: 'VENDA'}">VENDA</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== CHAVE / QR / PROTOCOLO ====== -->
+  <div class="box">
+    <table style="width:100%; border-collapse:collapse;">
+      <tr>
+        <td style="width:120px; padding-right:6px; vertical-align:top;">
+          <img class="qr-code"
+               style="width:110px; height:110px;"
+               th:if="${not #strings.isEmpty(danfe.qrBase64)}"
+               th:src="${danfe.qrBase64}"
+               alt="QR Code da NF-e"/>
+        </td>
+        <td style="vertical-align:top;">
+          <div class="subtitle">Consulte a autenticidade no Portal Nacional da NF-e</div>
+          <div class="muted">Consulta pela chave de acesso</div>
+          <div class="mono" style="font-size:10pt; font-weight:bold;" th:text="${danfe.chaveAcesso}">
+            35260131196758000170550010000806211610884829
+          </div>
+
+          <div class="mt6">
+            <span style="font-weight:bold;">Protocolo de Autorização:</span>
+            <span th:text="${danfe.protocoloAutorizacao ?: ''}"></span>
+            &nbsp;&nbsp;
+            <span style="font-weight:bold;">Ambiente:</span>
+            <span th:text="${danfe.ambiente ?: 'PRODUÇÃO'}">HOMOLOGAÇÃO</span>
+          </div>
+
+          <div class="mt6 muted"></div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ====== DESTINATÁRIO / REMETENTE ====== -->
+  <div class="section-header">Destinatário</div>
+  <div class="box" style="border-top:0;">
+    <table class="kv">
+      <tr>
+        <td class="label">Razão Social</td>
+        <td th:text="${danfe.nomeDestinatario}">NOME DO DESTINATÁRIO</td>
+      </tr>
+      <tr th:if="${danfe.nomeFantasiaDestinatario != null && !danfe.nomeFantasiaDestinatario.isEmpty()}">
+        <td class="label">Nome Fantasia</td>
+        <td th:text="${danfe.nomeFantasiaDestinatario}">FANTASIA</td>
+      </tr>
+      <tr>
+        <td class="label">Endereço</td>
+        <td th:text="${danfe.enderecoDestinatario + ' - ' + danfe.cidadeDestinatario}">
+          Rua Alice Rodrigues Moreira, 76 - Sorocaba - SP
+        </td>
+      </tr>
+      <tr>
+        <td class="label">CNPJ / CPF</td>
+        <td>
+          <span th:if="${danfe.cnpjDestinatario != null && !danfe.cnpjDestinatario.isEmpty()}">
+            CNPJ: <span th:text="${danfe.cnpjDestinatario}">00.000.000/0000-00</span>
+          </span>
+          <span th:if="${danfe.cpfDestinatario != null && !danfe.cpfDestinatario.isEmpty()}">
+            CPF: <span th:text="${danfe.cpfDestinatario}">000.000.000-00</span>
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td class="label">Inscrição Estadual</td>
+        <td th:text="${danfe.ieDestinatario != null ? danfe.ieDestinatario : 'ISENTO'}">ISENTO</td>
+      </tr>
+      <tr>
+        <td class="label">Telefone</td>
+        <td th:text="${danfe.telefoneDestinatario != null ? danfe.telefoneDestinatario : ''}"></td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ====== ITENS ====== -->
+  <div class="section-header">Itens da NF-e</div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:6%;">Item</th>
+        <th style="width:10%;">Código</th>
+        <th style="width:30%;">Descrição</th>
+        <th style="width:8%;">NCM</th>
+        <th style="width:7%;">CFOP</th>
+        <th style="width:6%;">UN</th>
+        <th style="width:7%;">Qtd</th>
+        <th style="width:9%;">V. Unit</th>
+        <th style="width:10%;">V. Total</th>
+        <th style="width:7%;">ICMS</th>
+        <th style="width:7%;">PIS</th>
+        <th style="width:7%;">COFINS</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr th:each="produto, st : ${danfe.produtos}">
+        <td class="center" th:text="${st.index + 1}">1</td>
+
+        <td class="center" th:text="${produto.codigo ?: '-'}">-</td>
+
+        <td class="left" th:text="${produto.descricao ?: ''}">CAFÉ EXPRESSO</td>
+
+        <td class="center" th:text="${produto.ncm ?: '-'}">-</td>
+
+        <td class="center" th:text="${produto.cfop ?: '-'}">-</td>
+
+        <td class="center" th:text="${#strings.isEmpty(produto.unidade) ? 'UN' : produto.unidade}">UN</td>
+
+        <td class="right" th:text="${produto.quantidade == null ? '0' : produto.quantidade}">1</td>
+
+        <td class="right" th:text="${produto.valorUnitario == null ? '0,00' : #numbers.formatDecimal(produto.valorUnitario, 1, 'POINT', 2, 'COMMA')}">10,00</td>
+
+        <!-- V. Total já considera desconto no seu modelo atual -->
+        <td class="right" th:text="${produto.valorTotal == null ? '0,00' : #numbers.formatDecimal(produto.valorTotal, 1, 'POINT', 2, 'COMMA')}">10,00</td>
+
+        <!-- ICMS item: tenta pegar 'valorIcms' ou 'icms' (alguns DTOs usam nomes diferentes) -->
+        <td class="right" th:text="${(#strings.isEmpty(produto.aliquotaIcms) or #strings.equalsIgnoreCase(produto.aliquotaIcms, 'null')) ? (produto.valorIcms == null ? '0,00' : #numbers.formatDecimal(produto.valorIcms, 1, 'POINT', 2, 'COMMA')) : ((produto.valorIcms == null ? '0,00' : #numbers.formatDecimal(produto.valorIcms, 1, 'POINT', 2, 'COMMA')) + ' (' + produto.aliquotaIcms + '%)')}">0,00</td>
+
+        <td class="right" th:text="${(#strings.isEmpty(produto.aliquotaPis) or #strings.equalsIgnoreCase(produto.aliquotaPis, 'null')) ? (produto.valorPis == null ? '0,00' : #numbers.formatDecimal(produto.valorPis, 1, 'POINT', 2, 'COMMA')) : ((produto.valorPis == null ? '0,00' : #numbers.formatDecimal(produto.valorPis, 1, 'POINT', 2, 'COMMA')) + ' (' + produto.aliquotaPis + '%)')}">0,00</td>
+
+        <td class="right" th:text="${(#strings.isEmpty(produto.aliquotaCofins) or #strings.equalsIgnoreCase(produto.aliquotaCofins, 'null')) ? (produto.valorCofins == null ? '0,00' : #numbers.formatDecimal(produto.valorCofins, 1, 'POINT', 2, 'COMMA')) : ((produto.valorCofins == null ? '0,00' : #numbers.formatDecimal(produto.valorCofins, 1, 'POINT', 2, 'COMMA')) + ' (' + produto.aliquotaCofins + '%)')}">0,00</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ====== TOTAIS / TRIBUTOS (SEM FUST/FUNTEL) ====== -->
+  <div class="section-header">Totais</div>
+
+  <table style="width:100%; border-collapse:collapse;">
+    <tr>
+      <td style="width:50%; padding-right:6px; vertical-align:top;">
+        <table class="totals">
+          <tr>
+            <td class="label">Valor Total dos Produtos</td>
+          <td class="right" th:text="${danfe.valorTotalProdutos == null ? '0,00' : #numbers.formatDecimal(danfe.valorTotalProdutos, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+          </tr>
+          <tr>
+            <td class="label">Desconto</td>
+          <td class="right" th:text="${danfe.valorDesconto == null ? '0,00' : #numbers.formatDecimal(danfe.valorDesconto, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+          </tr>
+          <tr>
+            <td class="label">Valor Total da NF-e</td>
+          <td class="right" th:text="${danfe.valorTotalNota == null ? '0,00' : #numbers.formatDecimal(danfe.valorTotalNota, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+          </tr>
+        </table>
+      </td>
+      <td style="width:50%; padding-left:6px; vertical-align:top;">
+        <table class="totals">
+          <tr>
+            <td class="label">Base de Cálculo do ICMS</td>
+          <td class="right" th:text="${danfe.baseCalculoIcms == null ? '0,00' : #numbers.formatDecimal(danfe.baseCalculoIcms, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+          </tr>
+          <tr>
+            <td class="label">Valor do ICMS</td>
+          <td class="right" th:text="${danfe.valorIcms == null ? '0,00' : #numbers.formatDecimal(danfe.valorIcms, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+          </tr>
+          <tr>
+            <td class="label">Valor Total Tributos (Lei 12.741)</td>
+          <td class="right" th:text="${danfe.valorTotTribTotal == null ? '0,00' : #numbers.formatDecimal(danfe.valorTotTribTotal, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <div class="section-header">Informações dos Tributos</div>
+  <table class="totals">
+    <tr>
+      <td class="label">PIS (total)</td>
+      <td class="right" th:text="${danfe.valorPisTotal == null ? '0,00' : #numbers.formatDecimal(danfe.valorPisTotal, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+    </tr>
+    <tr>
+      <td class="label">COFINS (total)</td>
+      <td class="right" th:text="${danfe.valorCofinsTotal == null ? '0,00' : #numbers.formatDecimal(danfe.valorCofinsTotal, 1, 'POINT', 2, 'COMMA')}">0,00</td>
+    </tr>
+  </table>
+
+  <!-- Observações / Complementares -->
+  <div class="mt10 muted" th:if="${(danfe.informacoesComplementares != null and !#strings.isEmpty(danfe.informacoesComplementares)) or (danfe.formaPagamento != null and !#strings.isEmpty(danfe.formaPagamento))}">
+    <div class="section-header">Informações Complementares</div>
+    <div class="box" style="border-top:0;">
+      <div th:if="${danfe.formaPagamento != null and !#strings.isEmpty(danfe.formaPagamento)}">
+        <strong>Forma de pagamento:</strong> <span th:text="${danfe.formaPagamento}"></span>
+      </div>
+      <div th:if="${danfe.informacoesComplementares != null and !#strings.isEmpty(danfe.informacoesComplementares)}" th:text="${danfe.informacoesComplementares}"></div>
+    </div>
+  </div>
+
+</body>
+</html>

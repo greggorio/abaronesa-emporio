@@ -1,0 +1,35 @@
+# Credentials and private material are never part of the release-control context.
+.env
+.env.*
+**/*.pem
+**/*.key
+**/*.crt
+**/*.cer
+**/*.p12
+**/*.pfx
+secrets/
+
+# Local environments, caches and generated artifacts.
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+coverage/
+dist/
+build/
+*.egg-info/
+
+# Tests and development-only material are not image inputs.
+tests/
+**/test_*.py
+**/*_test.py
+uploads/
+node_modules/
+.git/
+.gitignore

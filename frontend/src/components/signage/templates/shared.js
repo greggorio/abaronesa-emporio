@@ -1,0 +1,2 @@
+export const mockImage =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'%3E%3Crect fill='%231a1a2e' width='600' height='600'/%3E%3Crect fill='%2316213e' x='50' y='50' width='500' height='500' rx='40'/%3E%3Ccircle fill='%230f3460' cx='300' cy='280' r='150'/%3E%3Ccircle fill='%23e94560' cx='300' cy='280' r='80'/%3E%3Crect fill='%23e94560' x='200' y='450' width='200' height='40' rx='8'/%3E%3C/svg%3E";

@@ -1,0 +1,60 @@
+{
+  "name": "emporio-front",
+  "version": "0.0.1",
+  "description": "Empório A Baronesa - ERP Frontend",
+  "productName": "Empório A Baronesa - ERP",
+  "author": "",
+  "private": true,
+  "scripts": {
+    "lint": "eslint --ext .js,.vue ./",
+    "format": "prettier --write \"**/*.{js,vue,scss,html,md,json}\" --ignore-path .gitignore",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "dev": "quasar dev",
+    "build": "quasar build"
+  },
+  "dependencies": {
+    "@ckpack/vue-color": "^1.6.0",
+    "@quasar/app-vite": "^1.10.0",
+    "@quasar/extras": "^1.16.12",
+    "apexcharts": "^5.3.5",
+    "axios": "^1.7.7",
+    "date-fns": "^4.1.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3",
+    "jspdf-autotable": "^5.0.2",
+    "jwt-decode": "^4.0.0",
+    "mitt": "^3.0.1",
+    "pinia": "^2.3.1",
+    "qrcode": "^1.5.4",
+    "quasar": "^2.16.0",
+    "vue": "^3.4.18",
+    "vue-i18n": "^9.0.0",
+    "vue-router": "^4.4.5",
+    "vue3-apexcharts": "^1.10.0",
+    "vuedraggable": "^4.1.0"
+  },
+  "devDependencies": {
+    "@intlify/vite-plugin-vue-i18n": "^3.3.1",
+    "@vitest/coverage-v8": "^1.6.1",
+    "@vue/test-utils": "^2.4.6",
+    "autoprefixer": "^10.4.2",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^8.1.0",
+    "eslint-plugin-vue": "^9.0.0",
+    "jsdom": "^29.0.1",
+    "playwright": "^1.58.2",
+    "postcss": "^8.4.14",
+    "prettier": "^2.5.1",
+    "vite-plugin-checker": "^0.8.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": "^24.0.0",
+    "npm": ">= 11.0.0"
+  },
+  "shamefully-hoist": true,
+  "strict-peer-dependencies": false,
+  "resolution-mode": "highest"
+}

@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/greggorio/abaronesa-emporio/ops/deploy/schemas/deployment-journal.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "operationId",
+    "operationType",
+    "bundleIdentity",
+    "sourceRelease",
+    "sourceStateSha256",
+    "targetRelease",
+    "state",
+    "createdAt",
+    "updatedAt",
+    "finishedAt",
+    "sequence",
+    "steps",
+    "transitions",
+    "databaseRestoreRequired",
+    "errorCode",
+    "rollbackErrorCode",
+    "confirmedStateSha256"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "deployment-journal"},
+    "operationId": {"type": "string", "pattern": "^[A-Za-z0-9_-]{20,128}$"},
+    "operationType": {"const": "deployment"},
+    "bundleIdentity": {"$ref": "#/$defs/digest"},
+    "sourceRelease": {
+      "oneOf": [
+        {"$ref": "#/$defs/release"},
+        {"type": "null"}
+      ]
+    },
+    "sourceStateSha256": {
+      "oneOf": [
+        {"$ref": "#/$defs/digest"},
+        {"type": "null"}
+      ]
+    },
+    "targetRelease": {"$ref": "#/$defs/release"},
+    "state": {"$ref": "#/$defs/state"},
+    "createdAt": {"$ref": "#/$defs/timestamp"},
+    "updatedAt": {"$ref": "#/$defs/timestamp"},
+    "finishedAt": {
+      "oneOf": [
+        {"$ref": "#/$defs/timestamp"},
+        {"type": "null"}
+      ]
+    },
+    "sequence": {"type": "integer", "minimum": 1},
+    "steps": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/step"}, {"properties": {"name": {"const": "PULL"}}}]},
+        {"allOf": [{"$ref": "#/$defs/step"}, {"properties": {"name": {"const": "BACKUP"}}}]},
+        {"allOf": [{"$ref": "#/$defs/step"}, {"properties": {"name": {"const": "MIGRATE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/step"}, {"properties": {"name": {"const": "UPDATE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/step"}, {"properties": {"name": {"const": "VERIFY"}}}]},
+        {"allOf": [{"$ref": "#/$defs/step"}, {"properties": {"name": {"const": "COMMIT_STATE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/step"}, {"properties": {"name": {"const": "ROLLBACK"}}}]}
+      ],
+      "items": false
+    },
+    "transitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/transition"}
+    },
+    "databaseRestoreRequired": {"type": "boolean"},
+    "errorCode": {
+      "oneOf": [
+        {"$ref": "#/$defs/errorCode"},
+        {"type": "null"}
+      ]
+    },
+    "rollbackErrorCode": {
+      "oneOf": [
+        {"$ref": "#/$defs/errorCode"},
+        {"type": "null"}
+      ]
+    },
+    "confirmedStateSha256": {
+      "oneOf": [
+        {"$ref": "#/$defs/digest"},
+        {"type": "null"}
+      ]
+    }
+  },
+  "$defs": {
+    "release": {
+      "type": "string",
+      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "state": {
+      "enum": [
+        "QUEUED",
+        "PULLING",
+        "BACKING_UP",
+        "MIGRATING",
+        "UPDATING",
+        "VERIFYING",
+        "SUCCEEDED",
+        "ROLLING_BACK",
+        "ROLLED_BACK",
+        "FAILED"
+      ]
+    },
+    "stepStatus": {
+      "enum": ["PENDING", "RUNNING", "SKIPPED", "SUCCEEDED", "FAILED"]
+    },
+    "errorCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidenceId", "observedAt"],
+      "properties": {
+        "status": {"const": "SUCCEEDED"},
+        "evidenceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]{8,128}$"
+        },
+        "observedAt": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "status",
+        "attempts",
+        "startedAt",
+        "finishedAt",
+        "evidence",
+        "errorCode"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "PULL",
+            "BACKUP",
+            "MIGRATE",
+            "UPDATE",
+            "VERIFY",
+            "COMMIT_STATE",
+            "ROLLBACK"
+          ]
+        },
+        "status": {"$ref": "#/$defs/stepStatus"},
+        "attempts": {"type": "integer", "minimum": 0},
+        "startedAt": {
+          "oneOf": [
+            {"$ref": "#/$defs/timestamp"},
+            {"type": "null"}
+          ]
+        },
+        "finishedAt": {
+          "oneOf": [
+            {"$ref": "#/$defs/timestamp"},
+            {"type": "null"}
+          ]
+        },
+        "evidence": {
+          "oneOf": [
+            {"$ref": "#/$defs/evidence"},
+            {"type": "null"}
+          ]
+        },
+        "errorCode": {
+          "oneOf": [
+            {"$ref": "#/$defs/errorCode"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "from", "to", "at"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "from": {
+          "oneOf": [
+            {"$ref": "#/$defs/state"},
+            {"type": "null"}
+          ]
+        },
+        "to": {"$ref": "#/$defs/state"},
+        "at": {"$ref": "#/$defs/timestamp"}
+      }
+    }
+  }
+}

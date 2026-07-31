@@ -1,0 +1,32 @@
+{
+  "baseUrl": "http://localhost:8084",
+  "credentials": {
+    "email": "root@localhost",
+    "password": "123456"
+  },
+  "timeouts": {
+    "default": 3000,
+    "navigation": 5000,
+    "element": 10000
+  },
+  "screenshots": {
+    "enabled": true,
+    "directory": ".ai-workflow/evidence/",
+    "format": "png"
+  },
+  "testData": {
+    "categoriaDespesa": {
+      "nome": "Despesa Teste Automatizado"
+    },
+    "fornecedor": {
+      "razaoSocial": "Fornecedor Teste Automatizado",
+      "cnpj": "12345678901234",
+      "telefone": "(11) 99999-9999"
+    },
+    "contaPagar": {
+      "descricao": "Conta a pagar teste automatizado",
+      "valorTotal": 1000.00,
+      "numeroParcelas": 2
+    }
+  }
+}

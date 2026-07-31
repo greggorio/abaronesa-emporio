@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>DANFCE - NFCe Universal</title>
+    <style th:inline="text">
+        @page { size: 80mm [[${pageHeight}]]mm; margin: 0mm; }
+        body { font-family: 'Courier New', monospace; font-size: 8px; width: 76mm; margin: 10mm auto 0 auto; }
+        .text-center { text-align: center; }
+        .font-bold { font-weight: bold; }
+        .flex-between { display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+<!-- CABEÇALHO DA EMPRESA -->
+<div class="text-center">
+    <div class="font-bold" th:text="${danfce != null ? danfce.razaoSocialEmitente : danfe.nomeEmitente}">NOME DA EMPRESA</div>
+    <div th:text="${danfce != null ? danfce.enderecoEmitente : danfe.enderecoEmitente}">Endereço</div>
+    <div th:text="'CNPJ: ' + (${danfce != null ? danfce.cnpjEmitente : danfe.cnpjEmitente})">CNPJ</div>
+</div>
+
+<hr/>
+
+<!-- IDENTIFICAÇÃO DA NOTA -->
+<div class="text-center">
+    <div class="font-bold">NFC-e - CUPOM FISCAL ELETRÔNICO</div>
+    <div>
+        <span th:text="'Nº ' + (${danfce != null ? danfce.numero : danfe.numero})">Nº 1</span>
+        <span th:text="' - Série ' + (${danfce != null ? danfce.serie : danfe.serie})"> - Série 1</span>
+    </div>
+    <div th:text="${danfce != null ? danfce.dataEmissao : danfe.dataEmissao}">Data</div>
+</div>
+
+<hr/>
+
+<!-- AMBIENTE DE HOMOLOGAÇÃO -->
+<div class="text-center font-bold" style="background: #f0f0f0; border: 1px solid #000; padding: 4px; margin: 4px 0;"
+     th:if="${danfce != null ? danfce.homologacao : false}">
+    ⚠️ EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO<br/>
+    SEM VALOR FISCAL
+</div>
+
+<!-- CONSUMIDOR -->
+<div class="text-center">
+    <div th:if="${danfce != null and danfce.temDestinatario()}"
+         th:text="${danfce.nomeDestinatario != null and !#strings.isEmpty(danfce.nomeDestinatario) ? danfce.nomeDestinatario : 'CONSUMIDOR IDENTIFICADO'}">CONSUMIDOR IDENTIFICADO</div>
+    <div th:if="${danfce != null and danfce.cpfDestinatario != null}"
+         th:text="'CPF: ' + ${danfce.cpfDestinatario}">CPF</div>
+    <span th:if="${danfce == null or !danfce.temDestinatario()}">CONSUMIDOR NÃO IDENTIFICADO</span>
+</div>
+<hr/>
+
+<!-- PRODUTOS -->
+<div class="text-center font-bold">CUPOM FISCAL ELETRÔNICO</div>
+
+<!-- Lista de produtos para DanfceModel -->
+<div th:if="${danfce != null and danfce.temProdutos()}" style="margin: 4px 0;">
+    <div th:each="produto : ${danfce.produtos}">
+        <div class="font-bold" th:text="'Cód: ' + ${produto.codigo}">Cód: 001</div>
+        <div th:text="${produto.descricao}">Descrição do Produto</div>
+        <div class="flex-between">
+            <span th:text="${produto.quantidade} + ' ' + ${produto.unidade}">1,000 UN</span>
+            <span th:text="${produto.valorUnitario}">R$ 10,00</span>
+            <span class="font-bold" th:text="${produto.valorTotal}">R$ 10,00</span>
+        </div>
+        <hr style="border: 1px dashed #ccc;"/>
+    </div>
+</div>
+
+<!-- Lista de produtos para DanfeModel -->
+<div th:if="${danfe != null and danfe.produtos != null}" style="margin: 4px 0;">
+    <div th:each="produto : ${danfe.produtos}">
+        <div class="font-bold" th:text="'Cód: ' + ${produto.codigo}">Cód: 001</div>
+        <div th:text="${produto.descricao}">Descrição do Produto</div>
+        <div class="flex-between">
+            <span th:text="${produto.quantidade} + ' UN'">1,000 UN</span>
+            <span th:text="${produto.valorUnitario}">R$ 10,00</span>
+            <span class="font-bold" th:text="${produto.valorTotal}">R$ 10,00</span>
+        </div>
+        <hr style="border: 1px dashed #ccc;"/>
+    </div>
+</div>
+
+<!-- TOTAIS -->
+<div class="text-center" style="margin: 8px 0;">
+    <div class="flex-between" th:if="${danfce != null and danfce.valorAcrescimo != null and danfce.valorAcrescimo != 'R$ 0,00'}">
+        <span>
+            Serviço
+            <span th:if="${danfce.percentualAcrescimo != null}">(
+                <span th:text="${danfce.percentualAcrescimo}">10,00%</span>
+            )</span>:
+        </span>
+        <span th:text="${danfce.valorAcrescimo}">R$ 0,00</span>
+    </div>
+    <div class="flex-between font-bold">
+        <span>TOTAL R$:</span>
+        <span th:text="${danfce != null ? danfce.valorTotalNota : danfe.valorTotal}">R$ 40,00</span>
+    </div>
+</div>
+
+<!-- FORMA DE PAGAMENTO -->
+<div class="text-center" style="margin: 8px 0;" th:if="${danfce != null}">
+    <div th:if="${danfce.pagamentos != null and !danfce.pagamentos.isEmpty()}">
+        <div class="font-bold">Pagamentos</div>
+        <div th:each="pg : ${danfce.pagamentos}">
+            <div><span th:text="${pg.formaPagamento}">Dinheiro</span>: <span th:text="${pg.valorPago}">R$ 0,00</span></div>
+        </div>
+    </div>
+    <div th:if="${(danfce.pagamentos == null or danfce.pagamentos.isEmpty()) and danfce.formaPagamento != null}">
+        <div>Forma de Pgto: <span th:text="${danfce.formaPagamento}">Dinheiro</span></div>
+        <div>Valor Pago: <span th:text="${danfce.valorPago}">R$ 40,00</span></div>
+    </div>
+</div>
+
+<hr/>
+
+<!-- QR CODE -->
+<div class="text-center" th:if="${qrCodeBase64 != null}">
+    <div class="font-bold">Consulte pela Chave de Acesso em:</div>
+    <div th:text="${danfce != null ? danfce.urlConsulta : 'nfce.fazenda.sp.gov.br'}">URL</div>
+    <div style="margin: 8px 0;">
+        <img th:src="'data:image/png;base64,' + ${qrCodeBase64}" 
+             alt="QR Code" style="width: 60mm; height: 60mm;"/>
+    </div>
+</div>
+
+<!-- CHAVE DE ACESSO -->
+<div class="text-center" style="font-size: 6px; word-break: break-all; margin: 4px 0;">
+    <div>Chave de Acesso:</div>
+    <div th:text="${danfce != null ? danfce.chaveAcessoFormatada : danfe.chaveAcesso}">3525 0931 1967 5800 0170 6500 1000 0000 6019 6682 4661</div>
+</div>
+
+<!-- PROTOCOLO -->
+<div class="text-center" style="font-size: 6px; margin: 4px 0;" 
+     th:if="${danfce != null ? danfce.protocoloAutorizacao : danfe.protocoloAutorizacao}">
+    <div>Protocolo de Autorização:</div>
+    <div th:text="${danfce != null ? danfce.protocoloAutorizacao : danfe.protocoloAutorizacao}">135250000123456</div>
+    <div th:text="${danfce != null ? danfce.dataAutorizacao : danfe.dataAutorizacao}">09/09/2025 15:30:00</div>
+</div>
+
+<!-- TRIBUTOS -->
+<div class="text-center" style="font-size: 6px; margin: 4px 0;" 
+     th:if="${danfce != null and danfce.valorTributos != null}">
+    <div th:text="${danfce.observacoesFiscais}">Valor aproximado dos tributos...</div>
+</div>
+
+<!-- RODAPÉ -->
+<div class="text-center" style="margin: 8px 0;">
+    <div class="font-bold">Via do Consumidor</div>
+    <div style="font-size: 6px;" th:text="${dataAtual}">09/09/2025 15:30:00</div>
+</div>
+
+</body>
+</html>

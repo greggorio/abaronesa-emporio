@@ -1,0 +1,1 @@
+{"controlSha":"0123456789abcdef0123456789abcdef01234567","kind":"deployment-request","operationId":"deployment_0123456789abcdef","plannedAt":"2026-07-31T18:00:00Z","repository":"greggorio/abaronesa-emporio","requestedActorId":1234567,"schemaVersion":1,"targetRelease":"v1.2.3","workflowRunAttempt":1,"workflowRunId":123456789}

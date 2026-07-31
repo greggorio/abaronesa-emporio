@@ -1,0 +1,20 @@
+[Unit]
+Description=Emporio release-control isolated Compose package
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=emporio-release-control
+Group=emporio-release-control
+WorkingDirectory=/opt/emporio-release-control
+EnvironmentFile=/etc/emporio/release-control.env
+ExecStart=/usr/bin/docker compose --env-file /etc/emporio/release-control.env -f /opt/emporio-release-control/ops/compose/release-control.yml up --detach --no-build --wait
+ExecStop=/usr/bin/docker compose --env-file /etc/emporio/release-control.env -f /opt/emporio-release-control/ops/compose/release-control.yml stop --timeout 30
+TimeoutStartSec=120
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target

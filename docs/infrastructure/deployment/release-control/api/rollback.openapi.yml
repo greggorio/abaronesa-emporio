@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: Emporio Future Commercial Rollback API
+  version: 0.1.0
+  description: >-
+    Contrato futuro e offline da API de rollback comercial. Reservado para S26;
+    não consumido, anunciado ou despachado pelo runtime atual.
+x-emporio-contract:
+  status: future-only
+  runtime-consumer: none
+  activation-slice: S26
+  current-capability: absent
+  current-runtime-route: reserved-and-unavailable
+paths:
+  /api/deployment-control/v1/rollbacks:
+    post:
+      operationId: requestCommercialRollback
+      x-required-role: deployment:rollback
+      x-availability: reserved-until-S26
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackRequest'
+      responses:
+        '202':
+          description: Operação criada ou replay idempotente.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackOperation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/deployment-control/v1/rollbacks/{operationId}:
+    get:
+      operationId: getCommercialRollbackStatus
+      x-required-role: deployment:rollback
+      x-availability: reserved-until-S26
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OperationId'
+      responses:
+        '200':
+          description: Estado local reconciliado da operação futura.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackOperation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 54
+        maxLength: 54
+        pattern: '^deployer-rollback-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    OperationId:
+      name: operationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/OperationId'
+  schemas:
+    ReleaseId:
+      type: string
+      pattern: '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+    Digest:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+    OperationId:
+      type: string
+      pattern: '^rbk_[0-9a-f]{32}$'
+      minLength: 36
+      maxLength: 36
+    Timestamp:
+      type: string
+      format: date-time
+    RollbackRequest:
+      type: object
+      additionalProperties: false
+      required: [release, reason]
+      properties:
+        release:
+          $ref: '#/components/schemas/ReleaseId'
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 1000
+    RollbackOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - operationId
+        - operationType
+        - state
+        - sourceRelease
+        - targetRelease
+        - databaseRestoreRequired
+        - createdAt
+        - updatedAt
+      properties:
+        operationId:
+          $ref: '#/components/schemas/OperationId'
+        operationType:
+          const: rollback
+        state:
+          type: string
+          enum: [QUEUED, PRECHECKING, RESTORING, SWITCHING, VERIFYING, SUCCEEDED, ROLLING_BACK, ROLLED_BACK, FAILED, UNCERTAIN]
+        sourceRelease:
+          $ref: '#/components/schemas/ReleaseId'
+        targetRelease:
+          $ref: '#/components/schemas/ReleaseId'
+        databaseRestoreRequired:
+          type: boolean
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: '#/components/schemas/Timestamp'
+        errorCode:
+          type: [string, 'null']
+          pattern: '^[A-Z][A-Z0-9_]{2,63}$'
+        traceId:
+          type: [string, 'null']
+          minLength: 8
+          maxLength: 128
+    ProblemDetails:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, traceId]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+          maxLength: 200
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, IDEMPOTENCY_CONFLICT, PRODUCTION_OPERATION_ACTIVE, RELEASE_NOT_ELIGIBLE, UNPROCESSABLE, RATE_LIMITED, INTERNAL_ERROR]
+        detail:
+          type: string
+          maxLength: 1000
+        traceId:
+          type: string
+          minLength: 8
+          maxLength: 128
+  responses:
+    BadRequest:
+      description: BAD_REQUEST
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Unauthorized:
+      description: UNAUTHORIZED
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Forbidden:
+      description: FORBIDDEN
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    NotFound:
+      description: NOT_FOUND
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Conflict:
+      description: IDEMPOTENCY_CONFLICT or PRODUCTION_OPERATION_ACTIVE
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Unprocessable:
+      description: UNPROCESSABLE
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    TooManyRequests:
+      description: RATE_LIMITED
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    InternalError:
+      description: INTERNAL_ERROR sem detalhes internos
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'

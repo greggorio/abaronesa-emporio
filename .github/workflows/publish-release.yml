@@ -1,0 +1,164 @@
+name: Publish Release
+run-name: publish-release-${{ inputs.operation_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        description: Correlation identifier issued by release_control
+        required: true
+        type: string
+      candidate_id:
+        description: Validated candidate identifier
+        required: true
+        type: string
+      version_bump:
+        description: SemVer increment
+        required: true
+        type: choice
+        options: [PATCH, MINOR, MAJOR]
+      description:
+        description: Short release description
+        required: true
+        type: string
+      changelog:
+        description: Auditable release changelog
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: emporio-release-publication
+  cancel-in-progress: false
+
+jobs:
+  trust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.trust.outputs.mode }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate trusted dispatch identity and request
+        id: trust
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PUBLISHER_ACTOR_IDS: ${{ vars.RELEASE_PUBLISHER_ACTOR_IDS }}
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_OWNER: ${{ github.repository_owner }}
+          TRUSTED_EVENT: ${{ github.event_name }}
+          TRUSTED_REF: ${{ github.ref }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_ACTOR: ${{ github.actor }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+        run: python3 tools/releases/release_publication.py trust --output trust
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-publication-trust
+          path: trust/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false
+
+  prepare:
+    needs: trust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      mode: ${{ steps.prepare.outputs.mode }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: release-publication-trust
+          path: trust
+      - name: Resolve candidate history SemVer and immutable handoff
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/releases/release_publication.py prepare --trust trust --output handoff
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-publication-plan
+          path: handoff/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false
+
+  publish:
+    if: needs.prepare.outputs.mode == 'publish'
+    needs: prepare
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: release-publication-plan
+          path: handoff
+      - name: Reconcile snapshot publish draft assets tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PUBLISHER_ACTOR_IDS: ${{ vars.RELEASE_PUBLISHER_ACTOR_IDS }}
+        run: python3 tools/releases/release_publication.py publish --handoff handoff --output publication
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-publication-result
+          path: publication/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false
+
+  outcome:
+    if: always() && needs.prepare.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    needs: [prepare, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: release-publication-plan
+          path: handoff
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        if: needs.prepare.outputs.mode == 'publish'
+        with:
+          name: release-publication-result
+          path: publication
+      - name: Reconcile job results and produce success outcome
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_MODE: ${{ needs.prepare.outputs.mode }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CURRENT_ACTOR: ${{ github.actor }}
+          CURRENT_ACTOR_ID: ${{ github.actor_id }}
+        run: python3 tools/releases/release_publication.py outcome --handoff handoff --publication publication --output outcome
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-publication-outcome
+          path: outcome/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false

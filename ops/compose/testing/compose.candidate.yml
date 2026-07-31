@@ -1,0 +1,41 @@
+name: ${CANDIDATE_PROJECT:?candidate project required}
+services:
+  backend:
+    image: ${CANDIDATE_BACKEND_IMAGE:?digest required}
+    environment:
+      ERP_BASE_URL: https://erp.candidate.invalid
+      ECOMMERCE_BASE_URL: https://website.candidate.invalid
+      ANDROID_BASE_URL: https://erp.candidate.invalid
+      WEBSITE_BASE_URL: https://website.candidate.invalid
+      APP_FRONTEND_URL: https://erp.candidate.invalid
+      APP_CORS_ALLOWED_ORIGINS: https://erp.candidate.invalid,https://website.candidate.invalid
+      ROOT_BOOTSTRAP_ENABLED: "true"
+      ROOT_BOOTSTRAP_NAME: Candidate Root
+      ROOT_BOOTSTRAP_EMAIL: ${CANDIDATE_ROOT_EMAIL:?required}
+      ROOT_BOOTSTRAP_PASSWORD: ${CANDIDATE_ROOT_PASSWORD:?required}
+  website_back:
+    image: ${CANDIDATE_WEBSITE_BACK_IMAGE:?digest required}
+    environment:
+      APP_CORS_ALLOWED_ORIGINS: https://website.candidate.invalid,https://erp.candidate.invalid
+      APP_WEBSOCKET_ALLOWED_ORIGINS: https://website.candidate.invalid,https://erp.candidate.invalid
+  frontend:
+    image: ${CANDIDATE_FRONTEND_IMAGE:?digest required}
+    environment: {VITE_BASE_API_URL: https://erp.candidate.invalid}
+  website_front:
+    image: ${CANDIDATE_WEBSITE_FRONT_IMAGE:?digest required}
+    environment:
+      VITE_ERP_API_URL: https://erp.candidate.invalid
+      VITE_WEBSITE_API_URL: https://website.candidate.invalid
+  whatsapp_service:
+    image: ${CANDIDATE_WHATSAPP_IMAGE:?digest required}
+    environment: {WHATSAPP_INITIALIZATION_DISABLED: "true"}
+  gateway:
+    image: ${CANDIDATE_GATEWAY_IMAGE:?digest required}
+networks:
+  emporio-app: {name: "${CANDIDATE_PROJECT}-app"}
+  emporio-db: {name: "${CANDIDATE_PROJECT}-db", internal: true}
+volumes:
+  postgres-data: {name: "${CANDIDATE_PROJECT}-postgres"}
+  backend-uploads: {name: "${CANDIDATE_PROJECT}-backend-uploads"}
+  website-uploads: {name: "${CANDIDATE_PROJECT}-website-uploads"}
+  whatsapp-session: {name: "${CANDIDATE_PROJECT}-whatsapp-session"}
