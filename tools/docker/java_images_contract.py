@@ -11,8 +11,16 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILD_TAG = "maven:3.9.11-eclipse-temurin-21-alpine"
-RUNTIME_TAG = "eclipse-temurin:21.0.8_9-jre-alpine-3.22"
+BUILD_TAG = "maven:3.9.16-eclipse-temurin-21-alpine"
+RUNTIME_TAG = "eclipse-temurin:21.0.11_10-jre-alpine-3.23"
+BUILD_BASE = (
+    f"{BUILD_TAG}@"
+    "sha256:d88e5b38297858f65f97bc7e7964c760ab988fd18ace41589176f1468c49a489"
+)
+RUNTIME_BASE = (
+    f"{RUNTIME_TAG}@"
+    "sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c"
+)
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 REQUIRED_IGNORES = {
     ".git", ".github", ".env", ".env.*", "!.env.example", "target", "uploads",
@@ -67,7 +75,7 @@ def _validate_dockerfile(name: str, text: str, errors: list[str]) -> None:
         errors.append(f"STAGES_INVALID:{name}")
         return
     build_image, runtime_image = from_lines[0][0], from_lines[1][0]
-    if not build_image.startswith(BUILD_TAG + "@") or not runtime_image.startswith(RUNTIME_TAG + "@"):
+    if build_image != BUILD_BASE or runtime_image != RUNTIME_BASE:
         errors.append(f"BASE_TAG_INVALID:{name}")
     if not DIGEST.fullmatch(build_image.split("@")[-1]) or not DIGEST.fullmatch(runtime_image.split("@")[-1]):
         errors.append(f"BASE_DIGEST_INVALID:{name}")

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM maven:3.9.11-eclipse-temurin-21-alpine@sha256:922927df2c662cdd47ddb116443d6bec4696cfae3de1a0ddac8fcc7b87ce61ae AS build
+FROM maven:3.9.16-eclipse-temurin-21-alpine@sha256:d88e5b38297858f65f97bc7e7964c760ab988fd18ace41589176f1468c49a489 AS build
 WORKDIR /workspace
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2 mvn -B dependency:go-offline
@@ -7,7 +7,7 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 mvn -B package -DskipTests \
     && cp "$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n 1)" /tmp/app.jar
 
-FROM eclipse-temurin:21.0.8_9-jre-alpine-3.22@sha256:990397e0495ac088ab6ee3d949a2e97b715a134d8b96c561c5d130b3786a489d AS runtime
+FROM eclipse-temurin:21.0.11_10-jre-alpine-3.23@sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c AS runtime
 ARG VCS_REF=unknown
 ARG IMAGE_VERSION=local
 LABEL org.opencontainers.image.source="https://github.com/greggorio/abaronesa-emporio" \

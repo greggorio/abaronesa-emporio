@@ -63,10 +63,10 @@ class NodeImagesContractTest(unittest.TestCase):
         self.assert_mutant("frontend/Dockerfile", "@sha256:", "@sha255:", "BASE_DIGEST_REQUIRED")
 
     def test_04_node18_is_rejected(self):
-        self.assert_mutant("frontend/Dockerfile", "node:24.13.0", "node:18.20.0", "NODE24_BASE_REQUIRED")
+        self.assert_mutant("frontend/Dockerfile", "node:24.18.1", "node:18.20.0", "NODE24_BASE_REQUIRED")
 
     def test_05_floating_node_alias_is_rejected(self):
-        self.assert_mutant("website_front/Dockerfile", "node:24.13.0-alpine3.23", "node:24-alpine", "NODE24_BASE_REQUIRED")
+        self.assert_mutant("website_front/Dockerfile", "node:24.18.1-alpine3.24", "node:24-alpine", "NODE24_BASE_REQUIRED")
 
     def test_06_npm_install_is_rejected(self):
         self.assert_mutant("frontend/Dockerfile", "npm ci", "npm install", "NPM_CI_REQUIRED")
@@ -102,7 +102,7 @@ class NodeImagesContractTest(unittest.TestCase):
         self.assert_mutant("whatsapp_service/Dockerfile", "ARG VCS_REF=unknown", "ARG PASSWORD=unknown", "ARG_CONTRACT_INVALID")
 
     def test_17_latest_is_rejected(self):
-        self.assert_mutant("whatsapp_service/Dockerfile", "node:24.13.0-alpine3.23", "node:latest", "LATEST_FORBIDDEN")
+        self.assert_mutant("whatsapp_service/Dockerfile", "node:24.18.1-alpine3.24", "node:latest", "LATEST_FORBIDDEN")
 
     def test_18_docker_socket_is_rejected(self):
         self.assert_mutant("whatsapp_service/Dockerfile", "EXPOSE 3001", "RUN echo /var/run/docker.sock\nEXPOSE 3001", "FORBIDDEN_RUNTIME_CONTENT")
@@ -115,6 +115,22 @@ class NodeImagesContractTest(unittest.TestCase):
 
     def test_21_extra_arg_is_rejected(self):
         self.assert_mutant("frontend/Dockerfile", "ARG VCS_REF=unknown", "ARG VCS_REF=unknown\nARG API_URL", "ARG_CONTRACT_INVALID")
+
+    def test_22_previous_base_references_are_rejected(self):
+        previous_node = (
+            "node:24.13.0-alpine3.23@"
+            "sha256:cd6fb7efa6490f039f3471a189214d5f548c11df1ff9e5b181aa49e22c14383e"
+        )
+        previous_nginx = (
+            "nginx:1.29.5-alpine3.23@"
+            "sha256:1eff5a5f3fcf8431a0abb7eddf5471fec24e5e1905a2581aeacdb07a4479b92b"
+        )
+        self.mutate("whatsapp_service/Dockerfile", contract.NODE_BASE, previous_node)
+        self.mutate("whatsapp_service/Dockerfile", contract.NODE_BASE, previous_node)
+        self.mutate("frontend/Dockerfile", contract.NGINX_BASE, previous_nginx)
+        errors = self.errors()
+        self.assertIn("NODE24_BASE_REQUIRED:whatsapp_service", errors)
+        self.assertIn("NGINX_BASE_REQUIRED:frontend", errors)
 
 
 if __name__ == "__main__":

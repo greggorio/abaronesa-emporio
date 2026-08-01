@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM nginxinc/nginx-unprivileged:1.29.5-alpine3.23@sha256:42a7d7f2ee23e9f5a1dcdf3647ba5c585bbd18f79e79cd817e70e8cd61c55779
+FROM nginxinc/nginx-unprivileged:1.31.3-alpine3.24@sha256:59ccf0943b0b8e8d9e6ea9039a39555730f544701a655c596f7df7d096c593f5
 ARG VCS_REF=unknown
 ARG IMAGE_VERSION=local
 LABEL org.opencontainers.image.source="https://github.com/greggorio/abaronesa-emporio" \

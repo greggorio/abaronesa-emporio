@@ -52,7 +52,7 @@ class JavaImagesContractTest(unittest.TestCase):
         self.assert_invalid()
 
     def test_04_java_21_maven_39_base_is_required(self):
-        self.mutate(self.files.backend_dockerfile, "maven:3.9.11-eclipse-temurin-21-alpine", "maven:3.8-eclipse-temurin-17")
+        self.mutate(self.files.backend_dockerfile, contract.BUILD_TAG, "maven:3.8-eclipse-temurin-17")
         self.assert_invalid()
 
     def test_05_complete_runtime_tag_is_required(self):
@@ -183,6 +183,14 @@ class JavaImagesContractTest(unittest.TestCase):
     def test_36_backend_schema_must_be_read_only(self):
         self.mutate(self.files.backend_dockerfile, "chmod -R a-w /app/nfe/schemas", "chmod -R u+w /app/nfe/schemas")
         self.assert_invalid()
+
+    def test_37_previous_base_reference_is_rejected(self):
+        previous = (
+            "maven:3.9.11-eclipse-temurin-21-alpine@"
+            "sha256:922927df2c662cdd47ddb116443d6bec4696cfae3de1a0ddac8fcc7b87ce61ae"
+        )
+        self.mutate(self.files.backend_dockerfile, contract.BUILD_BASE, previous)
+        self.assertIn("BASE_TAG_INVALID:backend", contract.validate(self.files))
 
 
 if __name__ == "__main__":
