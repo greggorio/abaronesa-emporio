@@ -166,6 +166,44 @@ class DefinitiveContractTest(unittest.TestCase):
   candidates=[{"commitSha":"1"*40},{"commitSha":"2"*40}]
   with mock.patch("lineage.classify",return_value="ancestor"),mock.patch("lineage.git",return_value="2"):
    with self.assertRaisesRegex(ValueError,"ambiguous"):lineage.nearest(candidates,"3"*40)
+ def _trust_job(self):
+  import yaml
+  return yaml.load((ROOT/".github/workflows/publish-candidate.yml").read_text(),Loader=yaml.BaseLoader)["jobs"]["trust"]
+ def test_28_trust_order_is_checkout_persist_download_trust(self):
+  """S30 correction-02 F: checkout cleans the workspace, so persist must follow it."""
+  trust_job=self._trust_job()
+  self.assertEqual([],workflow.validate_trust_order(trust_job))
+  self.assertEqual(["checkout","persist","download","trust"],[s for s in (workflow.trust_stage(step) for step in trust_job["steps"]) if s])
+ def test_29_trust_order_mutants(self):
+  trust_job=self._trust_job();steps=trust_job["steps"]
+  stages={workflow.trust_stage(step):index for index,step in enumerate(steps) if workflow.trust_stage(step)}
+  self.assertEqual({"checkout","persist","download","trust"},set(stages))
+  regressed=copy.deepcopy(steps)
+  regressed.insert(stages["checkout"],regressed.pop(stages["persist"]))
+  self.assertEqual(["persist","checkout","download","trust"],[s for s in (workflow.trust_stage(step) for step in regressed) if s])
+  self.assertIn("TRUST_ORDER",workflow.validate_trust_order({"steps":regressed}))
+  for stage in ("checkout","persist","download","trust"):
+   with self.subTest(removed=stage):
+    reduced=[step for step in copy.deepcopy(steps) if workflow.trust_stage(step)!=stage]
+    self.assertIn("TRUST_ORDER",workflow.validate_trust_order({"steps":reduced}))
+  swapped=copy.deepcopy(steps)
+  swapped.insert(stages["download"],swapped.pop(stages["trust"]))
+  self.assertIn("TRUST_ORDER",workflow.validate_trust_order({"steps":swapped}))
+ def test_30_trust_cannot_disable_checkout_clean(self):
+  """Disabling clean is the forbidden shortcut around the ordering contract."""
+  steps=copy.deepcopy(self._trust_job()["steps"])
+  for step in steps:
+   if str(step.get("uses","")).startswith("actions/checkout@"):step.setdefault("with",{})["clean"]="false"
+  self.assertIn("TRUST_CLEAN_DISABLED",workflow.validate_trust_order({"steps":steps}))
+ def test_31_regressed_workflow_fails_full_validator(self):
+  """The regression must be rejected by the top-level validator, not only the helper."""
+  publish=(ROOT/".github/workflows/publish-candidate.yml").read_text()
+  checkout='      - name: Checkout received SHA\n        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2\n        with: {ref: "${{ github.event.workflow_run.head_sha }}", fetch-depth: 0, persist-credentials: false}\n'
+  persist='      - name: Persist untrusted event without interpolation\n        env: {RUN_JSON: "${{ toJSON(github.event.workflow_run) }}"}\n        run: python3 -c \'import os,pathlib; pathlib.Path("workflow-run.json").write_text(os.environ["RUN_JSON"]+"\\n")\'\n'
+  self.assertIn(checkout+persist,publish)
+  regressed=publish.replace(checkout+persist,persist+checkout,1)
+  self.assertNotEqual(publish,regressed)
+  self.assertIn("TRUST_ORDER",workflow.validate_workflows(publish=regressed))
  def test_27_head_exact_advanced_and_unrelated(self):
   class Done:
    def __init__(self,code):self.returncode=code

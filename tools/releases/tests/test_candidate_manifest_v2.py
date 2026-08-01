@@ -1,5 +1,6 @@
-import copy,json,sys,tempfile,unittest
+import copy,json,os,sys,tempfile,unittest
 from pathlib import Path
+from unittest import mock
 ROOT=Path(__file__).resolve().parents[3];sys.path[:0]=[str(ROOT/"tools/releases"),str(ROOT/"tools/candidates")]
 import artifact_io,candidate_manifest,finalize_candidate
 class CandidateManifestV2Test(unittest.TestCase):
@@ -32,8 +33,32 @@ class CandidateManifestV2Test(unittest.TestCase):
    metadata={"schemaVersion":1,"stage":"pending","repository":pending["repository"],"commitSha":pending["commitSha"],"workflowRunId":pending["workflow"]["runId"],"workflowAttempt":pending["workflow"]["attempt"],"pendingSha256":artifact_io.digest(pdata)};(pd/"metadata.json").write_bytes(artifact_io.canonical(metadata))
    rdata=artifact_io.canonical(receipt);(rd/"integration-result.json").write_bytes(rdata);(rd/"integration-result.json.sha256").write_bytes(artifact_io.sidecar(rdata))
    effective={"schemaVersion":2,"kind":"candidate-effective-plan","mode":"continue","repository":pending["repository"],"commitSha":pending["commitSha"],"sourceCi":pending["sourceCi"],"catalog":pending["catalog"],"predecessor":pending["predecessor"],"resolution":pending["resolution"]};ep=root/"effective.json";ep.write_bytes(artifact_io.canonical(effective));(ctx/"selection.json").write_bytes(artifact_io.canonical(pending["predecessor"]))
-   final=finalize_candidate.finalize(pd,rd,ep,ctx,root/"final");self.assertEqual(2,final["schemaVersion"])
+   # finalize_candidate reads GITHUB_RUN_ID/GITHUB_RUN_ATTEMPT from the
+   # environment. Inside Actions those carry the real run, which never matches
+   # this fixture, so pin them to the fixture's own identity. Production keeps
+   # reading the real workflow identity; only the test is isolated.
+   env={"GITHUB_RUN_ID":str(pending["workflow"]["runId"]),"GITHUB_RUN_ATTEMPT":str(pending["workflow"]["attempt"])}
+   with mock.patch.dict(os.environ,env,clear=False):
+    final=finalize_candidate.finalize(pd,rd,ep,ctx,root/"final");self.assertEqual(2,final["schemaVersion"])
    self.assertEqual({"candidate.json","candidate.json.sha256","metadata.json"},{p.name for p in (root/"final").iterdir()})
+ def test_07b_finalizer_fixture_is_independent_of_external_ids(self):
+  """Causal proof: a hostile ambient run identity must not change the outcome."""
+  for ambient in ({"GITHUB_RUN_ID":"999999999","GITHUB_RUN_ATTEMPT":"7"},{}):
+   with self.subTest(ambient=sorted(ambient)):
+    with mock.patch.dict(os.environ,ambient,clear=True):
+     self.test_07_finalizer_metadata_sidecar_plan_predecessor()
+ def test_07c_finalizer_still_rejects_a_foreign_run(self):
+  """The isolation must not disable the binding it is meant to satisfy."""
+  pending,receipt=self._pending_receipt()
+  with tempfile.TemporaryDirectory() as raw:
+   root=Path(raw);pd=root/"pending";rd=root/"receipt";ctx=root/"ctx";pd.mkdir();rd.mkdir();ctx.mkdir()
+   pdata=artifact_io.canonical(pending);(pd/"pending.json").write_bytes(pdata);(pd/"pending.json.sha256").write_bytes(artifact_io.sidecar(pdata))
+   metadata={"schemaVersion":1,"stage":"pending","repository":pending["repository"],"commitSha":pending["commitSha"],"workflowRunId":pending["workflow"]["runId"],"workflowAttempt":pending["workflow"]["attempt"],"pendingSha256":artifact_io.digest(pdata)};(pd/"metadata.json").write_bytes(artifact_io.canonical(metadata))
+   rdata=artifact_io.canonical(receipt);(rd/"integration-result.json").write_bytes(rdata);(rd/"integration-result.json.sha256").write_bytes(artifact_io.sidecar(rdata))
+   effective={"schemaVersion":2,"kind":"candidate-effective-plan","mode":"continue","repository":pending["repository"],"commitSha":pending["commitSha"],"sourceCi":pending["sourceCi"],"catalog":pending["catalog"],"predecessor":pending["predecessor"],"resolution":pending["resolution"]};ep=root/"effective.json";ep.write_bytes(artifact_io.canonical(effective));(ctx/"selection.json").write_bytes(artifact_io.canonical(pending["predecessor"]))
+   foreign={"GITHUB_RUN_ID":str(int(pending["workflow"]["runId"])+1),"GITHUB_RUN_ATTEMPT":str(pending["workflow"]["attempt"])}
+   with mock.patch.dict(os.environ,foreign,clear=True):
+    with self.assertRaisesRegex(ValueError,"pending publisher run"):finalize_candidate.finalize(pd,rd,ep,ctx,root/"final")
  def test_08_finalizer_rejects_metadata_tamper(self):
   pending,receipt=self._pending_receipt()
   with self.assertRaises(candidate_manifest.ManifestError):candidate_manifest.finalize(pending,{**receipt,"pendingSha256":"sha256:"+"0"*64})

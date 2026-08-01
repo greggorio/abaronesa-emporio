@@ -22,12 +22,12 @@ jobs:
       sha: ${{ steps.verify.outputs.sha }}
       head_mode: ${{ steps.verify.outputs.head_mode }}
     steps:
-      - name: Persist untrusted event without interpolation
-        env: {RUN_JSON: "${{ toJSON(github.event.workflow_run) }}"}
-        run: python3 -c 'import os,pathlib; pathlib.Path("workflow-run.json").write_text(os.environ["RUN_JSON"]+"\n")'
       - name: Checkout received SHA
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with: {ref: "${{ github.event.workflow_run.head_sha }}", fetch-depth: 0, persist-credentials: false}
+      - name: Persist untrusted event without interpolation
+        env: {RUN_JSON: "${{ toJSON(github.event.workflow_run) }}"}
+        run: python3 -c 'import os,pathlib; pathlib.Path("workflow-run.json").write_text(os.environ["RUN_JSON"]+"\n")'
       - name: Download the unique CI plan from the triggering run
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with: {name: candidate-plan, path: candidate-plan, run-id: "${{ github.event.workflow_run.id }}", github-token: "${{ github.token }}"}

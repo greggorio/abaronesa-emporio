@@ -33,6 +33,7 @@ def validate_workflows(ci=None,publish=None):
   '"imagetools","inspect"','"pull","--quiet","--policy","always"','"up","-d","--no-build","--pull","never","--wait","--wait-timeout","600"',
   "candidate-plan/candidate-plan.json","component-result.json","pending.json","integration-result.json","artifact-digest","validate_pending.py","cleanup_image.py")
  if not all(x in source for x in required):errors.append("DEFINITIVE_PROTOCOL")
+ errors.extend(validate_trust_order(jobs.get("trust",{})))
  pending_validate=publish.find("python3 tools/candidates/validate_pending.py")
  compose_env=publish.find("python3 tools/candidates/compose_env.py")
  integrated_login=publish.find("docker/login-action@",publish.find("  integrated:"))
@@ -47,6 +48,29 @@ def validate_workflows(ci=None,publish=None):
  if "needs.predecessor.outputs.mode == 'continue'" not in str(jobs.get("build",{}).get("if","")) or "needs.predecessor.outputs.mode == 'continue'" not in str(jobs.get("assemble",{}).get("if","")):errors.append("TERMINAL_BUILD_GATE")
  terminal_steps=[step for step in jobs.get("publish",{}).get("steps",[]) if step.get("name")=="Create prior terminal outcome"]
  if len(terminal_steps)!=1 or "needs.predecessor.outputs.mode != 'continue'" not in str(terminal_steps[0].get("if","")):errors.append("TERMINAL_OUTCOME")
+ return errors
+def trust_stage(step):
+ """Classify a trust step into the four mandatory stages, in order."""
+ uses=str(step.get("uses",""));run=str(step.get("run",""))
+ if uses.startswith("actions/checkout@"):return "checkout"
+ if "workflow-run.json" in run and "RUN_JSON" in str(step.get("env",{})):return "persist"
+ if uses.startswith("actions/download-artifact@") and step.get("with",{}).get("name")=="candidate-plan":return "download"
+ if "tools/candidates/trust.py" in run:return "trust"
+ return None
+def validate_trust_order(trust):
+ """actions/checkout cleans the workspace, so the event must be persisted after it.
+
+ Persisting workflow-run.json before the checkout lets `clean: true` delete the
+ file, and trust.py then fails with No such file or directory. The order
+ checkout -> persist -> download -> trust is the contract, and clean must never
+ be disabled to work around it.
+ """
+ errors=[]
+ steps=trust.get("steps",[])
+ stages=[stage for stage in (trust_stage(step) for step in steps) if stage]
+ if stages!=["checkout","persist","download","trust"]:errors.append("TRUST_ORDER")
+ for step in steps:
+  if str(step.get("uses","")).startswith("actions/checkout@") and str(step.get("with",{}).get("clean","")).lower()=="false":errors.append("TRUST_CLEAN_DISABLED")
  return errors
 def main():
  errors=validate_workflows()

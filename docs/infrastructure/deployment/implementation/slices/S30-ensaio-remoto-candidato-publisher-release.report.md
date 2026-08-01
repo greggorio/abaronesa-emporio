@@ -1131,3 +1131,324 @@ Python usaram `PYTHONDONTWRITEBYTECODE=1`; nenhum `__pycache__` foi criado.
 disponível localmente (`pg_isready` indisponível/sem servidor) e a correction
 proíbe instalar banco pela rede. A prova definitiva da correção D fica com o
 service da CI.
+
+### 18.8 Commit e push corretivos
+
+Executada exatamente a sequência da Seção 4 da correction-01, com a lista de
+`git add` literal. Sem force, tags, outro remote, outra branch, `--no-verify`,
+`git init` ou alteração de identidade.
+
+| Comando | Exit | Duração | Saída literal sanitizada |
+|---|---:|---:|---|
+| `git add` dos onze caminhos autorizados | 0 | — | sem saída |
+| `git diff --cached --check` | **0** | — | saída vazia |
+| `git commit -m "fix: close first CI gates"` | 0 | — | `[main 41ab410] fix: close first CI gates`; `11 files changed, 705 insertions(+), 8 deletions(-)`; `create mode 100644 frontend/.env.example` |
+| `git push origin main` | 0 | 2,680499 s | `b71272f..41ab410  main -> main` |
+
+```text
+sha        41ab410d757154131ce6a2344fd8e561152d2acd
+author     Gregorio <gregorio@smartdata.com>
+subject    fix: close first CI gates
+parent     b71272f4b5c313aa70cb97c8948643eda73d7bec
+HEAD == origin/main == 41ab410d757154131ce6a2344fd8e561152d2acd
+tags       zero
+```
+
+O staged diff conteve exatamente os onze caminhos autorizados. Diferente do
+baseline, o `git diff --cached --check` **passou com exit 0**, porque o
+conteúdo alterado não introduz whitespace pendente. Os arquivos do orquestrador
+— `HANDOFF_ORQUESTRADOR.md`, `implementation/README.md` e a própria
+`correction-01.md` — permaneceram não commitados, por não constarem da lista de
+`git add`.
+
+### 18.9 Nova CI e novo publish-candidate
+
+| Item | Valor |
+|---|---|
+| CI run | `30685735159`, evento `push`, head_sha `41ab410d…`, conclusão **`failure`** |
+| Publish Candidate run | `30685795981`, evento `workflow_run`, head_sha `41ab410d…`, conclusão **`failure`** |
+
+Jobs da CI:
+
+```text
+plan           success   (era failure)
+backend        success   (era failure)
+website_back   success
+frontend       success
+website_front  success
+whatsapp       success
+contracts      failure   (era failure, por causa diferente)
+images         skipped
+```
+
+**Três das quatro correções ficaram provadas remotamente:**
+
+- **A/plan:** o job `plan` passou. Observação honesta: neste commit a base de
+  diff existe (`b71272f4…`), então o caminho `DIFF_BASE_UNAVAILABLE_FAIL_CLOSED`
+  não foi exercitado remotamente. A correção A está provada apenas pelos oito
+  testes causais locais, incluindo a comparação com a saída real de
+  `resolve_changes.resolve_event`. Só um novo repositório vazio exercitaria o
+  caminho raiz de novo.
+- **D/backend:** o job `backend` passou com o service PostgreSQL. Os 27 erros de
+  `Connection refused` desapareceram. Correção provada remotamente.
+- **B e C/contracts:** os dezesseis erros de `required-file` e as duas falhas de
+  `test_44` e `test_security_matcher_mutant_fails` desapareceram. A suíte
+  remota saiu de `292 tests, failures=2, errors=17` para
+  `296 tests, errors=1`.
+
+### 18.10 Correção de um erro do diagnóstico anterior
+
+A Seção 16.3, item B, deste relatório afirmou que os dezessete erros do job
+`contracts` eram “todos `validate_publisher_ui.ValidationError: required-file`”.
+Isso está incorreto e a correction-01 herdou a imprecisão: eram **dezesseis**
+erros de `required-file`, mais **um** erro distinto,
+`test_07_finalizer_metadata_sidecar_plan_predecessor`, que a contagem agregada
+encobriu. Os dezesseis foram corrigidos; o décimo sétimo permanece e é o defeito
+E abaixo.
+
+### 18.11 Defeitos remanescentes, ambos fora da fronteira
+
+**E — `GITHUB_RUN_ID` vaza para uma fixture de teste.**
+
+```text
+ERROR test_candidate_manifest_v2.CandidateManifestV2Test
+      .test_07_finalizer_metadata_sidecar_plan_predecessor
+  finalize_candidate.finalize -> validate_pending.load_bundle
+  ValueError: pending publisher run
+```
+
+`finalize_candidate.finalize()` lê `os.environ.get("GITHUB_RUN_ID")` e
+`GITHUB_RUN_ATTEMPT`. Dentro do Actions essas variáveis carregam o run real, que
+não coincide com o `runId` da fixture, e `validate_pending.load_bundle` recusa o
+bundle. O teste não isola o ambiente. Reproduzido localmente de forma exata:
+
+```text
+GITHUB_RUN_ID=999999 GITHUB_RUN_ATTEMPT=1 python3 -m unittest \
+  discover -s tools/releases/tests -p 'test_candidate_manifest_v2.py'
+  -> Ran 9 tests  FAILED (errors=1)
+
+python3 -m unittest discover -s tools/releases/tests -p 'test_candidate_manifest_v2.py'
+  -> Ran 9 tests  OK
+```
+
+Correção exigiria alterar `tools/releases/tests/test_candidate_manifest_v2.py`
+ou `tools/candidates/finalize_candidate.py`/`validate_pending.py`, nenhum deles
+na fronteira da correction-01.
+
+**F — `publish-candidate.yml` grava `workflow-run.json` antes do checkout que o
+apaga.**
+
+```text
+trust:invalid:[Errno 2] No such file or directory: 'workflow-run.json'
+exit code 3
+```
+
+O job `trust` avançou além do `download-artifact`, que agora encontra o
+`candidate-plan` — efeito colateral positivo da correção A. Falhou no passo 5.
+Causa comprovada nos logs: o passo 2 grava `workflow-run.json` no workspace; o
+passo 3, `actions/checkout`, roda com `clean: true` e registra literalmente
+`Deleting the contents of '/home/runner/work/abaronesa-emporio/abaronesa-emporio'`,
+removendo o arquivo antes do passo 5 lê-lo. É defeito estrutural de ordenação de
+passos, latente desde a S12 e só observável agora que a cadeia chegou até aqui.
+`.github/workflows/publish-candidate.yml` não está na fronteira da
+correction-01.
+
+### 18.12 Estado remoto, produção e bloqueios
+
+```text
+runs totais: 4
+  CI                 push          failure   30667668206  (b71272f4)
+  Publish Candidate  workflow_run  failure   30667761457  (b71272f4)
+  CI                 push          failure   30685735159  (41ab410d)
+  Publish Candidate  workflow_run  failure   30685795981  (41ab410d)
+releases: 0   tags: 0   artifacts do candidato: nenhum manifesto final
+```
+
+Continuam inexistentes candidato, manifesto, image digests, provenance,
+attestation, release e tag; nada foi inventado. `publish-release.yml`,
+`deploy-production.yml` e `rollback-production.yml` não foram executados nem
+disparados. Nenhuma imagem chegou ao GHCR: o job `build` foi pulado antes de
+qualquer login ou push de registry. Não houve SSH, VPS, DNS, Docker de produção,
+release, cleanup destrutivo ou criação de credencial. A ausência de
+`read:packages` permanece registrada e, novamente, sem efeito prático.
+
+Nenhum recurso remoto foi apagado. S31 não foi criada.
+
+### 18.13 Divergências
+
+1. **CI ainda não está verde**, por causa do defeito E, que sobreviveu porque a
+   correction-01 — apoiada na contagem imprecisa corrigida na Seção 18.10 — não
+   o incluiu e não autorizou seus arquivos.
+2. **A cadeia do candidato ainda não produz candidato**, agora por causa do
+   defeito F, que só se tornou observável depois que as correções A e D
+   destravaram os estágios anteriores.
+3. **Correção A não foi exercitada remotamente** no caminho do commit raiz, por
+   já existir base de diff; a prova é local e causal.
+4. **`mvn -B verify` local não executado** por ausência de PostgreSQL, conforme
+   permitido pela correction.
+5. As Seções 18.9 em diante descrevem fatos posteriores ao commit `41ab410` e
+   permanecem **não commitadas**, já que a correction autoriza exatamente um
+   commit e um push.
+
+Os defeitos E e F exigem uma nova autorização de fronteira. O executor parou
+sem tocá-los.
+
+IN_PROGRESS — aguardando revisão do orquestrador
+
+## 19. Execução da correction-02 — 01/08/2026
+
+### 19.1 Escopo e autoridade
+
+Execução em `/home/gregorio/git/baronesa/emporio`, restrita a E e F da
+[correction-02](./S30-ensaio-remoto-candidato-publisher-release.correction-02.md).
+Relidos a task S30, a emenda-01, a correction-01, a correction-02, o
+`HANDOFF_ORQUESTRADOR.md`, o tracker e os relatórios S11–S30.
+
+O diagnóstico da correction-02 coincide com o registrado nas Seções 18.11 e
+18.12; não houve discordância a contestar.
+
+Arquivos alterados, todos dentro da fronteira:
+
+- `.github/workflows/publish-candidate.yml`;
+- `tools/candidates/validate_candidate_workflow.py`;
+- `tools/candidates/tests/test_definitive_contract.py`;
+- `tools/releases/tests/test_candidate_manifest_v2.py`;
+- este relatório.
+
+Não alterados: `candidate_manifest.py`, `finalize_candidate.py`,
+`validate_pending.py`, backend, frontend, `release_control`, `ci.yml`, demais
+workflows, OpenAPI, schemas, `.gitignore`, correction-01, HANDOFF, tracker e
+produção. S31 não foi criada.
+
+### 19.2 Correção E — isolamento do ambiente na fixture
+
+`test_07_finalizer_metadata_sidecar_plan_predecessor` passou a fixar
+`GITHUB_RUN_ID` e `GITHUB_RUN_ATTEMPT` com os valores da própria fixture, via
+`mock.patch.dict`, imediatamente antes de chamar `finalize_candidate.finalize()`.
+Nenhum arquivo de produção foi alterado: `finalize_candidate` continua lendo a
+identidade real do workflow.
+
+Provas causais acrescentadas ao mesmo arquivo:
+
+| Teste | Verificação |
+|---|---|
+| `test_07b_finalizer_fixture_is_independent_of_external_ids` | reexecuta o teste sob um ambiente hostil (`GITHUB_RUN_ID=999999999`, `attempt=7`) e sob ambiente totalmente limpo; ambos passam |
+| `test_07c_finalizer_still_rejects_a_foreign_run` | com um run alheio no ambiente e sem o isolamento, `finalize` ainda levanta `ValueError: pending publisher run` |
+
+O `test_07c` é o contrapeso deliberado do isolamento: garante que a correção não
+desliga o binding que ela existe para satisfazer.
+
+Prova direta sob a condição que quebrou o run `30685735159`:
+
+```text
+GITHUB_RUN_ID=30685735159 GITHUB_RUN_ATTEMPT=1 \
+  python3 -m unittest discover -s tools/releases/tests
+  -> Ran 298 tests  OK
+```
+
+### 19.3 Correção F — persistência segura do evento
+
+O job `trust` de `publish-candidate.yml` foi reordenado para:
+
+```text
+1. Checkout received SHA                       (actions/checkout, clean padrão)
+2. Persist untrusted event without interpolation (RUN_JSON -> workflow-run.json)
+3. Download the unique CI plan from the triggering run (candidate-plan)
+4. Validate event plan attempt and exact HEAD  (tools/candidates/trust.py)
+```
+
+O conteúdo dos passos não mudou: o evento continua sendo persistido por variável
+de ambiente sem interpolação insegura, o checkout continua fixado ao
+`head_sha` recebido com `persist-credentials: false`, o download continua
+vinculado ao `run-id` disparador e o `trust.py` continua validando o plano, o
+attempt e o HEAD exato. Apenas a ordem mudou, de modo que o `clean` do checkout
+não possa mais apagar `workflow-run.json`. **`clean` não foi desabilitado.**
+
+`tools/candidates/validate_candidate_workflow.py` ganhou `trust_stage()` e
+`validate_trust_order()`, chamados por `validate_workflows()`. A ordem
+`checkout -> persist -> download -> trust` passou a ser contrato verificado, e
+desabilitar `clean` no checkout do `trust` produz `TRUST_CLEAN_DISABLED`.
+
+Testes causais em `tools/candidates/tests/test_definitive_contract.py`:
+
+| Teste | Mutação | Esperado |
+|---|---|---|
+| `test_28_trust_order_is_checkout_persist_download_trust` | workflow real | ordem exata, sem erros |
+| `test_29_trust_order_mutants` | ordem antiga (persist antes do checkout); remoção individual de cada um dos quatro estágios; `trust.py` antes do download | `TRUST_ORDER` em todos |
+| `test_30_trust_cannot_disable_checkout_clean` | `clean: false` no checkout do `trust` | `TRUST_CLEAN_DISABLED` |
+| `test_31_regressed_workflow_fails_full_validator` | reintroduz textualmente a ordem antiga no YAML e roda `validate_workflows()` | `TRUST_ORDER` |
+
+O `test_31` é o que fecha o buraco de verdade: prova que a regressão é rejeitada
+pelo validador de topo — o mesmo que a CI executa —, não apenas pelo helper.
+
+### 19.4 Matriz terminal local
+
+| Comando | Exit | Saída literal sanitizada |
+|---|---:|---|
+| `python3 tools/candidates/validate_candidate_workflow.py` | 0 | `candidate-workflow:valid` |
+| `python3 tools/ci/validate_ci.py` | 0 | `ci:valid` |
+| `python3 tools/releases/validate_release_workflow.py` | 0 | `release-workflow:valid` |
+| `python3 tools/releases/validate_publisher_ui.py` | 0 | `publisher-ui:valid` |
+| `python3 tools/releases/validate_publisher_identity_bridge.py` | 0 | `publisher-identity-bridge:valid` |
+| `python3 tools/ci/validate_workflow_inventory.py` | 0 | `workflow-inventory:valid` |
+| `python3 tools/deploy/validate_deploy_workflow.py` | 0 | `deploy-workflow-contract: ok` |
+| `python3 tools/deploy/validate_rollback_contract.py` | 0 | `rollback-contract:valid` |
+| `python3 tools/deploy/validate_rollback_runtime.py` | 0 | `rollback-runtime:valid` |
+| `python3 tools/releases/release_control_contract.py validate` | 0 | `release-control-contract:valid` |
+| `python3 -m unittest discover -s tools/releases/tests` | 0 | `Ran 298 tests` `OK` |
+| `python3 -m unittest discover -s tools/candidates/tests` | 0 | `Ran 60 tests` `OK` |
+| `python3 -m unittest discover -s tools/ci/tests` | 0 | `Ran 24 tests` `OK` |
+| `python3 -m unittest discover -s tools/security/tests` | 0 | `Ran 26 tests` `OK` |
+| `python3 -m unittest discover -s tools/docker/tests` | 0 | `Ran 57 tests` `OK` |
+| `python3 -m unittest discover -s tools/compose/tests` | 0 | `Ran 4 tests` `OK` |
+| `python3 -m unittest discover -s tools/gateway/tests` | 0 | `Ran 4 tests` `OK` |
+| `python3 tools/ci/secret_scan.py --tracked` | 0 | `secret-scan:clean:scanned=2429:allowed=48:unsupported=0:history_scanned=4857` |
+| `git ls-files --cached --others --exclude-standard -z \| xargs -0 python3 tools/ci/secret_scan.py` | 0 | duas linhas `secret-scan:clean`, `unsupported=0` |
+| `git diff --check` | 0 | saída vazia |
+
+`tools/releases/tests` foi de 296 para 298 testes; `tools/candidates/tests`, de
+56 para 60. Todos com `PYTHONDONTWRITEBYTECODE=1`; nenhum `__pycache__` criado.
+
+### 19.5 Defeito irmão de E encontrado fora da fronteira
+
+Ao provar E sob o ambiente do Actions, o executor verificou também a suíte de
+candidates e encontrou um caso idêntico, **preexistente e fora da fronteira**:
+
+```text
+GITHUB_RUN_ID=30685735159 GITHUB_RUN_ATTEMPT=1 \
+  python3 -m unittest discover -s tools/candidates/tests
+  -> Ran 60 tests  FAILED (errors=1)
+
+ERROR test_causal_corrections.CausalCorrectionsTest
+      .test_01_distinct_ci_and_publisher_runs_complete_flow
+  finalize_candidate.finalize -> validate_pending.load_bundle
+  ValueError: pending publisher run
+```
+
+Mesma causa de E: a fixture não isola `GITHUB_RUN_ID`. A correção exigiria
+alterar `tools/candidates/tests/test_causal_corrections.py`, que pertencia à
+fronteira da correction-01 mas **não** à da correction-02, cujo texto restringe
+E a “somente `test_candidate_manifest_v2.py`”. O executor não o tocou.
+
+**Impacto na CI: nenhum.** O job `contracts` de `ci.yml` executa as suítes de
+`tools/releases`, `tools/security`, `tools/docker`, `tools/compose` e
+`tools/gateway`; `tools/candidates/tests` não está entre elas. O defeito é
+latente e só aparece para quem rodar aquela suíte com as variáveis do Actions
+definidas. Fica registrado para decisão do orquestrador.
+
+## 19. Revisão terminal da correction-01 — rejeição
+
+**Veredito: `REJECTED` — 01/08/2026.**
+
+A correction-01 foi validada como implementação parcial: A e D passaram
+remotamente, B e C removeram os erros anteriores, e o commit
+`41ab410d757154131ce6a2344fd8e561152d2acd` foi publicado corretamente.
+
+S30 ainda não pode ser aceita. O run CI `30685735159` mantém um erro em
+`contracts` causado por E, e o Publish Candidate `30685795981` falha no
+`trust` por F. Os dois diagnósticos foram confirmados no código, testes e
+logs. Não há candidato final nem release.
+
+[Correction-02 autorizada](./S30-ensaio-remoto-candidato-publisher-release.correction-02.md)
+
+REJECTED — correction-02 autorizada
