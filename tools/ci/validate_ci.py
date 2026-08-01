@@ -36,6 +36,15 @@ REQUIRED_COMMANDS = (
     "python3 tools/candidates/candidate_plan.py generate",
     "python3 tools/candidates/candidate_plan.py validate",
 )
+POSTGRES_IMAGE = "postgres:16.6-alpine"
+POSTGRES_ENV = {"POSTGRES_DB": "testdb", "POSTGRES_USER": "test", "POSTGRES_PASSWORD": "test"}
+POSTGRES_PORTS = ["5432:5432"]
+POSTGRES_OPTIONS = (
+    '--health-cmd "pg_isready -U test -d testdb"',
+    "--health-interval",
+    "--health-timeout",
+    "--health-retries",
+)
 FORBIDDEN = re.compile(r"(?i)(workflow_dispatch|pull_request_target|repository_dispatch|schedule:|packages:\s*write|contents:\s*write|id-token:\s*write|docker/login-action|docker\s+(?:login|push)|scp\b|ssh\b|rsync\b|workflow_run|continue-on-error:\s*true|self-hosted)")
 
 
@@ -111,6 +120,26 @@ def validate(text: str | None = None) -> list[str]:
         errors.append("vulnerability scan")
     if text.count("name: candidate-plan") != 1 or "retention-days: 7" not in text:
         errors.append("candidate plan artifact")
+    errors.extend(validate_backend_database(jobs.get("backend", {})))
+    return errors
+
+
+def validate_backend_database(backend: dict) -> list[str]:
+    """The backend integration suite requires PostgreSQL reachable on localhost:5432."""
+    errors: list[str] = []
+    services = backend.get("services", {})
+    if set(services) != {"postgres"}:
+        return ["backend:postgres service"]
+    service = services["postgres"]
+    if service.get("image") != POSTGRES_IMAGE:
+        errors.append("backend:postgres image")
+    if service.get("env") != POSTGRES_ENV:
+        errors.append("backend:postgres env")
+    if service.get("ports") != POSTGRES_PORTS:
+        errors.append("backend:postgres ports")
+    options = str(service.get("options", ""))
+    if not all(fragment in options for fragment in POSTGRES_OPTIONS):
+        errors.append("backend:postgres healthcheck")
     return errors
 
 

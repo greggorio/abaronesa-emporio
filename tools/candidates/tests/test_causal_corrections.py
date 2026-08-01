@@ -200,6 +200,60 @@ class CausalCorrectionsTest(unittest.TestCase):
   with mock.patch("publish_guard.lineage.classify",return_value="unrelated"):
    with self.assertRaisesRegex(ValueError,"HEAD"):publish_guard.decide("1"*40,"2"*40,"first",None)
 
+ def root_plan(self):
+  """Plan exactly as ci.yml produces it on the root commit."""
+  resolution=catalog.resolve(catalog.load_yaml(),None,True)
+  resolution["warnings"]=sorted(set(resolution["warnings"]+[candidate_plan.ROOT_BASE_WARNING]))
+  return {"schemaVersion":2,"repository":candidate_plan.REPOSITORY,"commitSha":"b"*40,"baseCommitSha":candidate_plan.ZERO,"ref":"refs/heads/main","workflowRunId":"30667668206","workflowAttempt":1,"catalogSha256":candidate_plan.catalog_digest(),"resolution":resolution}
+
+ def test_14_root_commit_plan_is_valid(self):
+  self.assertEqual([],candidate_plan.validate(self.root_plan()))
+
+ def test_15_root_warning_requires_zero_base(self):
+  plan=self.root_plan();plan["baseCommitSha"]="a"*40
+  self.assertIn("PLAN_RESOLUTION",candidate_plan.validate(plan))
+
+ def test_16_root_commit_accepts_canonical_form_too(self):
+  """Pre-existing root plans without the warning stay valid; only the extra warning is new."""
+  plan=self.root_plan()
+  plan["resolution"]["warnings"]=[w for w in plan["resolution"]["warnings"] if w!=candidate_plan.ROOT_BASE_WARNING]
+  self.assertEqual([],candidate_plan.validate(plan))
+
+ def test_17_canonical_warning_cannot_be_dropped(self):
+  plan=self.root_plan()
+  plan["resolution"]["warnings"]=[candidate_plan.ROOT_BASE_WARNING]
+  self.assertIn("PLAN_RESOLUTION",candidate_plan.validate(plan))
+
+ def test_18_arbitrary_warning_is_rejected(self):
+  plan=self.root_plan()
+  plan["resolution"]["warnings"]=sorted(plan["resolution"]["warnings"]+["ARBITRARY_WARNING"])
+  self.assertIn("PLAN_RESOLUTION",candidate_plan.validate(plan))
+
+ def test_19_root_exemption_does_not_relax_other_fields(self):
+  for field in ("directComponents","buildComponents","validationComponents"):
+   with self.subTest(field=field):
+    plan=self.root_plan();plan["resolution"][field]=plan["resolution"][field][:-1]
+    self.assertIn("PLAN_RESOLUTION",candidate_plan.validate(plan))
+  plan=self.root_plan();plan["resolution"]["classification"]="incremental"
+  self.assertIn("PLAN_RESOLUTION",candidate_plan.validate(plan))
+  plan=self.root_plan();plan["resolution"]["inheritedComponents"]=["backend"]
+  self.assertIn("PLAN_RESOLUTION",candidate_plan.validate(plan))
+
+ def test_20_non_root_plan_never_accepts_the_root_warning(self):
+  resolution=catalog.resolve(catalog.load_yaml(),[".github/workflows/ci.yml"])
+  plan={"schemaVersion":2,"repository":candidate_plan.REPOSITORY,"commitSha":"b"*40,"baseCommitSha":"a"*40,"ref":"refs/heads/main","workflowRunId":"1","workflowAttempt":1,"catalogSha256":candidate_plan.catalog_digest(),"resolution":resolution}
+  self.assertEqual([],candidate_plan.validate(plan))
+  plan["resolution"]=copy.deepcopy(resolution)
+  plan["resolution"]["warnings"]=sorted(set(resolution["warnings"]+[candidate_plan.ROOT_BASE_WARNING]))
+  self.assertIn("PLAN_RESOLUTION",candidate_plan.validate(plan))
+
+ def test_21_root_plan_matches_resolve_changes_output(self):
+  """The accepted shape must be the one resolve_changes.py actually emits."""
+  sys.path.insert(0,str(ROOT/"tools/ci"))
+  import resolve_changes
+  produced=resolve_changes.resolve_event({"ref":"refs/heads/main","before":candidate_plan.ZERO,"after":"b"*40},"b"*40)
+  self.assertEqual(self.root_plan()["resolution"],produced)
+
  def test_13_github_env_uses_real_lf(self):
   with tempfile.TemporaryDirectory() as raw:
    root=Path(raw);directory,effective,selection=self.bundle(root);env_file=root/"env"

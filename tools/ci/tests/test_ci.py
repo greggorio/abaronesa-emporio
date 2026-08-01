@@ -55,6 +55,53 @@ class CIContractTest(unittest.TestCase):
             with self.subTest(label=label):
                 self.assertTrue(ci.validate(self.workflow.replace(old, new, 1)))
 
+    def test_02b_backend_database_service_mutants(self):
+        """S30 correction-01 D: the backend integration suite needs PostgreSQL."""
+        self.assertEqual([], ci.validate(self.workflow))
+        mutants = (
+            (
+                "service removed",
+                "    services:\n      postgres:\n        image: postgres:16.6-alpine\n",
+                "    steps_placeholder:\n",
+            ),
+            ("image drift", "image: postgres:16.6-alpine", "image: postgres:15-alpine"),
+            ("floating image", "image: postgres:16.6-alpine", "image: postgres:latest"),
+            ("database drift", "POSTGRES_DB: testdb", "POSTGRES_DB: otherdb"),
+            ("user drift", "POSTGRES_USER: test", "POSTGRES_USER: postgres"),
+            ("password drift", "POSTGRES_PASSWORD: test", "POSTGRES_PASSWORD: other"),
+            ("port removed", '          - "5432:5432"\n', ""),
+            ("port drift", '- "5432:5432"', '- "5433:5432"'),
+            (
+                "healthcheck removed",
+                '          --health-cmd "pg_isready -U test -d testdb"\n',
+                "",
+            ),
+            (
+                "healthcheck target drift",
+                'pg_isready -U test -d testdb',
+                'pg_isready -U postgres -d postgres',
+            ),
+            ("interval removed", "          --health-interval 10s\n", ""),
+            ("timeout removed", "          --health-timeout 5s\n", ""),
+            ("retries removed", "          --health-retries 10\n", ""),
+        )
+        for label, old, new in mutants:
+            with self.subTest(label=label):
+                mutated = self.workflow.replace(old, new, 1)
+                self.assertNotEqual(self.workflow, mutated, f"anchor absent: {label}")
+                self.assertTrue(ci.validate(mutated), f"mutant survived: {label}")
+
+    def test_02c_backend_database_env_is_synthetic(self):
+        """The fixture credentials must stay synthetic and never become a secret."""
+        self.assertEqual(
+            {"POSTGRES_DB": "testdb", "POSTGRES_USER": "test", "POSTGRES_PASSWORD": "test"},
+            ci.POSTGRES_ENV,
+        )
+        self.assertEqual(
+            [],
+            secrets.findings_for("ci.yml", self.workflow.encode("utf-8")),
+        )
+
     def test_03_migration_positive_and_mutants(self):
         with tempfile.TemporaryDirectory() as raw:
             first = Path(raw) / "first"; second = Path(raw) / "second"

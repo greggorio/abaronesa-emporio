@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 ENV_FILE = Path("frontend/.env")
+ENV_EXAMPLE = Path("frontend/.env.example")
 CONFIG_FILE = Path("frontend/src/config/releasePublisher.js")
 CONFIG_TEST = Path("frontend/src/config/releasePublisher.spec.js")
 CLIENT_FILE = Path("frontend/src/services/releasePublisherClient.js")
@@ -39,7 +40,7 @@ ONBOARDING_DOC = Path("docs/development/ONBOARDING_MINIMO.md")
 DEVELOPMENT_README = Path("docs/development/README.md")
 
 REQUIRED_FILES = {
-    ENV_FILE,
+    ENV_EXAMPLE,
     CONFIG_FILE,
     CONFIG_TEST,
     CLIENT_FILE,
@@ -436,7 +437,11 @@ def validate(root: Path = ROOT) -> None:
         for path in sorted((root / ROUTER_ROOT).rglob("*"))
         if path.is_file() and path.suffix in {".js", ".ts"}
     )
-    _validate_activation(_read(root, ENV_FILE), sources[CONFIG_FILE])
+    # The versioned example is the CI contract; frontend/.env stays local and
+    # unversioned, but is still validated whenever the developer has one.
+    _validate_activation(_read(root, ENV_EXAMPLE), sources[CONFIG_FILE])
+    if (root / ENV_FILE).is_file():
+        _validate_activation(_read(root, ENV_FILE), sources[CONFIG_FILE])
     _validate_panel(sources[PANEL_FILE], router)
     _validate_client(sources[CLIENT_FILE])
     _validate_attempt(sources[ATTEMPT_FILE])

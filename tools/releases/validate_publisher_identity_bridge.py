@@ -82,12 +82,16 @@ def validate(root: Path = ROOT) -> None:
         'HttpMethod.POST,\n'
         '                                "/api/release-control/identity/token"'
     )
+    # The authority must be bound to this exact matcher. A global substring test
+    # survives when another matcher — the S23 deployer token — still carries
+    # SYSTEM, so require the role immediately after the publisher token matcher.
+    system_authority = system_matcher + '\n                        ).hasRole("SYSTEM")'
     require(
         public_matcher in security
         and system_matcher in security
         and security.index(public_matcher) < security.index("anyRequest()")
         and security.index(system_matcher) < security.index("anyRequest()")
-        and ').hasRole("SYSTEM")' in security,
+        and system_authority in security,
         "security-matchers",
     )
     require(

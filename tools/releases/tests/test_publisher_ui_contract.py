@@ -57,11 +57,50 @@ class PublisherUiContractTest(unittest.TestCase):
         root = self.mutant()
         self.mutate(
             root,
-            "frontend/.env",
+            "frontend/.env.example",
             "VITE_RELEASE_CONTROL_MODE=publisher",
             "VITE_RELEASE_CONTROL_MODE=deployer",
         )
         self.assert_invalid(root, "activation-mode")
+
+    def test_02b_missing_versioned_example_fails(self) -> None:
+        """S30 correction-01 B: the CI checkout must carry the example file."""
+        root = self.mutant()
+        (root / validator.ENV_EXAMPLE).unlink()
+        self.assert_invalid(root, "required-file")
+
+    def test_02c_absent_local_env_is_valid(self) -> None:
+        """frontend/.env is unversioned by security policy; CI must not need it."""
+        root = self.mutant()
+        self.assertFalse((root / validator.ENV_FILE).exists())
+        validator.validate(root)
+
+    def test_02d_present_local_env_is_still_validated(self) -> None:
+        for marker, code in (
+            ("VITE_RELEASE_CONTROL_MODE=deployer", "activation-mode"),
+            ("VITE_RELEASE_PUBLISHER_URL=http://127.0.0.1:9999", "activation-url"),
+        ):
+            with self.subTest(marker=marker):
+                root = self.mutant()
+                target = root / validator.ENV_FILE
+                text = (ROOT / validator.ENV_EXAMPLE).read_text(encoding="utf-8")
+                key = marker.split("=", 1)[0]
+                lines = [
+                    marker if line.startswith(key + "=") else line
+                    for line in text.splitlines()
+                ]
+                target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                self.assert_invalid(root, code)
+
+    def test_02e_example_url_must_stay_loopback(self) -> None:
+        root = self.mutant()
+        self.mutate(
+            root,
+            "frontend/.env.example",
+            "VITE_RELEASE_PUBLISHER_URL=http://127.0.0.1:8090",
+            "VITE_RELEASE_PUBLISHER_URL=https://publisher.example.com",
+        )
+        self.assert_invalid(root, "activation-url")
 
     def test_03_production_activation_mutant_fails(self) -> None:
         root = self.mutant()

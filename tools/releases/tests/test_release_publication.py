@@ -418,6 +418,7 @@ class ReleasePublicationTests(unittest.TestCase):
             "publish-candidate.yml",
             "publish-release.yml",
             "deploy-production.yml",
+            "rollback-production.yml",
         }
         self.assertEqual(expected, validate_release_workflow.EXPECTED)
         validate_release_workflow.validate()

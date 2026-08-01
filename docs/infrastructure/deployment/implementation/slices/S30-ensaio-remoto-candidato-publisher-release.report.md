@@ -543,8 +543,6 @@ emenda-01 passaram com evidência reproduzível. Não há divergência entre est
 relatório e o estado real do filesystem: índice com 2428 entradas, `HEAD`
 ausente, tags e reflog vazios, remoto vazio.
 
-IN_PROGRESS — aguardando revisão do orquestrador
-
 ## 14. Resolução do gate 6 por decisão do usuário — 31/07/2026
 
 ### 14.1 Autoridade da decisão
@@ -646,3 +644,490 @@ legado e impede regressão futura. A decisão de materializar essa política
 pertence ao orquestrador.
 
 IN_PROGRESS — aguardando revisão do orquestrador
+
+## 15. Ativação Git autorizada — commit e push
+
+### 15.1 Sequência executada
+
+Executada exatamente a sequência da Seção 1 da emenda-01, sem nenhum argumento
+adicional. Não foram usados `--force`, `--force-with-lease`, `--no-verify`,
+`--tags`, outra branch, outro remote, `git init` ou alteração de identidade.
+O repositório não possui hooks locais instalados (`.git/hooks` contém apenas
+os `*.sample` de fábrica), portanto nenhum hook foi ignorado ou contornado.
+
+| Comando | Exit | Duração | Saída literal sanitizada |
+|---|---:|---:|---|
+| `git add -A` | 0 | 0,013858 s | quatro avisos de normalização CRLF→LF já registrados em 13.4 |
+| `git commit -m "chore: establish initial emporio baseline"` | 0 | — | `2428 files changed, 376273 insertions(+)` |
+| `git push --set-upstream origin main` | 0 | 7,138517 s | `* [new branch] main -> main`; `branch 'main' set up to track 'origin/main'.` |
+
+### 15.2 Identidade do commit
+
+```text
+sha            b71272f4b5c313aa70cb97c8948643eda73d7bec
+author         Gregorio <gregorio@smartdata.com>
+committer      Gregorio <gregorio@smartdata.com>
+subject        chore: establish initial emporio baseline
+date           2026-07-31 18:44:46 -0300
+files          2428
+insertions     376273
+parents        nenhum (commit raiz)
+tags           nenhuma
+branches       somente main
+```
+
+A árvore do commit contém exatamente 2428 arquivos, idênticos à lista staged
+auditada nas Seções 13.4 e 14.4, com
+`staged-list-sha256=2d39aacfdd2b0aedeb2ac2fd362c90060a6f00a97c0c308f44aa107b02f59709`.
+
+### 15.3 Estado remoto após o push
+
+```text
+git rev-parse HEAD          b71272f4b5c313aa70cb97c8948643eda73d7bec
+git rev-parse origin/main   b71272f4b5c313aa70cb97c8948643eda73d7bec
+upstream                    origin/main
+```
+
+| Consulta | Resultado |
+|---|---|
+| `gh api repos/greggorio/abaronesa-emporio` | `default_branch=main`, `pushed_at=2026-07-31T21:45:02Z` |
+| `gh api repos/.../branches` | uma branch: `main`, sha `b71272f4b5c313aa70cb97c8948643eda73d7bec`, `protected=false` |
+| `gh api repos/.../actions/workflows` | `total_count=5`: `CI`, `Deploy Production`, `Publish Candidate`, `Publish Release`, `Rollback Production`, todos `active` |
+
+Os cinco workflows registrados no GitHub correspondem exatamente ao inventário
+local validado por `tools/ci/validate_workflow_inventory.py`. Nenhum workflow
+extra apareceu no repositório remoto.
+
+O SHA do commit local, o SHA de `origin/main` e o SHA da branch remota reportado
+pela API são idênticos, o que fecha a correlação exigida pela Seção 3 da
+emenda-01 entre commit aprovado e conteúdo remoto.
+
+### 15.4 Observação: este relatório não está no commit
+
+O commit `b71272f4` contém a versão deste relatório existente no momento do
+`git add -A`, ou seja, até o fim da Seção 14. As Seções 15 em diante descrevem
+fatos posteriores ao commit e permanecem **não commitadas** na working tree,
+porque a emenda-01 autoriza exatamente um commit e um push. Elas não foram
+enviadas ao remoto e aguardam a decisão do orquestrador sobre como versioná-las.
+
+## 16. Observação de CI e `publish-candidate.yml`
+
+### 16.1 Correlação commit → run
+
+| Item | Valor |
+|---|---|
+| commit aprovado | `b71272f4b5c313aa70cb97c8948643eda73d7bec` |
+| workflow | `CI` (`.github/workflows/ci.yml`) |
+| evento | `push` em `refs/heads/main` |
+| run ID | `30667668206` |
+| attempt | 1 |
+| `head_sha` do run | `b71272f4b5c313aa70cb97c8948643eda73d7bec` |
+| início / fim | `2026-07-31T21:45:07Z` → `2026-07-31T21:46:42Z` |
+| conclusão | **`failure`** |
+| URL | `https://github.com/greggorio/abaronesa-emporio/actions/runs/30667668206` |
+
+O `head_sha` do run é idêntico ao commit aprovado: a cadeia observada
+corresponde ao commit exato, conforme exige a Seção 3.2 da task. O critério
+“terminar verde”, porém, **não foi satisfeito**.
+
+Resultado por job:
+
+```text
+plan           failure
+contracts      failure
+backend        failure
+website_back   success
+frontend       success
+website_front  success
+whatsapp       success
+images         skipped   (depende de plan, contracts e backend)
+```
+
+### 16.2 Cadeia do candidato
+
+| Item | Valor |
+|---|---|
+| workflow | `Publish Candidate` (`.github/workflows/publish-candidate.yml`) |
+| evento | `workflow_run` |
+| run ID | `30667761457` |
+| `head_sha` | `b71272f4b5c313aa70cb97c8948643eda73d7bec` |
+| conclusão | **`failure`** |
+| URL | `https://github.com/greggorio/abaronesa-emporio/actions/runs/30667761457` |
+
+```text
+trust          failure    (passo 4, "Download the unique CI plan from the triggering run")
+predecessor    skipped
+build          skipped
+assemble       skipped
+integrated     skipped
+publish        skipped
+```
+
+Erro literal do passo 4:
+
+```text
+Unable to download artifact(s): Artifact not found for name: candidate-plan
+```
+
+Interpretação: o job `plan` da CI falhou antes do passo
+`Persist candidate plan for trusted publisher`, então o artifact `candidate-plan`
+nunca existiu. O `trust` do publisher recusou-se a prosseguir sem ele, e todos
+os jobs seguintes foram pulados. **A cadeia falhou fechada, que é o
+comportamento contratual correto**: nenhum candidato foi fabricado a partir de
+evidência ausente.
+
+Consequência direta: não existem `candidate_id`, manifesto, image digests,
+provenance, attestation, artefatos ou outcome para cruzar. Nada foi inventado.
+
+```text
+gh api repos/.../actions/artifacts     total_count=0
+gh api repos/.../releases              0
+gh api repos/.../tags                  0
+```
+
+### 16.3 Causas-raiz apuradas
+
+Quatro defeitos distintos, todos preexistentes ao push e nenhum causado pela
+ativação Git:
+
+**A. `plan` — `candidate-plan:invalid:PLAN_RESOLUTION` (exit 3).**
+`tools/ci/resolve_changes.py` produziu, no commit raiz, a resolução:
+
+```text
+classification = first_release
+changedPaths   = []
+warnings       = ["DIFF_BASE_UNAVAILABLE_FAIL_CLOSED",
+                  "FIRST_RELEASE_REQUIRES_COMPLETE_BOM"]
+```
+
+`tools/candidates/candidate_plan.py`, em `validate()`, **recomputa** a resolução
+com `catalog.resolve(catalog.load_yaml(), changedPaths, first_release)` e compara
+o dicionário inteiro. A recomputação local devolve:
+
+```text
+warnings = ["FIRST_RELEASE_REQUIRES_COMPLETE_BOM"]
+```
+
+Todas as demais chaves são idênticas; diverge exclusivamente `warnings`, porque
+`DIFF_BASE_UNAVAILABLE_FAIL_CLOSED` só é emitido por `resolve_changes.py` e
+nunca por `catalog.resolve`. Como `DIFF_BASE_UNAVAILABLE_FAIL_CLOSED` ocorre
+apenas quando não há base de diff — isto é, **somente no primeiro commit** —,
+este defeito era estruturalmente invisível até agora e bloqueia o primeiro
+candidato por construção.
+
+**B. `contracts` — 17 erros, todos `validate_publisher_ui.ValidationError:
+required-file`.** `REQUIRED_FILES` de `tools/releases/validate_publisher_ui.py`
+inclui `frontend/.env`. Esse caminho é excluído por política de segurança em
+`.gitignore` (`**/.env`) desde a S02 e, portanto, jamais estará presente em um
+checkout de CI. Localmente o validador passa porque o arquivo existe em disco.
+Os 16 testes mutantes derivados falham em cascata, ao tentar
+`shutil.copy2` do arquivo inexistente. Dos 16 `REQUIRED_FILES`, quinze estão
+corretamente no commit; apenas `frontend/.env` falta, e por decisão deliberada.
+
+**C. `contracts` — 2 falhas de teste preexistentes, reproduzíveis localmente.**
+Execução local de `python3 -m unittest discover -s tools/releases/tests`:
+`Ran 292 tests`, `FAILED (failures=2)` — sem os 17 erros do item B, já que
+`frontend/.env` existe no workspace.
+
+```text
+FAIL test_release_publication.test_44_workflow_validator_valid
+     AssertionError: Items in the second set but not the first: 'rollback-production.yml'
+FAIL test_publisher_identity_bridge_contract.test_security_matcher_mutant_fails
+     AssertionError: ValueError not raised
+```
+
+O primeiro é consequência direta da S29, que acrescentou
+`rollback-production.yml` a `validate_release_workflow.EXPECTED` sem atualizar
+o teste correspondente. Ambos passaram despercebidos porque as matrizes
+terminais da S29 e da S30 executam os **scripts** validadores, nunca o
+`unittest discover` que a `ci.yml` executa no job `contracts`.
+
+**D. `backend` — `mvn -B verify` com `Tests run: 82, Errors: 27`.** Todos os 27
+erros têm a mesma causa encadeada:
+
+```text
+Failed to load ApplicationContext
+  Caused by: BeanCreationException: entityManagerFactory
+  Caused by: JDBCConnectionException: Unable to open JDBC Connection for DDL execution
+  Caused by: PSQLException: Connection to localhost:5432 refused
+```
+
+Os testes de integração do backend exigem PostgreSQL em `localhost:5432`, e o
+job `backend` de `ci.yml` não declara service container nem Testcontainers.
+Também é defeito preexistente do contrato de CI, independente do commit.
+
+### 16.4 Isolamento de produção
+
+```text
+gh api repos/.../actions/runs   total_count = 2
+  CI                 push          failure   30667668206
+  Publish Candidate  workflow_run  failure   30667761457
+```
+
+`publish-release.yml`, `deploy-production.yml` e `rollback-production.yml`
+**não foram executados nem disparados** — os três dependem exclusivamente de
+`workflow_dispatch`. Não houve SSH, VPS, DNS, Nginx, Docker em produção,
+Postgres de produção, release, tag, pacote ou qualquer mutação de produção.
+Nenhuma imagem chegou ao GHCR: o job `build` foi pulado antes de qualquer
+`docker/login-action` ou `docker push`.
+
+### 16.5 Bloqueio de GHCR mantido
+
+```text
+gh api user/packages?package_type=container
+403 — "You need at least read:packages scope to list packages."
+```
+
+A sessão possui apenas `gist`, `read:org` e `repo`. Conforme a Seção 3 da
+emenda-01, a verificação GHCR foi interrompida e registrada como bloqueio;
+nenhuma reautenticação foi tentada e nenhuma credencial foi criada. Nesta
+execução o bloqueio é, de todo modo, sem efeito prático, pois nenhum pacote
+chegou a ser publicado.
+
+### 16.6 Recursos criados, retenção e cleanup
+
+| Recurso | Estado | Cleanup |
+|---|---|---|
+| branch remota `main` | criada, sha `b71272f4…` | nenhum; é o baseline pretendido |
+| run `30667668206` (CI) | `failure`, retenção padrão do repositório | nenhum; evidência de auditoria |
+| run `30667761457` (Publish Candidate) | `failure`, retenção padrão | nenhum; evidência de auditoria |
+| artifacts | zero criados | nada a limpar |
+| imagens GHCR, tags, releases, attestations | inexistentes | nada a limpar |
+
+Nenhum recurso remoto foi apagado. Conforme a Seção 3.3 da task, o executor não
+removeu run, artifact, tag, release ou pacote e não realizou cleanup destrutivo.
+
+### 16.7 Divergências e itens não determinados
+
+1. **CI não terminou verde.** A Seção 3.2 da task exige CI verde para o commit
+   exato; a condição de correlação foi satisfeita, a de sucesso não. Os quatro
+   defeitos da Seção 16.3 são preexistentes e residem em arquivos fora da
+   fronteira da S30, que autoriza alterar somente este relatório. Nenhuma
+   correção foi aplicada.
+2. **Candidato inexistente.** Sem `candidate-plan`, não há candidato, manifesto,
+   digest, provenance, attestation ou outcome. Os gates correspondentes da
+   Seção 3.2 permanecem não avaliáveis, não reprovados.
+3. **Release não publicada**, conforme instrução expressa: `candidate_id`,
+   `version_bump`, descrição e changelog continuam sem aprovação, e
+   `publish-release.yml` não foi acionado direta ou indiretamente.
+4. **GHCR não verificado** por ausência de `read:packages`.
+5. **S31 não foi criada** e nenhum arquivo fora deste relatório foi alterado.
+
+O defeito A é o único bloqueador estrutural do primeiro candidato: enquanto
+`candidate_plan.validate()` recomputar `warnings` por um caminho que não pode
+emitir `DIFF_BASE_UNAVAILABLE_FAIL_CLOSED`, nenhum commit raiz produzirá plano
+válido. A decisão sobre corrigi-lo, e sobre os defeitos B, C e D, pertence ao
+orquestrador.
+
+IN_PROGRESS — aguardando revisão do orquestrador
+
+## 17. Revisão terminal do orquestrador — rejeição
+
+**Veredito: `REJECTED` — 31/07/2026.**
+
+O commit e o push fecharam corretamente a ativação Git: `HEAD` e
+`origin/main` apontam para o mesmo SHA, os cinco workflows chegaram ao GitHub
+e não existem tags. Porém, a condição obrigatória de CI verde não foi
+satisfeita: o run `30667668206` falhou em `plan`, `contracts` e `backend`, e o
+run `30667761457` falhou fechado no `trust` por ausência de `candidate-plan`.
+
+Os diagnósticos A–D do executor foram confirmados no código e nos logs. A
+correction-01 autoriza somente seus reparos, um segundo commit/push normal e
+uma nova observação de CI/candidato. Não há candidato ou release para aceitar,
+e S31 continua inexistente.
+
+[Correction-01 autorizada](./S30-ensaio-remoto-candidato-publisher-release.correction-01.md)
+
+REJECTED — correction-01 autorizada
+
+## 18. Execução da correction-01 — 01/08/2026
+
+### 18.1 Escopo, autoridade e contestação prévia
+
+Execução em `/home/gregorio/git/baronesa/emporio`, restrita às correções A, B,
+C e D da
+[correction-01](./S30-ensaio-remoto-candidato-publisher-release.correction-01.md).
+Foram relidos a task S30, a emenda-01, a correction-01, o
+`HANDOFF_ORQUESTRADOR.md`, o tracker e os relatórios S11–S30.
+
+Antes de implementar, o executor verificou as premissas contestáveis da
+correction. Duas foram checadas empiricamente e confirmadas:
+
+1. **Credenciais do service PostgreSQL.** `backend/src/test/resources/application-test.properties`
+   declara exatamente `jdbc:postgresql://localhost:5432/testdb`, `username=test`,
+   `password=test`, `ddl-auto=create-drop` e `flyway.enabled=false`. Os valores
+   fixados pela correction D coincidem integralmente, e os testes de integração
+   usam `@ActiveProfiles("test")`. A correção é aplicável sem tocar em Java,
+   que está fora da fronteira.
+2. **Existência da imagem.** `postgres:16.6-alpine` existe e está ativa no
+   Docker Hub (digest `sha256:589f3b24…`), portanto não há risco de a CI voltar
+   a falhar por tag inexistente.
+
+Uma observação permanece, registrada sem alterar a decisão fechada: o
+`publish-candidate.yml` referencia PostgreSQL por digest imutável
+(`16.10-alpine3.22@sha256:0296606…`), enquanto a correction D fixa a tag
+flutuante `16.6-alpine`, mais antiga e não pinada. O executor implementou
+exatamente o que a correction determina; a eventual convergência para o padrão
+pinado é decisão do orquestrador.
+
+Não houve, portanto, discordância bloqueante do diagnóstico A–D.
+
+### 18.2 Arquivos alterados
+
+Criados:
+
+- `frontend/.env.example`.
+
+Alterados:
+
+- `.github/workflows/ci.yml`;
+- `tools/candidates/candidate_plan.py`;
+- `tools/candidates/tests/test_causal_corrections.py`;
+- `tools/ci/validate_ci.py`;
+- `tools/ci/tests/test_ci.py`;
+- `tools/releases/validate_publisher_ui.py`;
+- `tools/releases/tests/test_publisher_ui_contract.py`;
+- `tools/releases/validate_publisher_identity_bridge.py`;
+- `tools/releases/tests/test_release_publication.py`;
+- este relatório.
+
+Não alterados: S17, S29, OpenAPI, schemas, runtime, backend Java, demais
+arquivos de `frontend`, `release_control`, outros workflows, `.gitignore`,
+`frontend/.env` local, Dockerfiles, Compose, produção. S31 não foi criada.
+
+`HANDOFF_ORQUESTRADOR.md`, `implementation/README.md` e a própria
+`correction-01.md` foram alterados/criados pelo orquestrador e **não constam da
+lista de `git add` autorizada**; permanecem fora deste commit por instrução
+literal da correction.
+
+### 18.3 Correção A — plano do commit raiz
+
+`tools/candidates/candidate_plan.py` passou a calcular as resoluções aceitas em
+`accepted_resolutions()`. A forma canônica continua sendo `catalog.resolve`. A
+forma relaxada — canônica acrescida de `DIFF_BASE_UNAVAILABLE_FAIL_CLOSED` — é
+aceita **somente** quando `baseCommitSha` é exatamente quarenta zeros **e** a
+classificação é `first_release`, que é precisamente o que `resolve_changes.py`
+emite quando não há base de diff.
+
+Divergência entre a correction e o código existente, resolvida e registrada: a
+primeira redação do executor tornava o warning **obrigatório** no commit raiz.
+Isso reprovou doze testes de `tools/candidates/tests/test_terminal_amendment.py`,
+que constroem planos raiz sem o warning e estão **fora da fronteira**
+autorizada. A correction pede “aceitar … somente quando”, não “exigir”; a
+implementação final aceita as duas formas no commit raiz e mantém tudo o mais
+estrito. Nenhum arquivo fora da fronteira foi tocado.
+
+Testes causais acrescentados a `tools/candidates/tests/test_causal_corrections.py`:
+
+| Teste | Mutação | Esperado |
+|---|---|---|
+| `test_14_root_commit_plan_is_valid` | plano raiz real | válido |
+| `test_15_root_warning_requires_zero_base` | mesmo warning com `baseCommitSha` não-zero | `PLAN_RESOLUTION` |
+| `test_16_root_commit_accepts_canonical_form_too` | plano raiz sem o warning | válido |
+| `test_17_canonical_warning_cannot_be_dropped` | remove `FIRST_RELEASE_REQUIRES_COMPLETE_BOM` | `PLAN_RESOLUTION` |
+| `test_18_arbitrary_warning_is_rejected` | acrescenta `ARBITRARY_WARNING` | `PLAN_RESOLUTION` |
+| `test_19_root_exemption_does_not_relax_other_fields` | componentes, classificação e herdados divergentes | `PLAN_RESOLUTION` |
+| `test_20_non_root_plan_never_accepts_the_root_warning` | warning raiz em plano incremental | `PLAN_RESOLUTION` |
+| `test_21_root_plan_matches_resolve_changes_output` | compara com a saída real de `resolve_changes.resolve_event` | igualdade exata |
+
+### 18.4 Correção B — UI publisher no checkout de CI
+
+`frontend/.env.example` foi criado com exatamente as duas variáveis fixadas pela
+correction. O `.gitignore` já o torna versionável pela exceção
+`!**/.env.example`, confirmada por `git check-ignore`.
+
+Em `tools/releases/validate_publisher_ui.py`, `REQUIRED_FILES` passou a exigir
+`ENV_EXAMPLE` no lugar de `ENV_FILE`. A validação de ativação roda sempre sobre
+o exemplo versionado e, adicionalmente, sobre `frontend/.env` **quando ele
+existir**. O contrato de modo, URL loopback e produção desabilitada não foi
+relaxado, e `frontend/.env` não foi versionado.
+
+Testes acrescentados a `tools/releases/tests/test_publisher_ui_contract.py`:
+
+| Teste | Verificação |
+|---|---|
+| `test_02_local_activation_mode_mutant_fails` | mutação de modo agora incide sobre `.env.example` → `activation-mode` |
+| `test_02b_missing_versioned_example_fails` | ausência do `.env.example` → `required-file` |
+| `test_02c_absent_local_env_is_valid` | árvore sem `frontend/.env` — condição exata do checkout de CI — permanece válida |
+| `test_02d_present_local_env_is_still_validated` | `.env` local com modo ou URL errados → `activation-mode` / `activation-url` |
+| `test_02e_example_url_must_stay_loopback` | URL pública no exemplo → `activation-url` |
+
+### 18.5 Correção C — contratos e mutantes
+
+**C1.** `test_44_workflow_validator_valid` passou a esperar os cinco workflows,
+incluindo `rollback-production.yml`, alinhando o teste ao `EXPECTED` que a S29
+já havia corrigido.
+
+**C2.** Em `tools/releases/validate_publisher_identity_bridge.py`, a autoridade
+deixou de ser verificada pela substring global `).hasRole("SYSTEM")` e passou a
+exigir o papel **imediatamente após** o matcher de
+`POST /api/release-control/identity/token`. A causa do defeito ficou
+comprovada: `SecurityConfig.java` contém duas ocorrências de
+`).hasRole("SYSTEM")` — linha 67, do token publisher, e linha 75, do token
+deployer introduzido pela S23. O mutante do teste substitui apenas a primeira,
+e a checagem global sobrevivia pela segunda. Com o vínculo posicional, o
+mutante morre. Nenhum arquivo Java foi alterado.
+
+### 18.6 Correção D — PostgreSQL na CI
+
+O job `backend` de `.github/workflows/ci.yml` recebeu o service `postgres` com
+imagem `postgres:16.6-alpine`, `POSTGRES_DB=testdb`, `POSTGRES_USER=test`,
+`POSTGRES_PASSWORD=test`, porta `"5432:5432"` e healthcheck
+`pg_isready -U test -d testdb` com intervalo `10s`, timeout `5s` e 10 retries.
+
+`tools/ci/validate_ci.py` ganhou `validate_backend_database()`, que exige o
+conjunto exato de services, a imagem, os três valores de env, a porta e os
+quatro fragmentos do healthcheck. `tools/ci/tests/test_ci.py` acrescentou:
+
+- `test_02b_backend_database_service_mutants`, com treze mutantes — service
+  removido, imagem divergente, imagem flutuante `latest`, banco/usuário/senha
+  alterados, porta removida, porta divergente, healthcheck removido, alvo do
+  healthcheck alterado e remoção de intervalo, timeout e retries — todos
+  rejeitados;
+- `test_02c_backend_database_env_is_synthetic`, que fixa as credenciais
+  sintéticas e comprova que o workflow inteiro continua sem findings do
+  scanner.
+
+As credenciais são fixtures sintéticas de quatro a seis caracteres; a regra
+`SENSITIVE_ASSIGNMENT` do scanner exige doze ou mais caracteres capturados,
+de modo que nenhum finding é gerado — verificado, não presumido.
+
+### 18.7 Matriz terminal local
+
+```text
+CWD /home/gregorio/git/baronesa/emporio
+```
+
+| Comando | Exit | Duração | Saída literal sanitizada |
+|---|---:|---:|---|
+| `python3 tools/ci/validate_workflow_inventory.py` | 0 | 0,080548 s | `workflow-inventory:valid` |
+| `python3 tools/ci/validate_ci.py` | 0 | 0,043237 s | `ci:valid` |
+| `python3 tools/candidates/validate_candidate_workflow.py` | 0 | 0,057634 s | `candidate-workflow:valid` |
+| `python3 tools/releases/validate_release_workflow.py` | 0 | 0,112171 s | `release-workflow:valid` |
+| `python3 tools/deploy/validate_deploy_workflow.py` | 0 | 0,126503 s | `deploy-workflow-contract: ok` |
+| `python3 tools/deploy/validate_rollback_contract.py` | 0 | 0,056285 s | `rollback-contract:valid` |
+| `python3 tools/deploy/validate_rollback_runtime.py` | 0 | 0,035140 s | `rollback-runtime:valid` |
+| `python3 tools/releases/release_control_contract.py validate` | 0 | 0,101790 s | `release-control-contract:valid` |
+| `python3 tools/releases/validate_publisher_ui.py` | 0 | 0,027372 s | `publisher-ui:valid` |
+| `python3 tools/releases/validate_publisher_identity_bridge.py` | 0 | 0,030678 s | `publisher-identity-bridge:valid` |
+| `python3 tools/ci/migrations_contract.py` | 0 | 0,025637 s | `migrations:valid` |
+| `python3 tools/releases/catalog.py validate --require-release-ready` | 0 | 0,118466 s | `catalog:valid` |
+| `python3 -m unittest discover -s tools/releases/tests` | 0 | 5,837 s | `Ran 296 tests` `OK` |
+| `python3 -m unittest discover -s tools/candidates/tests` | 0 | 2,578 s | `Ran 56 tests` `OK` |
+| `python3 -m unittest discover -s tools/security/tests` | 0 | 0,038 s | `Ran 26 tests` `OK` |
+| `python3 -m unittest discover -s tools/ci/tests` | 0 | 0,609 s | `Ran 24 tests` `OK` |
+| `python3 -m unittest discover -s tools/docker/tests` | 0 | 0,530 s | `Ran 57 tests` `OK` |
+| `python3 -m unittest discover -s tools/compose/tests` | 0 | 0,325 s | `Ran 4 tests` `OK` |
+| `python3 -m unittest discover -s tools/gateway/tests` | 0 | 0,001 s | `Ran 4 tests` `OK` |
+| `git ls-files --cached --others --exclude-standard -z \| xargs -0 python3 tools/ci/secret_scan.py` | 0 | — | `secret-scan:clean:scanned=1930:allowed=10:unsupported=0:history_scanned=0` e `secret-scan:clean:scanned=500:allowed=6:unsupported=0:history_scanned=0` |
+| `python3 tools/ci/secret_scan.py --tracked` | 0 | — | `secret-scan:clean:scanned=2428:allowed=32:unsupported=0:history_scanned=2428` |
+| `git diff --check` | 0 | — | saída vazia |
+
+`tools/releases/tests` saiu de `292 tests, failures=2, errors=17` para
+`296 tests, OK`; `tools/ci/tests` saiu de 22 para 24 testes. Todos os comandos
+Python usaram `PYTHONDONTWRITEBYTECODE=1`; nenhum `__pycache__` foi criado.
+
+**Limitação registrada:** `mvn -B verify` não foi executado. Não há PostgreSQL
+disponível localmente (`pg_isready` indisponível/sem servidor) e a correction
+proíbe instalar banco pela rede. A prova definitiva da correção D fica com o
+service da CI.
