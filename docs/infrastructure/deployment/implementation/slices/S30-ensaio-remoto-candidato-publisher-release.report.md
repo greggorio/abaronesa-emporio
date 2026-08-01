@@ -1793,3 +1793,138 @@ dependem mais dos IDs do host. `tools/candidates/tests` foi de 60 para 67
 testes e `tools/ci/tests` de 24 para 25. Todos com `PYTHONDONTWRITEBYTECODE=1`;
 nenhum `__pycache__` criado. Nenhum teste usou rede, Docker, SSH, produção ou
 segredo real.
+
+### 22.7 Commit e push da correction-03
+
+| Comando | Exit | Duração | Saída literal sanitizada |
+|---|---:|---:|---|
+| `git add` dos dez caminhos autorizados | 0 | — | sem saída |
+| `git diff --cached --check` | **0** | — | saída vazia |
+| `git commit -m "fix: close CI contract and trust authentication"` | 0 | — | `[main 0bd563b] fix: close CI contract and trust authentication`; `10 files changed, 592 insertions(+), 45 deletions(-)` |
+| `git push origin main` | 0 | 2,264068 s | `bf20c02..0bd563b  main -> main` |
+
+```text
+sha        0bd563b7bb44ffcf2d2f1d705a5bbafe7a356f06
+subject    fix: close CI contract and trust authentication
+parent     bf20c02fb374e9bd3bdabc1dc5f8e604b0a2a4c2
+HEAD == origin/main == 0bd563b7bb44ffcf2d2f1d705a5bbafe7a356f06
+tags       zero
+```
+
+A lista staged conteve exatamente os dez caminhos da Seção 2, verificada por
+contagem. Sem force, tags, outra branch, outro remote, `--no-verify`,
+`git init`, alteração de identidade ou commit adicional. HANDOFF, tracker e as
+três corrections continuam fora do commit, por não constarem da lista.
+
+### 22.8 Observação remota do SHA `0bd563b`
+
+| Item | Valor |
+|---|---|
+| CI run | `30687242174`, `push`, head_sha `0bd563b7…`, conclusão **`failure`** |
+| Publish Candidate run | `30687306886`, `workflow_run`, head_sha `0bd563b7…`, conclusão **`failure`** |
+
+```text
+plan           success
+backend        success
+website_back   success
+frontend       success
+website_front  success
+whatsapp       success
+contracts      failure   (nova causa, defeito G-linha-67)
+images         skipped
+```
+
+**G provado remotamente.** O log do job `contracts` mostra, em sequência, a
+suíte `Ran 298 tests` `OK`, depois `release-control-contract:valid`. A chamada
+que antes abortava o passo agora executa corretamente.
+
+**H provado remotamente.** No job `trust`, o passo 5 deixou de falhar com
+`Command '['git','fetch','--no-tags','origin','main']' returned non-zero exit
+status 128`. A saída agora é:
+
+```text
+trust:invalid:run state
+```
+
+`run state` vem de `trust.event()`, que exige `conclusion == "success"` do run
+de CI disparador. Como a CI deste SHA terminou vermelha, a recusa é o
+comportamento fail-closed correto. O ponto decisivo é causal: em `trust.main()`,
+`classify_head()` é executado **antes** do `raise`, e qualquer falha da
+resolução autenticada seria acrescentada à lista de erros. Como a única
+mensagem é `run state`, a resolução do HEAD pela API do GitHub com `GH_TOKEN`
+**funcionou**, sem erro de autenticação, sem `git fetch` e com
+`persist-credentials: false` preservado.
+
+### 22.9 Defeito remanescente e auditoria completa da família
+
+**G-linha-67 — mesma classe de G, na linha seguinte.**
+
+```text
+usage: bootstrap_contract.py [-h] {validate}
+bootstrap_contract.py: error: the following arguments are required: command
+##[error]Process completed with exit code 2
+```
+
+Para não repetir a descoberta sequencial de uma falha por ciclo, o executor
+auditou localmente **todos** os utilitários invocados pelo job `contracts`:
+
+| Chamada em `ci.yml` | Exit local | Situação |
+|---|---:|---|
+| `tools/releases/catalog.py validate --require-release-ready` | 0 | correta |
+| `tools/releases/release_control_contract.py validate` | 0 | corrigida nesta correction |
+| **`tools/security/bootstrap_contract.py`** (linha 67) | **2** | **falta `validate`** |
+| **`tools/docker/java_images_contract.py`** (linha 69) | **2** | **falta `validate`** |
+| `tools/compose/validate_compose.py` | 0 | correta |
+| `tools/gateway/validate_gateway.py` | 0 | correta |
+| `tools/ci/migrations_contract.py` | 0 | correta |
+
+A família está **fechada**: restam exatamente duas chamadas, nas linhas 67 e 69
+de `.github/workflows/ci.yml`. Ambas exigem o subcomando `validate`. O reparo
+seria idêntico ao de G, e o guard já implementado em `validate_ci.py` pode ser
+generalizado para as três formas.
+
+`.github/workflows/ci.yml`, `tools/ci/validate_ci.py` e `tools/ci/tests/test_ci.py`
+**estão** na fronteira autorizada da correction-03, mas a Seção 3 dela limita G
+a “corrigir somente a chamada para
+`python3 tools/releases/release_control_contract.py validate`”, e a Seção 5
+determina expressamente: “Se qualquer gate falhar, não tentar uma quarta
+correção improvisada: registrar … e parar para revisão do orquestrador.” O
+executor parou sem tocar nas linhas 67 e 69.
+
+### 22.10 Estado remoto, produção e bloqueios
+
+```text
+runs totais: 8   releases: 0   tags: 0
+artifacts: 3 — todos candidate-plan, dos runs 30685735159, 30686261529 e 30687242174
+```
+
+O único artifact existente é o `candidate-plan` da CI, com retenção de 7 dias.
+Continuam inexistentes `candidate-manifest`, `candidate-outcome`, manifesto
+final, image digests, provenance, attestation, release e tag. Nenhuma imagem
+chegou ao GHCR: o job `build` foi pulado em todos os quatro ciclos, antes de
+qualquer `docker/login-action` ou `docker push`. `publish-release.yml`,
+`deploy-production.yml` e `rollback-production.yml` não foram executados nem
+disparados. Não houve SSH, VPS, DNS, Docker de produção, criação de credencial,
+cleanup destrutivo ou qualquer efeito de produção. A ausência de
+`read:packages` permanece registrada, ainda sem efeito prático. S31 não foi
+criada.
+
+Nenhum token, header, credencial ou valor secreto foi lido, copiado ou
+transcrito em nenhuma etapa desta execução.
+
+### 22.11 Divergências
+
+1. **CI ainda não está verde**, por G-linha-67, cuja correção a Seção 5 da
+   correction-03 proíbe improvisar. A auditoria da Seção 22.9 entrega a lista
+   completa e fechada da família.
+2. **A cadeia do candidato ainda não produz candidato**, porque o `trust`
+   recusa corretamente um run de CI vermelho. Este bloqueio é consequência de 1,
+   não um defeito novo: `predecessor`, `build`, `assemble`, `integrated` e
+   `publish` só serão exercitados quando a CI ficar verde.
+3. **G e H foram provados remotamente** e não regrediram; A, B, C, D, E e F
+   também permanecem provados nos ciclos anteriores.
+4. As Seções 22.8 em diante descrevem fatos posteriores ao commit `0bd563b` e
+   permanecem **não commitadas**, já que a correction autoriza exatamente um
+   commit e um push.
+
+IN_PROGRESS — aguardando revisão do orquestrador

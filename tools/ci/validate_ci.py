@@ -17,9 +17,9 @@ REQUIRED_COMMANDS = (
     "python3 tools/releases/catalog.py validate --require-release-ready",
     "python3 -m unittest discover -s tools/releases/tests -v",
     "python3 tools/releases/release_control_contract.py validate",
-    "python3 tools/security/bootstrap_contract.py",
+    "python3 tools/security/bootstrap_contract.py validate",
     "python3 -m unittest discover -s tools/security/tests -v",
-    "python3 tools/docker/java_images_contract.py",
+    "python3 tools/docker/java_images_contract.py validate",
     "python3 -m unittest discover -s tools/docker/tests -v",
     "python3 tools/compose/validate_compose.py",
     "python3 -m unittest discover -s tools/compose/tests -v",
@@ -35,9 +35,15 @@ REQUIRED_COMMANDS = (
     "node --check app.js",
     "python3 tools/candidates/candidate_plan.py generate",
     "python3 tools/candidates/candidate_plan.py validate",
+    "python3 tools/ci/invocability.py",
 )
-BARE_SUBCOMMANDLESS_CONTRACT = "python3 tools/releases/release_control_contract.py"
-POSTGRES_IMAGE = "postgres:16.6-alpine"
+SUBCOMMAND_CONTRACTS = (
+    "python3 tools/releases/release_control_contract.py",
+    "python3 tools/security/bootstrap_contract.py",
+    "python3 tools/docker/java_images_contract.py",
+)
+POSTGRES_IMAGE = "postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297"
+POSTGRES_IMMUTABLE = re.compile(r"^(?:docker\.io/library/)?postgres:[^\s@]+@sha256:[0-9a-f]{64}$")
 POSTGRES_ENV = {"POSTGRES_DB": "testdb", "POSTGRES_USER": "test", "POSTGRES_PASSWORD": "test"}
 POSTGRES_PORTS = ["5432:5432"]
 POSTGRES_OPTIONS = (
@@ -92,10 +98,12 @@ def validate(text: str | None = None) -> list[str]:
     for command in REQUIRED_COMMANDS:
         if command not in text:
             errors.append(f"missing command:{command}")
-    # release_control_contract.py requires a subcommand: the bare form exits 2.
-    # A substring test would accept both spellings, so reject the bare line.
-    if any(line.strip() == BARE_SUBCOMMANDLESS_CONTRACT for line in text.splitlines()):
-        errors.append("release control contract without subcommand")
+    # These CLIs require a subcommand. A substring test would accept both
+    # spellings, so reject every bare command by whole-line comparison.
+    stripped_lines = {line.strip() for line in text.splitlines()}
+    for command in SUBCOMMAND_CONTRACTS:
+        if command in stripped_lines:
+            errors.append(f"contract without subcommand:{command}")
     checkout_steps = [
         step
         for job in jobs.values()
@@ -136,8 +144,11 @@ def validate_backend_database(backend: dict) -> list[str]:
     if set(services) != {"postgres"}:
         return ["backend:postgres service"]
     service = services["postgres"]
-    if service.get("image") != POSTGRES_IMAGE:
+    image = str(service.get("image", ""))
+    if image != POSTGRES_IMAGE:
         errors.append("backend:postgres image")
+    if not POSTGRES_IMMUTABLE.fullmatch(image):
+        errors.append("backend:postgres image must be immutable digest")
     if service.get("env") != POSTGRES_ENV:
         errors.append("backend:postgres env")
     if service.get("ports") != POSTGRES_PORTS:

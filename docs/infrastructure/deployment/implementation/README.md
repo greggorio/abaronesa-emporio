@@ -1,6 +1,6 @@
 # Implementacao de Docker, CI/CD e Controle de Releases
 
-> **Estado geral:** S01 a S29 aceitas; S30 em andamento — Fase 1 externa pendente
+> **Estado geral:** S01 a S29 aceitas; S30 dividida; S30a em andamento
 
 Esta pasta registra os contratos e as evidencias das slices usadas para implementar a arquitetura definida em [proposta-docker-ci-cd-producao-emporio.md](../proposta-docker-ci-cd-producao-emporio.md).
 
@@ -79,4 +79,5 @@ O arquivo `.task.md` e o contrato imutavel da delegacao. O arquivo `.report.md` 
 | S27 | [UI de rollback e recuperação](./slices/S27-ui-rollback-recuperacao.task.md) | [Relatório](./slices/S27-ui-rollback-recuperacao.report.md) | `ACCEPTED` — 31/07/2026 |
 | S28 | [Empacotamento operacional isolado do release control](./slices/S28-empacotamento-operacional-release-control.task.md) | [Relatório](./slices/S28-empacotamento-operacional-release-control.report.md) | `ACCEPTED` — 31/07/2026 |
 | S29 | [Gate do primeiro commit e ativação remota](./slices/S29-gate-primeiro-commit-ativacao-remota.task.md) | [Relatório](./slices/S29-gate-primeiro-commit-ativacao-remota.report.md) | `ACCEPTED` — 31/07/2026 |
-| S30 | [Ensaio remoto de candidato, publisher e release](./slices/S30-ensaio-remoto-candidato-publisher-release.task.md) | [Relatório](./slices/S30-ensaio-remoto-candidato-publisher-release.report.md) | `IN_PROGRESS` — emenda-01 autoriza primeiro commit/push |
+| S30 | [Ensaio remoto de candidato, publisher e release](./slices/S30-ensaio-remoto-candidato-publisher-release.task.md) | [Relatório](./slices/S30-ensaio-remoto-candidato-publisher-release.report.md) | `SPLIT` — 01/08/2026; contrato-pai histórico, dividido em S30a e S30b |
+| S30a | [Paridade local e fechamento da CI e do candidato](./slices/S30a-paridade-local-fechamento-ci-candidato.task.md) ([autorização atual](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-01.md)) | [Relatório](./slices/S30a-paridade-local-fechamento-ci-candidato.report.md) | `IN_PROGRESS` — amendment-02 aceita; preservação local e prova Trivy autorizadas em 01/08/2026 |

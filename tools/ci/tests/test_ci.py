@@ -61,11 +61,13 @@ class CIContractTest(unittest.TestCase):
         mutants = (
             (
                 "service removed",
-                "    services:\n      postgres:\n        image: postgres:16.6-alpine\n",
+                "    services:\n      postgres:\n        image: " + ci.POSTGRES_IMAGE + "\n",
                 "    steps_placeholder:\n",
             ),
-            ("image drift", "image: postgres:16.6-alpine", "image: postgres:15-alpine"),
-            ("floating image", "image: postgres:16.6-alpine", "image: postgres:latest"),
+            ("image drift", "image: " + ci.POSTGRES_IMAGE, "image: postgres:15-alpine@sha256:" + "a" * 64),
+            ("floating latest", "image: " + ci.POSTGRES_IMAGE, "image: postgres:latest"),
+            ("floating version tag", "image: " + ci.POSTGRES_IMAGE, "image: postgres:16.10-alpine3.22"),
+            ("digest removed", "@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297", ""),
             ("database drift", "POSTGRES_DB: testdb", "POSTGRES_DB: otherdb"),
             ("user drift", "POSTGRES_USER: test", "POSTGRES_USER: postgres"),
             ("password drift", "POSTGRES_PASSWORD: test", "POSTGRES_PASSWORD: other"),
@@ -101,9 +103,33 @@ class CIContractTest(unittest.TestCase):
         self.assertNotEqual(self.workflow, mutated)
         errors = ci.validate(mutated)
         self.assertTrue(errors)
-        self.assertIn("release control contract without subcommand", errors)
+        self.assertIn("contract without subcommand:" + bare, errors)
         # The check must be positional, not a substring that accepts both forms.
         self.assertNotIn(bare + "\n", self.workflow)
+
+    def test_02e_all_required_subcommands_and_invocability_gate(self):
+        self.assertIn("python3 tools/ci/invocability.py", ci.REQUIRED_COMMANDS)
+        for bare in ci.SUBCOMMAND_CONTRACTS:
+            with self.subTest(command=bare):
+                exact = bare + " validate"
+                self.assertIn(exact, ci.REQUIRED_COMMANDS)
+                mutated = self.workflow.replace(exact, bare, 1)
+                self.assertNotEqual(self.workflow, mutated)
+                self.assertIn("contract without subcommand:" + bare, ci.validate(mutated))
+
+    def test_02f_postgres_requires_exact_immutable_digest(self):
+        self.assertRegex(ci.POSTGRES_IMAGE, ci.POSTGRES_IMMUTABLE)
+        for image in ("postgres:latest", "postgres:16.10-alpine3.22", "postgres@sha256:" + "a" * 64):
+            with self.subTest(image=image):
+                backend = {"services": {"postgres": {
+                    "image": image,
+                    "env": dict(ci.POSTGRES_ENV),
+                    "ports": list(ci.POSTGRES_PORTS),
+                    "options": " ".join(ci.POSTGRES_OPTIONS),
+                }}}
+                errors = ci.validate_backend_database(backend)
+                self.assertIn("backend:postgres image", errors)
+                self.assertIn("backend:postgres image must be immutable digest", errors)
 
     def test_02c_backend_database_env_is_synthetic(self):
         """The fixture credentials must stay synthetic and never become a secret."""

@@ -3,8 +3,8 @@
 > **Projeto:** Empório A Baronesa
 > **Workspace:** `/home/gregorio/git/baronesa/emporio`
 > **Repositório remoto:** `git@github.com:greggorio/abaronesa-emporio.git`
-> **Data do snapshot:** 31/07/2026
-> **Estado do programa:** S01–S24 aceitas; S25 planejada
+> **Data do snapshot:** 01/08/2026
+> **Estado do programa:** S01–S29 aceitas; S30 rejeitada — correction-03 autorizada
 > **Finalidade:** permitir que outro CLI assuma exclusivamente o papel de
 > orquestrador até a conclusão técnica e operacional desta implementação.
 
@@ -991,3 +991,142 @@ proibidos.
 A próxima delegação é o prompt da emenda-01 no contrato S30. Depois do push, o
 executor deve observar CI e candidato; a publicação da release continua
 dependendo de metadados explicitamente aprovados. S31 permanece inexistente.
+
+## 29. Atualização do snapshot após a rejeição da S30
+
+Após a revisão do primeiro ensaio remoto, o estado canônico atual é:
+
+- S01–S29: `ACCEPTED`;
+- S30: `REJECTED`, com correction-01 autorizada;
+- S31: inexistente e bloqueada;
+- commit baseline `b71272f4b5c313aa70cb97c8948643eda73d7bec` publicado em
+  `origin/main`, sem tags;
+- CI `30667668206`: falha em `plan`, `contracts` e `backend`;
+- Publish Candidate `30667761457`: falha fechada no `trust` por ausência do
+  artifact `candidate-plan`;
+- zero candidatos, manifestos, digests, provenance, attestations, imagens
+  GHCR, releases ou recursos de produção;
+- correction-01 limitada aos quatro defeitos A–D e a um segundo commit/push
+  normal na mesma branch.
+
+O [relatório S30](./slices/S30-ensaio-remoto-candidato-publisher-release.report.md)
+e a [correction-01](./slices/S30-ensaio-remoto-candidato-publisher-release.correction-01.md)
+prevalecem sobre o snapshot anterior. Não aceitar S30 nem criar S31 antes da
+nova revisão terminal.
+
+## 30. Atualização do snapshot após a rejeição da correction-01 da S30
+
+Após a revisão do commit `41ab410d757154131ce6a2344fd8e561152d2acd`, o estado
+canônico atual é:
+
+- S01–S29: `ACCEPTED`;
+- S30: `REJECTED`, com correction-02 autorizada;
+- S31: inexistente e bloqueada;
+- CI `30685735159`: `plan` e `backend` verdes, `contracts` ainda falho por E;
+- Publish Candidate `30685795981`: falho no `trust` por F;
+- zero candidatos finais, releases, tags, imagens GHCR, provenance ou
+  attestations;
+- correction-02 limitada a isolar a fixture E e reordenar/validar a
+  persistência do `workflow-run.json` em F.
+
+O [relatório S30](./slices/S30-ensaio-remoto-candidato-publisher-release.report.md)
+e a [correction-02](./slices/S30-ensaio-remoto-candidato-publisher-release.correction-02.md)
+prevalecem sobre o snapshot anterior. Não aceitar S30 nem criar S31 antes da
+nova revisão terminal.
+
+## 31. Atualização do snapshot após a rejeição da correction-02 da S30
+
+Após a revisão do commit `bf20c02fb374e9bd3bdabc1dc5f8e604b0a2a4c2`, o estado
+canônico atual é:
+
+- S01–S29: `ACCEPTED`;
+- S30: `REJECTED`, com [correction-03](./slices/S30-ensaio-remoto-candidato-publisher-release.correction-03.md)
+  autorizada;
+- S31: inexistente e bloqueada;
+- E e F foram provados remotamente: o job `contracts` executou 298 testes
+  verdes e o job `trust` passou checkout, persistência e download;
+- CI `30686261529`: `plan`, `backend`, web, WhatsApp e demais gates
+  prévios verdes; `contracts` falhou por G, porque `ci.yml` chama
+  `release_control_contract.py` sem `validate`;
+- Publish Candidate `30686325732`: falhou por H no `trust.py`, que tenta
+  `git fetch origin main` com `persist-credentials: false`;
+- a revisão do código encontrou a mesma chamada sem credencial em
+  `publish_guard.py`, que precisa ser fechada na mesma correction;
+- zero candidato final, manifestos, digests, provenance, attestations,
+  imagens GHCR, releases ou tags; nenhum deploy, rollback, SSH, VPS, DNS ou
+  efeito de produção ocorreu;
+- a correction-03 escolhe resolver `main` pela API GitHub usando `GH_TOKEN`
+  somente nos passos `trust.py` e `publish_guard.py`, preservando
+  `persist-credentials: false` e a semântica de lineage;
+- a correction também corrige o teste causal irmão de E em
+  `test_causal_corrections.py` e exige uma única commit/push normal, seguido
+  de observação da CI e do Publish Candidate;
+- não criar S31 antes do aceite terminal da S30.
+
+O [relatório S30](./slices/S30-ensaio-remoto-candidato-publisher-release.report.md)
+e a correction-03 prevalecem sobre o snapshot anterior. O executor deve
+alterar somente a fronteira da correction-03 e terminar o relatório com
+`IN_PROGRESS — aguardando revisão do orquestrador`.
+
+## 32. Transferência da orquestração e divisão da S30 — 01/08/2026
+
+Por decisão explícita do usuário, a orquestração passou para este agente ao
+final do ciclo da correction-03. O estado canônico atual é:
+
+- S01–S29: `ACCEPTED`;
+- S30: `SPLIT` — contrato-pai histórico, dividido em S30a e S30b;
+- S30a: `PLANNED`, delegação autorizada;
+- S30b e S31: inexistentes e bloqueadas;
+- `main` remota em `0bd563b7bb44ffcf2d2f1d705a5bbafe7a356f06`, quatro commits,
+  zero tags, zero releases;
+- oito runs automáticos, todos `failure`; três artifacts, todos `candidate-plan`;
+- nenhuma imagem em GHCR, nenhum manifesto final, provenance, attestation,
+  deploy, rollback ou efeito de produção.
+
+### 32.1 Diagnóstico que motivou a mudança
+
+A S30 acumulou quatro ciclos remotos e oito defeitos preexistentes (A–H, mais
+G-linha-67 e o irmão de E). Nenhum foi introduzido pelas correções. A causa
+estrutural é dupla:
+
+1. os contratos afirmam **texto** e não **comportamento** — `validate_ci.py`
+   exigia a presença da string de um comando sem nunca provar que ele é
+   invocável;
+2. `set -e` num passo de onze comandos, somado à dependência entre jobs, revela
+   um defeito por execução remota, ao custo de um commit permanente e uma
+   rodada de CI por defeito.
+
+### 32.2 Decisões de processo
+
+- **Prova local antes da remota.** Docker local passa a ser autorizado para
+  build e scan de leitura. O GitHub Actions deixa de ser o depurador.
+- **Fronteira por classe, não por lista de arquivos.** A lista fechada obrigou
+  o executor a parar três vezes com a correção de uma linha na mão.
+- **Gate de invocabilidade.** Todo comando de utilitário nos workflows passa a
+  ser provado executável pela própria CI, fechando a família G de uma vez.
+- **Divisão da S30.** Um aceite que exigia simultaneamente CI verde, candidato,
+  release pela UI, idempotência e restart nunca convergiria; S30a fecha CI e
+  candidato, S30b trata da release.
+- **Evidência por ciclo em apêndice.** O relatório da S30 chegou a 1.900 linhas
+  num arquivo único; relatórios futuros separam evidência por ciclo.
+
+### 32.3 Decisões técnicas fechadas
+
+- `ci.yml` linhas 67 e 69 recebem o subcomando `validate`; a auditoria fechou a
+  família e as outras cinco chamadas do job `contracts` estão corretas.
+- O PostgreSQL do job `backend` converge para o digest imutável já usado pelo
+  `publish-candidate.yml`, abandonando a tag flutuante `16.6-alpine`.
+- A política do Trivy **não** é alterada especulativamente: a S30a mede os
+  achados localmente e para antes do commit se houver HIGH/CRITICAL, para que a
+  decisão seja tomada com inventário real.
+
+### 32.4 Bloqueios que dependem do usuário
+
+- `read:packages` ausente na sessão GitHub; vai travar a verificação GHCR no
+  momento em que o `build` publicar. Resolver antes, não no momento da falha.
+- Política do Trivy, caso a paridade local acuse HIGH/CRITICAL sem correção
+  disponível.
+
+O contrato fechado da próxima delegação é
+[S30a](./slices/S30a-paridade-local-fechamento-ci-candidato.task.md). Não criar
+S30b nem S31 antes do aceite formal da S30a.

@@ -57,6 +57,7 @@ jobs:
       - name: Validate CI and candidate contract
         run: |
           python3 tools/ci/validate_ci.py
+          python3 tools/ci/invocability.py
           python3 tools/ci/migrations_contract.py
           python3 tools/releases/candidate_manifest.py validate --manifest ops/releases/examples/candidate-manifest.example.json
       - name: Validate accepted infrastructure contracts
@@ -64,9 +65,9 @@ jobs:
           python3 tools/releases/catalog.py validate --require-release-ready
           python3 -m unittest discover -s tools/releases/tests -v
           python3 tools/releases/release_control_contract.py validate
-          python3 tools/security/bootstrap_contract.py
+          python3 tools/security/bootstrap_contract.py validate
           python3 -m unittest discover -s tools/security/tests -v
-          python3 tools/docker/java_images_contract.py
+          python3 tools/docker/java_images_contract.py validate
           python3 -m unittest discover -s tools/docker/tests -v
           python3 tools/compose/validate_compose.py
           python3 -m unittest discover -s tools/compose/tests -v
@@ -80,7 +81,7 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16.6-alpine
+        image: postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297
         env:
           POSTGRES_DB: testdb
           POSTGRES_USER: test

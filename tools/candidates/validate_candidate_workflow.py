@@ -4,6 +4,8 @@ import json,re,subprocess,sys
 from pathlib import Path
 import yaml
 ROOT=Path(__file__).resolve().parents[2];PUBLISH=ROOT/".github/workflows/publish-candidate.yml";CI=ROOT/".github/workflows/ci.yml"
+sys.path.insert(0,str(ROOT/"tools/ci"))
+import invocability
 SHA_USE=re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
 def validate_workflows(ci=None,publish=None):
  ci=ci or CI.read_text();publish=publish or PUBLISH.read_text();errors=[]
@@ -44,6 +46,10 @@ def validate_workflows(ci=None,publish=None):
  if any(x in source for x in forbidden):errors.append("FORBIDDEN_LEGACY")
  if 'schemaVersion":2' not in (ROOT/"tools/candidates/candidate_plan.py").read_text().replace(" ",""):errors.append("PLAN_V2")
  if "candidate-plan/candidate-plan.json" not in ci or "candidate-plan/plan.json" in ci:errors.append("CI_PLAN_NAME")
+ commands,inventory_errors=invocability.inventory(ci,publish)
+ if inventory_errors:errors.extend("INVOCABILITY:"+error for error in inventory_errors)
+ if len(commands)!=invocability.EXPECTED_COMMANDS:errors.append("INVOCABILITY_COMMAND_SET")
+ if not any(line.strip()=="python3 tools/ci/invocability.py" for line in ci.splitlines()):errors.append("INVOCABILITY_GATE")
  lineage_source=(ROOT/"tools/candidates/lineage.py").read_text()
  if '"schemaVersion":2' not in lineage_source.replace(" ","") or '"mode":mode' not in lineage_source.replace(" ",""):errors.append("EFFECTIVE_PLAN_V2")
  if "needs.predecessor.outputs.mode == 'continue'" not in str(jobs.get("build",{}).get("if","")) or "needs.predecessor.outputs.mode == 'continue'" not in str(jobs.get("assemble",{}).get("if","")):errors.append("TERMINAL_BUILD_GATE")

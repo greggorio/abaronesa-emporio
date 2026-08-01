@@ -308,4 +308,11 @@ class DefinitiveContractTest(unittest.TestCase):
     for step in persisted[job]["steps"]:
      if str(step.get("uses","")).startswith("actions/checkout@"):step.setdefault("with",{})["persist-credentials"]="true"
     self.assertIn("PERSISTED_CREDENTIALS:"+job,workflow.validate_authenticated_head(persisted))
+ def test_37_invocability_gate_covers_both_workflows(self):
+  jobs=self._jobs();self.assertTrue(jobs)
+  commands,errors=workflow.invocability.inventory()
+  self.assertEqual([],errors);self.assertEqual(27,len(commands))
+  ci=workflow.CI.read_text();self.assertIn("python3 tools/ci/invocability.py",ci)
+  removed=ci.replace("          python3 tools/ci/invocability.py\n","",1)
+  self.assertIn("INVOCABILITY_GATE",workflow.validate_workflows(ci=removed))
 if __name__=="__main__":unittest.main()
