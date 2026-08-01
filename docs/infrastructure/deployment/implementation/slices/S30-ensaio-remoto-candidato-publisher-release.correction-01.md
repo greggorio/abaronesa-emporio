@@ -1,8 +1,8 @@
 # S30 — correction-01: fechamento dos gates do primeiro CI
 
-> **Estado:** AUTHORIZED pelo orquestrador em 31/07/2026  
-> **Commit-base:** b71272f4b5c313aa70cb97c8948643eda73d7bec  
-> **Remote:** git@github.com:greggorio/abaronesa-emporio.git  
+> **Estado:** AUTHORIZED pelo orquestrador em 31/07/2026
+> **Commit-base:** b71272f4b5c313aa70cb97c8948643eda73d7bec
+> **Remote:** git@github.com:greggorio/abaronesa-emporio.git
 > **Branch:** main
 
 ## 1. Motivo
@@ -145,4 +145,3 @@ tags, outro remote/branch ou no-verify, não crie credenciais, não faça
 deploy/rollback/produção e não crie S31. Termine com:
 IN_PROGRESS — aguardando revisão do orquestrador
 ~~~
-

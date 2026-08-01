@@ -154,4 +154,3 @@ produção e não crie S31.
 Termine com:
 IN_PROGRESS — aguardando revisão do orquestrador
 ~~~
-

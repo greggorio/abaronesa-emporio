@@ -1,7 +1,7 @@
 # S30a — autorização 01: preservação local e prova técnica do resíduo Trivy
 
-> **Estado:** `AUTHORIZED` pelo orquestrador em 01/08/2026  
-> **Base:** S30a, amendment-02 aceita e decisão explícita do usuário  
+> **Estado:** `AUTHORIZED` pelo orquestrador em 01/08/2026
+> **Base:** S30a, amendment-02 aceita e decisão explícita do usuário
 > **Commit-base remoto:** `0bd563b7bb44ffcf2d2f1d705a5bbafe7a356f06`
 
 ## 1. Objetivo e resultado observável

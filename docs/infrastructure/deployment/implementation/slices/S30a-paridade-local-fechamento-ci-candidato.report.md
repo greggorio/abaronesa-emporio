@@ -563,8 +563,8 @@ IN_PROGRESS — aguardando revisão do orquestrador
 
 ## 13. Revisão terminal do orquestrador — amendment-02
 
-> **Data:** 01/08/2026  
-> **Resultado da amendment-02:** `ACCEPTED`  
+> **Data:** 01/08/2026
+> **Resultado da amendment-02:** `ACCEPTED`
 > **Estado da S30a:** `IN_PROGRESS`
 
 A amendment-02 cumpriu integralmente sua fronteira. Os validadores Docker e
@@ -737,3 +737,45 @@ foi executado e nenhum efeito de GHCR, workflow dispatch, tag, release, SSH,
 VPS, deploy, rollback ou produção ocorreu.
 
 IN_PROGRESS — aguardando revisão do resíduo Trivy pelo orquestrador
+
+## 15. Revisão do orquestrador — authorization-01 aceita
+
+> **Data:** 01/08/2026
+> **Resultado da authorization-01:** `ACCEPTED`
+> **Estado da S30a:** `IN_PROGRESS — decisão humana de risco pendente`
+
+Os quatro commits formam uma cadeia linear sobre `origin/main`, permanecem
+somente locais e respeitam as classes autorizadas. Os JSONs têm 26 e 16 tuplas,
+zero campo obrigatório vazio, zero duplicata pela chave canônica, ordenação
+determinística e os mesmos bancos Trivy. A diferença `25 documental -> 26
+medido` está explicada pela separação literal de `spring-webflux` e
+`spring-webmvc`. O after contém 16 ocorrências, nove CVEs únicos: duas
+ocorrências CRITICAL de um CVE e 14 ocorrências HIGH de oito CVEs.
+
+A consulta ao metadata oficial disponível em 01/08/2026 confirmou como máximos
+públicos das linhas atuais Spring Boot `3.3.13`, Spring Framework `6.1.21` e
+Spring Security `6.3.10`; as versões corretivas indicadas pelo banco ainda não
+estão publicadas nessas linhas. O npm público mais recente é `12.0.2` e embarca
+`brace-expansion 5.0.7`. Não há outro salto patch/drop-in disponível nesta
+data; Spring/JasperReports exigem migração própria, e o único HIGH npm aguarda
+uma árvore publicada que incorpore a correção.
+
+### 15.1 Divergência documental a corrigir antes do push
+
+`git diff --check origin/main..HEAD` retorna exit 2 por nove ocorrências em
+documentos do primeiro commit: sete trailing spaces usados como quebra Markdown
+e duas linhas vazias finais. O `git diff --check` final do executor examinou um
+worktree limpo e, por isso, não auditou o intervalo já commitado. A autorização
+não distinguiu esses dois alcances; a divergência é do contrato e não invalida
+a prova técnica.
+
+O próximo contrato deve remover apenas essas nove ocorrências e exigir
+literalmente `git diff --check origin/main..HEAD` exit 0 antes do push. Nenhuma
+reescrita dos quatro commits é necessária; o reparo pode integrar o próximo
+commit local.
+
+A authorization-01 está aceita. Não há autorização de `.trivyignore`, push ou
+avanço da S30a até o usuário aceitar ou rejeitar o risco dos nove CVEs e nomear
+o responsável pela remediação.
+
+IN_PROGRESS — aguardando decisão humana sobre nove CVEs residuais
