@@ -34,8 +34,31 @@ class CausalCorrectionsTest(unittest.TestCase):
   self.assertEqual("200",pending["workflow"]["runId"])
   with tempfile.TemporaryDirectory() as raw:
    root=Path(raw);pd,effective,selection=self.bundle(root,pending);rd=self.receipt_bundle(root,pending);ctx=root/"context";ctx.mkdir();(ctx/"selection.json").write_bytes(selection.read_bytes())
-   final=finalize_candidate.finalize(pd,rd,effective,ctx,root/"final")
+   # finalize_candidate reads the workflow identity from the environment. Inside
+   # Actions it carries the real run, which never matches this fixture, so pin
+   # it to the fixture itself. Production still reads the real identity.
+   with mock.patch.dict(os.environ,self.fixture_ids(pending),clear=False):
+    final=finalize_candidate.finalize(pd,rd,effective,ctx,root/"final")
    self.assertEqual([],candidate_manifest.validate_manifest(final,self.effective(pending),self.receipt(pending)))
+
+ def fixture_ids(self,pending):
+  return {"GITHUB_RUN_ID":str(pending["workflow"]["runId"]),"GITHUB_RUN_ATTEMPT":str(pending["workflow"]["attempt"])}
+
+ def test_01b_flow_is_independent_of_host_run_identity(self):
+  """Hostile ambient IDs and a clean environment must both yield the same result."""
+  for ambient in ({"GITHUB_RUN_ID":"999999999","GITHUB_RUN_ATTEMPT":"99"},{}):
+   with self.subTest(ambient=sorted(ambient)):
+    with mock.patch.dict(os.environ,ambient,clear=True):
+     self.test_01_distinct_ci_and_publisher_runs_complete_flow()
+
+ def test_01c_flow_still_rejects_a_foreign_publisher_run(self):
+  """The isolation must not disable the run binding it exists to satisfy."""
+  pending=self.pending()
+  with tempfile.TemporaryDirectory() as raw:
+   root=Path(raw);pd,effective,selection=self.bundle(root,pending);rd=self.receipt_bundle(root,pending);ctx=root/"context";ctx.mkdir();(ctx/"selection.json").write_bytes(selection.read_bytes())
+   foreign={"GITHUB_RUN_ID":str(int(pending["workflow"]["runId"])+1),"GITHUB_RUN_ATTEMPT":str(pending["workflow"]["attempt"])}
+   with mock.patch.dict(os.environ,foreign,clear=True):
+    with self.assertRaisesRegex(ValueError,"pending publisher run"):finalize_candidate.finalize(pd,rd,effective,ctx,root/"final")
 
  def test_02_effective_plan_is_strict_and_canonical(self):
   plan=candidate_plan.generate(catalog.resolve(catalog.load_yaml(),first_release=True),{"ref":"refs/heads/main","before":"0"*40,"after":"1"*40},"1"*40,"100",1)

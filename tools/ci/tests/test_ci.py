@@ -91,6 +91,20 @@ class CIContractTest(unittest.TestCase):
                 self.assertNotEqual(self.workflow, mutated, f"anchor absent: {label}")
                 self.assertTrue(ci.validate(mutated), f"mutant survived: {label}")
 
+    def test_02d_release_control_contract_requires_subcommand(self):
+        """S30 correction-03 G: the bare call exits 2, so the contract is the exact form."""
+        self.assertEqual([], ci.validate(self.workflow))
+        self.assertIn("python3 tools/releases/release_control_contract.py validate", ci.REQUIRED_COMMANDS)
+        bare = "python3 tools/releases/release_control_contract.py"
+        self.assertIn("          " + bare + " validate\n", self.workflow)
+        mutated = self.workflow.replace(bare + " validate", bare, 1)
+        self.assertNotEqual(self.workflow, mutated)
+        errors = ci.validate(mutated)
+        self.assertTrue(errors)
+        self.assertIn("release control contract without subcommand", errors)
+        # The check must be positional, not a substring that accepts both forms.
+        self.assertNotIn(bare + "\n", self.workflow)
+
     def test_02c_backend_database_env_is_synthetic(self):
         """The fixture credentials must stay synthetic and never become a secret."""
         self.assertEqual(

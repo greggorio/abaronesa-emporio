@@ -63,7 +63,7 @@ jobs:
         run: |
           python3 tools/releases/catalog.py validate --require-release-ready
           python3 -m unittest discover -s tools/releases/tests -v
-          python3 tools/releases/release_control_contract.py
+          python3 tools/releases/release_control_contract.py validate
           python3 tools/security/bootstrap_contract.py
           python3 -m unittest discover -s tools/security/tests -v
           python3 tools/docker/java_images_contract.py

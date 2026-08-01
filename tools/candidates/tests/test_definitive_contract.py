@@ -1,4 +1,4 @@
-import copy,hashlib,json,os,subprocess,sys,tempfile,unittest,zipfile
+import copy,hashlib,json,os,subprocess,sys,tempfile,unittest,urllib.error,zipfile
 from pathlib import Path
 from unittest import mock
 ROOT=Path(__file__).resolve().parents[3];sys.path[:0]=[str(ROOT/"tools/candidates"),str(ROOT/"tools/releases")]
@@ -204,10 +204,108 @@ class DefinitiveContractTest(unittest.TestCase):
   regressed=publish.replace(checkout+persist,persist+checkout,1)
   self.assertNotEqual(publish,regressed)
   self.assertIn("TRUST_ORDER",workflow.validate_workflows(publish=regressed))
- def test_27_head_exact_advanced_and_unrelated(self):
-  class Done:
-   def __init__(self,code):self.returncode=code
-  self.assertEqual("continue",trust.classify_head("1"*40,"1"*40))
-  self.assertEqual("superseded",trust.classify_head("1"*40,"2"*40,lambda args:Done(0)))
-  with self.assertRaisesRegex(ValueError,"unrelated"):trust.classify_head("1"*40,"2"*40,lambda args:Done(1))
+ class Response:
+  def __init__(self,payload,status=200):self._body=json.dumps(payload).encode();self.status=status
+  def read(self):return self._body
+  def __enter__(self):return self
+  def __exit__(self,*rest):return False
+ def opener(self,main_sha,status=None,ref_payload=None,compare_payload=None,ref_status=200,seen=None):
+  """Local double for the two canonical endpoints. No network is touched."""
+  def call(request,timeout=None):
+   if seen is not None:seen.append((request.full_url,dict(request.headers),timeout))
+   if request.full_url.endswith("/git/ref/heads/main"):
+    return self.Response(ref_payload if ref_payload is not None else {"ref":"refs/heads/main","object":{"type":"commit","sha":main_sha}},ref_status)
+   return self.Response(compare_payload if compare_payload is not None else {"status":status})
+  return call
+ def test_27_head_relation_by_api_identical_and_ahead(self):
+  with mock.patch.dict(os.environ,{"GH_TOKEN":"fixture-token"},clear=False):
+   self.assertEqual("same",trust.head_relation("1"*40,self.opener("1"*40)))
+   self.assertEqual("same",trust.head_relation("1"*40,self.opener("2"*40,"identical")))
+   self.assertEqual("ancestor",trust.head_relation("1"*40,self.opener("2"*40,"ahead")))
+   self.assertEqual("continue",trust.classify_head("1"*40,self.opener("1"*40)))
+   self.assertEqual("superseded",trust.classify_head("1"*40,self.opener("2"*40,"ahead")))
+ def test_32_head_relation_fails_closed(self):
+  cases={
+   "behind":self.opener("2"*40,"behind"),
+   "diverged":self.opener("2"*40,"diverged"),
+   "absent status":self.opener("2"*40,None),
+   "compare not a mapping":self.opener("2"*40,compare_payload=["ahead"]),
+   "wrong ref":self.opener("2"*40,"ahead",ref_payload={"ref":"refs/heads/other","object":{"type":"commit","sha":"2"*40}}),
+   "wrong object type":self.opener("2"*40,"ahead",ref_payload={"ref":"refs/heads/main","object":{"type":"tag","sha":"2"*40}}),
+   "invalid sha":self.opener("2"*40,"ahead",ref_payload={"ref":"refs/heads/main","object":{"type":"commit","sha":"zz"}}),
+   "ref not a mapping":self.opener("2"*40,"ahead",ref_payload=["refs/heads/main"]),
+  }
+  with mock.patch.dict(os.environ,{"GH_TOKEN":"fixture-token"},clear=False):
+   for label,opener in cases.items():
+    with self.subTest(case=label):
+     with self.assertRaises(ValueError):trust.head_relation("1"*40,opener)
+   for label,failure in (("404",urllib.error.HTTPError("u",404,"nf",None,None)),("timeout",TimeoutError()),("invalid json",ValueError("no json")),("transport",OSError("boom"))):
+    with self.subTest(case=label):
+     def raiser(request,timeout=None):raise failure
+     with self.assertRaises(ValueError):trust.head_relation("1"*40,raiser)
+   with self.assertRaises(ValueError):trust.head_relation("not-a-sha",self.opener("1"*40))
+   with self.assertRaises(ValueError):trust.head_relation("1"*40,self.opener("2"*40,"ahead",ref_status=500))
+ def test_33_token_is_required_and_never_leaked(self):
+  secret="fixture-token-must-not-leak"
+  with mock.patch.dict(os.environ,{"GH_TOKEN":""},clear=False):
+   with self.assertRaisesRegex(ValueError,"github token missing"):trust.head_relation("1"*40,self.opener("1"*40))
+  with mock.patch.dict(os.environ,{},clear=True):
+   with self.assertRaisesRegex(ValueError,"github token missing"):trust.head_relation("1"*40,self.opener("1"*40))
+  with mock.patch.dict(os.environ,{"GH_TOKEN":secret},clear=False):
+   def raiser(request,timeout=None):raise OSError(secret)
+   with self.assertRaises(ValueError) as caught:trust.head_relation("1"*40,raiser)
+   self.assertNotIn(secret,str(caught.exception))
+   with self.assertRaises(ValueError) as caught:trust.head_relation("1"*40,self.opener("2"*40,"diverged"))
+   self.assertNotIn(secret,str(caught.exception))
+ def test_34_endpoints_are_fixed_and_authenticated(self):
+  seen=[]
+  with mock.patch.dict(os.environ,{"GH_TOKEN":"fixture-token"},clear=False):
+   trust.head_relation("1"*40,self.opener("2"*40,"ahead",seen=seen))
+  self.assertEqual(2,len(seen))
+  self.assertEqual("https://api.github.com/repos/greggorio/abaronesa-emporio/git/ref/heads/main",seen[0][0])
+  self.assertEqual("https://api.github.com/repos/greggorio/abaronesa-emporio/compare/"+"1"*40+"..."+"2"*40,seen[1][0])
+  for url,headers,timeout in seen:
+   self.assertIn("greggorio/abaronesa-emporio",url)
+   self.assertTrue(url.startswith("https://api.github.com/"))
+   self.assertEqual("Bearer fixture-token",headers.get("Authorization"))
+   self.assertIsNotNone(timeout)
+  source=(ROOT/"tools/candidates/trust.py").read_text()
+  self.assertIn('REF_ENDPOINT=API+"/repos/"+REPO+"/git/ref/heads/main"',source)
+  self.assertEqual("greggorio/abaronesa-emporio",trust.REPO)
+ def test_35_head_resolution_never_uses_git(self):
+  for name in ("trust.py","publish_guard.py"):
+   with self.subTest(module=name):
+    source=(ROOT/"tools/candidates"/name).read_text()
+    for marker in ("subprocess",'"fetch"',"'fetch'",'"origin/main"',"'origin/main'",'"merge-base"',"'merge-base'"):
+     self.assertNotIn(marker,source)
+  self.assertEqual([],workflow.validate_authenticated_head(self._jobs()))
+ def _jobs(self):
+  import yaml
+  return yaml.load((ROOT/".github/workflows/publish-candidate.yml").read_text(),Loader=yaml.BaseLoader)["jobs"]
+ def test_36_authenticated_head_contract_mutants(self):
+  token={"GH_TOKEN":"${{ github.token }}"}
+  jobs=self._jobs()
+  stripped=copy.deepcopy(jobs)
+  for step in stripped["trust"]["steps"]:
+   if "tools/candidates/trust.py" in str(step.get("run","")):step.pop("env",None)
+  self.assertIn("TRUST_TOKEN",workflow.validate_authenticated_head(stripped))
+  moved=copy.deepcopy(jobs)
+  for step in moved["trust"]["steps"]:
+   if "tools/candidates/trust.py" in str(step.get("run","")):step.pop("env",None)
+   elif str(step.get("uses","")).startswith("actions/download-artifact@"):step["env"]=dict(token)
+  self.assertIn("TRUST_TOKEN",workflow.validate_authenticated_head(moved))
+  spread=copy.deepcopy(jobs)
+  for step in spread["trust"]["steps"]:
+   if str(step.get("uses","")).startswith("actions/checkout@"):step["env"]=dict(token)
+  self.assertIn("TRUST_TOKEN_SPREAD",workflow.validate_authenticated_head(spread))
+  guardless=copy.deepcopy(jobs)
+  for step in guardless["publish"]["steps"]:
+   if "tools/candidates/publish_guard.py" in str(step.get("run","")):step.pop("env",None)
+  self.assertIn("GUARD_TOKEN",workflow.validate_authenticated_head(guardless))
+  for job in ("trust","publish"):
+   with self.subTest(job=job):
+    persisted=copy.deepcopy(jobs)
+    for step in persisted[job]["steps"]:
+     if str(step.get("uses","")).startswith("actions/checkout@"):step.setdefault("with",{})["persist-credentials"]="true"
+    self.assertIn("PERSISTED_CREDENTIALS:"+job,workflow.validate_authenticated_head(persisted))
 if __name__=="__main__":unittest.main()

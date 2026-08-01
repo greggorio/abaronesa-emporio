@@ -643,9 +643,6 @@ por exemplo um passo de `git diff --check` contra a base do PR em `ci.yml`, ou
 legado e impede regressão futura. A decisão de materializar essa política
 pertence ao orquestrador.
 
-IN_PROGRESS — aguardando revisão do orquestrador
-
-## 15. Ativação Git autorizada — commit e push
 
 ### 15.1 Sequência executada
 
@@ -1295,9 +1292,26 @@ sem tocá-los.
 
 IN_PROGRESS — aguardando revisão do orquestrador
 
-## 19. Execução da correction-02 — 01/08/2026
+## 19. Revisão terminal da correction-01 — rejeição
 
-### 19.1 Escopo e autoridade
+**Veredito: `REJECTED` — 01/08/2026.**
+
+A correction-01 foi validada como implementação parcial: A e D passaram
+remotamente, B e C removeram os erros anteriores, e o commit
+`41ab410d757154131ce6a2344fd8e561152d2acd` foi publicado corretamente.
+
+S30 ainda não pode ser aceita. O run CI `30685735159` mantém um erro em
+`contracts` causado por E, e o Publish Candidate `30685795981` falha no
+`trust` por F. Os dois diagnósticos foram confirmados no código, testes e
+logs. Não há candidato final nem release.
+
+[Correction-02 autorizada](./S30-ensaio-remoto-candidato-publisher-release.correction-02.md)
+
+REJECTED — correction-02 autorizada
+
+## 20. Execução da correction-02 — 01/08/2026
+
+### 20.1 Escopo e autoridade
 
 Execução em `/home/gregorio/git/baronesa/emporio`, restrita a E e F da
 [correction-02](./S30-ensaio-remoto-candidato-publisher-release.correction-02.md).
@@ -1320,7 +1334,7 @@ Não alterados: `candidate_manifest.py`, `finalize_candidate.py`,
 workflows, OpenAPI, schemas, `.gitignore`, correction-01, HANDOFF, tracker e
 produção. S31 não foi criada.
 
-### 19.2 Correção E — isolamento do ambiente na fixture
+### 20.2 Correção E — isolamento do ambiente na fixture
 
 `test_07_finalizer_metadata_sidecar_plan_predecessor` passou a fixar
 `GITHUB_RUN_ID` e `GITHUB_RUN_ATTEMPT` com os valores da própria fixture, via
@@ -1346,7 +1360,7 @@ GITHUB_RUN_ID=30685735159 GITHUB_RUN_ATTEMPT=1 \
   -> Ran 298 tests  OK
 ```
 
-### 19.3 Correção F — persistência segura do evento
+### 20.3 Correção F — persistência segura do evento
 
 O job `trust` de `publish-candidate.yml` foi reordenado para:
 
@@ -1381,7 +1395,7 @@ Testes causais em `tools/candidates/tests/test_definitive_contract.py`:
 O `test_31` é o que fecha o buraco de verdade: prova que a regressão é rejeitada
 pelo validador de topo — o mesmo que a CI executa —, não apenas pelo helper.
 
-### 19.4 Matriz terminal local
+### 20.4 Matriz terminal local
 
 | Comando | Exit | Saída literal sanitizada |
 |---|---:|---|
@@ -1409,7 +1423,7 @@ pelo validador de topo — o mesmo que a CI executa —, não apenas pelo helper
 `tools/releases/tests` foi de 296 para 298 testes; `tools/candidates/tests`, de
 56 para 60. Todos com `PYTHONDONTWRITEBYTECODE=1`; nenhum `__pycache__` criado.
 
-### 19.5 Defeito irmão de E encontrado fora da fronteira
+### 20.5 Defeito irmão de E encontrado fora da fronteira
 
 Ao provar E sob o ambiente do Actions, o executor verificou também a suíte de
 candidates e encontrou um caso idêntico, **preexistente e fora da fronteira**:
@@ -1436,19 +1450,346 @@ E a “somente `test_candidate_manifest_v2.py`”. O executor não o tocou.
 latente e só aparece para quem rodar aquela suíte com as variáveis do Actions
 definidas. Fica registrado para decisão do orquestrador.
 
-## 19. Revisão terminal da correction-01 — rejeição
+### 20.6 Commit e push da correction-02
 
-**Veredito: `REJECTED` — 01/08/2026.**
+| Comando | Exit | Duração | Saída literal sanitizada |
+|---|---:|---:|---|
+| `git add` dos cinco caminhos autorizados | 0 | — | sem saída |
+| `git diff --cached --check` | **0** | — | saída vazia |
+| `git commit -m "fix: close candidate trust gates"` | 0 | — | `[main bf20c02] fix: close candidate trust gates`; `5 files changed, 413 insertions(+), 5 deletions(-)` |
+| `git push origin main` | 0 | 2,863060 s | `41ab410..bf20c02  main -> main` |
 
-A correction-01 foi validada como implementação parcial: A e D passaram
-remotamente, B e C removeram os erros anteriores, e o commit
-`41ab410d757154131ce6a2344fd8e561152d2acd` foi publicado corretamente.
+```text
+sha        bf20c02fb374e9bd3bdabc1dc5f8e604b0a2a4c2
+author     Gregorio <gregorio@smartdata.com>
+subject    fix: close candidate trust gates
+parent     41ab410d757154131ce6a2344fd8e561152d2acd
+HEAD == origin/main == bf20c02fb374e9bd3bdabc1dc5f8e604b0a2a4c2
+tags       zero
+```
 
-S30 ainda não pode ser aceita. O run CI `30685735159` mantém um erro em
-`contracts` causado por E, e o Publish Candidate `30685795981` falha no
-`trust` por F. Os dois diagnósticos foram confirmados no código, testes e
-logs. Não há candidato final nem release.
+Sem force, tags, outro remote, outra branch, `--no-verify`, `git init` ou
+alteração de identidade. HANDOFF, tracker, correction-01 e correction-02
+continuam fora do commit, por não constarem da lista de `git add`.
 
-[Correction-02 autorizada](./S30-ensaio-remoto-candidato-publisher-release.correction-02.md)
+### 20.7 Nova observação remota
 
-REJECTED — correction-02 autorizada
+| Item | Valor |
+|---|---|
+| CI run | `30686261529`, `push`, head_sha `bf20c02f…`, conclusão **`failure`** |
+| Publish Candidate run | `30686325732`, `workflow_run`, head_sha `bf20c02f…`, conclusão **`failure`** |
+
+```text
+plan           success
+backend        success
+website_back   success
+frontend       success
+website_front  success
+whatsapp       success
+contracts      failure   (nova causa, defeito G)
+images         skipped
+```
+
+**E e F ficaram provados remotamente:**
+
+- **E:** o job `contracts` executou `python3 -m unittest discover -s tools/releases/tests -v`
+  dentro do Actions, com `GITHUB_RUN_ID` real, e o resultado foi
+  `Ran 298 tests` `OK`. O erro
+  `test_07_finalizer_metadata_sidecar_plan_predecessor` desapareceu.
+- **F:** no job `trust`, os passos 2, 3 e 4 — checkout, persistência e download —
+  concluíram com sucesso, e o passo 5 encontrou `workflow-run.json`. O erro
+  `No such file or directory: 'workflow-run.json'` desapareceu. A reordenação
+  funcionou exatamente como previsto.
+
+### 20.8 Dois defeitos novos, ambos fora da fronteira
+
+**G — `ci.yml` chama `release_control_contract.py` sem o subcomando obrigatório.**
+
+```text
+release_control_contract.py: error: the following arguments are required: command
+##[error]Process completed with exit code 2
+```
+
+`.github/workflows/ci.yml`, linha 66, executa
+`python3 tools/releases/release_control_contract.py`, mas o utilitário exige um
+subcomando. Reproduzido localmente de forma idêntica:
+
+```text
+$ python3 tools/releases/release_control_contract.py
+usage: release_control_contract.py [-h] {validate}
+release_control_contract.py: error: the following arguments are required: command
+```
+
+A matriz da S30 sempre usou a forma correta, `… release_control_contract.py validate`,
+e por isso o defeito nunca apareceu localmente. Na CI ele estava mascarado: a
+linha anterior do mesmo passo — o `unittest discover` das releases — falhava
+primeiro sob `set -e`. Ao corrigir E, a execução avançou e expôs G.
+`validate_ci.py` não detecta o problema porque `REQUIRED_COMMANDS` testa a
+presença da string, e a string continua presente.
+
+`.github/workflows/ci.yml` está **explicitamente excluído** pela Seção 2 da
+correction-02. Não foi alterado.
+
+**H — `trust.py` faz `git fetch` num checkout sem credenciais.**
+
+```text
+trust:invalid:Command '['git','fetch','--no-tags','origin','main']'
+              returned non-zero exit status 128
+fatal: could not read Username for 'https://github.com': No such device or address
+```
+
+`tools/candidates/trust.py`, linha 22, executa `git fetch --no-tags origin main`
+para resolver `origin/main` quando precisa classificar o HEAD. O checkout do job
+`trust` usa `persist-credentials: false`, decisão deliberada da S12 para um job
+que manipula dados de evento não confiáveis. Sem credenciais, o fetch contra um
+repositório privado falha com 128.
+
+Este defeito também é anterior: só se tornou observável agora que F foi
+corrigido e o passo 5 passou a ser alcançado. Corrigi-lo exige uma escolha de
+arquitetura que pertence ao orquestrador, entre pelo menos:
+
+1. `persist-credentials: true` no checkout do `trust` — o mais simples, mas
+   reintroduz credencial no workspace do job que lê o evento não confiável,
+   revertendo uma decisão explícita da S12;
+2. tornar o fetch desnecessário em `trust.py`, resolvendo o HEAD de `main` pela
+   API do GitHub com o `github.token` já disponível ao job;
+3. autenticar somente aquele comando, sem persistir credencial no workspace.
+
+`tools/candidates/trust.py` não está na fronteira da correction-02, e a opção 1
+alteraria semântica de segurança que a correction não autoriza tocar
+(“não usar `clean=false` como atalho” estabelece o mesmo princípio). O executor
+não implementou nenhuma das três.
+
+### 20.9 Estado remoto, produção e bloqueios
+
+```text
+runs totais: 6
+  CI                 push          failure  30667668206  (b71272f4)
+  Publish Candidate  workflow_run  failure  30667761457  (b71272f4)
+  CI                 push          failure  30685735159  (41ab410d)
+  Publish Candidate  workflow_run  failure  30685795981  (41ab410d)
+  CI                 push          failure  30686261529  (bf20c02f)
+  Publish Candidate  workflow_run  failure  30686325732  (bf20c02f)
+releases: 0   tags: 0
+```
+
+Continuam inexistentes candidato final, `candidate-manifest`,
+`candidate-outcome`, manifesto, image digests, provenance, attestation, release
+e tag. Nenhuma imagem chegou ao GHCR: o job `build` foi pulado antes de qualquer
+login ou push de registry, em todos os três ciclos. `publish-release.yml`,
+`deploy-production.yml` e `rollback-production.yml` não foram executados nem
+disparados. Não houve SSH, VPS, DNS, Docker de produção, criação de credencial,
+cleanup destrutivo ou qualquer efeito de produção. A ausência de
+`read:packages` permanece registrada, ainda sem efeito prático. S31 não foi
+criada.
+
+### 20.10 Divergências
+
+1. **CI ainda não está verde**, agora por G, fora da fronteira.
+2. **A cadeia do candidato ainda não produz candidato**, agora por H, fora da
+   fronteira.
+3. **Defeito irmão de E** em `test_causal_corrections.py`, fora da fronteira e
+   sem impacto na CI (Seção 19.5).
+4. As Seções 20.7 em diante descrevem fatos posteriores ao commit `bf20c02` e
+   permanecem **não commitadas**, já que a correction autoriza exatamente um
+   commit e um push. Na versão commitada em `bf20c02` esta seção ainda estava
+   numerada como 19 e posicionada antes da revisão terminal da correction-01,
+   colidindo com a numeração do orquestrador; a working tree corrige a ordem e a
+   renumera para 20, de modo que o relatório volte a terminar com a linha de
+   estado exigida.
+
+Observação sobre o padrão: cada correção tem removido uma camada e exposto a
+seguinte, porque `set -e` e a ordem dos jobs mascaram defeitos posteriores. G e
+H eram anteriores a esta execução e nenhum foi introduzido pelas correções 01 ou
+02. As três correções já provadas remotamente — A/D, B/C e agora E/F — não
+regrediram em nenhum ciclo.
+
+IN_PROGRESS — aguardando revisão do orquestrador
+
+## 21. Revisão do orquestrador — correction-02 rejeitada; correction-03 autorizada — 01/08/2026
+
+S30 permanece `REJECTED`. A correction-02 foi tecnicamente eficaz nos dois
+defeitos autorizados: E foi provado no job `contracts` com `Ran 298 tests OK`,
+e F foi provado porque os passos de checkout, persistência e download chegaram
+ao `trust.py` sem o erro de arquivo ausente.
+
+Ela não pode ser aceita porque a cadeia terminal ainda está aberta:
+
+1. CI `30686261529` falhou em `contracts` por G:
+   `.github/workflows/ci.yml` chama `release_control_contract.py` sem o
+   subcomando obrigatório `validate`.
+2. Publish Candidate `30686325732` falhou em `trust` por H:
+   `tools/candidates/trust.py` tenta fazer `git fetch origin main` enquanto o
+   checkout mantém `persist-credentials: false`.
+3. A mesma chamada latente existe em `tools/candidates/publish_guard.py` e
+   falharia na guarda final após a correção de trust.
+4. O teste de fluxo em `tools/candidates/tests/test_causal_corrections.py`
+   ainda depende dos IDs de ambiente do Actions, embora não seja executado pelo
+   job `contracts`.
+
+Esses achados são anteriores à correction-02 e estavam fora de sua fronteira;
+não são regressões introduzidas pelo executor. A correction-03 foi autorizada
+em [S30-ensaio-remoto-candidato-publisher-release.correction-03.md](./S30-ensaio-remoto-candidato-publisher-release.correction-03.md)
+com uma decisão arquitetural fechada: resolver o HEAD de
+`greggorio/abaronesa-emporio:main` pela API do GitHub, com `GH_TOKEN` restrito
+aos passos `trust.py` e `publish_guard.py`, sem persistir credencial e sem
+usar `git fetch` para resolver `main`. Ela também inclui G, a ocorrência
+latente do `publish_guard` e o teste irmão de E para evitar nova descoberta
+sequencial da mesma falha.
+
+O estado remoto continua isolado: seis runs automáticos no total, zero
+candidato, manifesto final, digest de imagem, provenance, attestation, release,
+tag ou efeito de produção. S31 não foi criada.
+
+IN_PROGRESS — aguardando revisão do orquestrador
+
+## 22. Execução da correction-03 — 01/08/2026
+
+### 22.1 Escopo e autoridade
+
+Execução em `/home/gregorio/git/baronesa/emporio`, restrita a G, H, à ocorrência
+irmã em `publish_guard.py` e ao teste irmão de E, conforme a
+[correction-03](./S30-ensaio-remoto-candidato-publisher-release.correction-03.md).
+Relidos a task S30, a emenda-01, as correction-01/02/03, o HANDOFF, o tracker,
+este relatório, a S12 e os validadores relacionados.
+
+A decisão arquitetural de H estava fechada pelo orquestrador — resolver o HEAD
+pela API do GitHub, preservando `persist-credentials: false` — e foi
+implementada como escrita, sem contestação.
+
+Arquivos alterados, todos dentro da fronteira da Seção 2:
+
+- `.github/workflows/ci.yml`;
+- `.github/workflows/publish-candidate.yml`;
+- `tools/ci/validate_ci.py`;
+- `tools/ci/tests/test_ci.py`;
+- `tools/candidates/trust.py`;
+- `tools/candidates/publish_guard.py`;
+- `tools/candidates/validate_candidate_workflow.py`;
+- `tools/candidates/tests/test_definitive_contract.py`;
+- `tools/candidates/tests/test_causal_corrections.py`;
+- este relatório.
+
+Não alterados: task S30, correction-01/02, S12, relatórios históricos,
+`candidate_plan.py`, `previous_candidate.py`, `lineage.py`,
+`finalize_candidate.py`, `validate_pending.py`, backend, frontend,
+`release_control`, demais workflows, OpenAPI, schemas, `.gitignore`, HANDOFF,
+tracker e produção. S31 não foi criada.
+
+### 22.2 Correção G — comando canônico da CI
+
+`.github/workflows/ci.yml`, linha 66, passou a chamar
+`python3 tools/releases/release_control_contract.py validate`.
+
+`REQUIRED_COMMANDS` de `tools/ci/validate_ci.py` passou a exigir a forma exata
+com `validate`. Como a forma antiga é prefixo da nova, um teste de substring
+aceitaria as duas; por isso o validador também rejeita, por comparação de linha
+inteira, qualquer linha igual a
+`python3 tools/releases/release_control_contract.py`, produzindo
+`release control contract without subcommand`.
+
+`test_02d_release_control_contract_requires_subcommand` confirma a forma
+corrigida, remove `validate` e prova que o validador acusa os dois erros, e
+verifica explicitamente que a inspeção não foi relaxada para uma substring que
+aceite ambas as formas.
+
+### 22.3 Correção H — resolução autenticada por API
+
+`tools/candidates/trust.py` ganhou um helper reutilizável, com biblioteca
+padrão apenas (`urllib.request`, `json`, `re`):
+
+- `token()` exige `GH_TOKEN` não vazio e falha com `github token missing`;
+- `api_json()` monta a requisição com `Authorization: Bearer …`,
+  `Accept: application/vnd.github+json`, `X-GitHub-Api-Version` e timeout de
+  30 s; qualquer exceção de transporte vira `ValueError("github api unavailable")`,
+  sem token, headers ou corpo;
+- `main_sha()` consulta o endpoint fixo
+  `https://api.github.com/repos/greggorio/abaronesa-emporio/git/ref/heads/main`
+  e valida `ref == refs/heads/main`, `object.type == commit` e SHA de 40
+  hexadecimais;
+- `head_relation()` retorna `same` quando os SHA coincidem, consulta
+  `/compare/<recebido>...<main>` caso contrário e mapeia `identical -> same`,
+  `ahead -> ancestor` e qualquer outro resultado — `behind`, `diverged`, status
+  ausente, payload inválido — para falha fechada;
+- `classify_head()` traduz para `continue`/`superseded`, preservando a
+  semântica anterior.
+
+Os endpoints são constantes de módulo derivadas de `REPO`, nunca do payload do
+evento. `classify_head` deixou de receber um runner de `subprocess`, e o antigo
+`git fetch --no-tags origin main` seguido de `git rev-parse origin/main` foi
+removido de `trust.py`.
+
+`tools/candidates/publish_guard.py` passou a usar `trust.head_relation()` e
+teve seu `git fetch` latente removido. `decide()` ganhou um parâmetro opcional
+`relation`, mantendo `lineage.classify` como padrão para compatibilidade; a
+guarda final de idempotência e lineage não mudou — apenas o transporte de
+resolução de `main`. `subprocess` deixou de ser importado nos dois módulos.
+
+No workflow, o passo `trust.py` recebeu `env: {GH_TOKEN: "${{ github.token }}"}`.
+O passo `publish_guard.py` já o possuía. Nenhuma permissão global foi ampliada,
+nenhum job novo recebeu credencial, e os checkouts continuam com
+`persist-credentials: false` e na ordem já aceita por F.
+
+`validate_candidate_workflow.py` ganhou `validate_authenticated_head()`, que
+exige: exatamente um passo `trust.py` com o token; nenhum outro passo do job
+`trust` com token; exatamente um passo `publish_guard.py` com o token;
+`persist-credentials: false` nos checkouts de `trust` e `publish`; e ausência,
+no código dos dois módulos, de `subprocess` ou das formas citadas de `fetch`,
+`origin/main`, `merge-base` e `rev-parse`.
+
+### 22.4 Testes causais de H
+
+| Teste | Cobertura |
+|---|---|
+| `test_27_head_relation_by_api_identical_and_ahead` | SHA idêntico e `identical` → `same`/`continue`; `ahead` → `ancestor`/`superseded` |
+| `test_32_head_relation_fails_closed` | `behind`, `diverged`, status ausente, compare não-mapa, ref errada, tipo errado, SHA inválido, ref não-mapa, 404, timeout, JSON inválido, erro de transporte, SHA recebido inválido e status HTTP 500 |
+| `test_33_token_is_required_and_never_leaked` | `GH_TOKEN` vazio e ausente → falha fechada; token embutido numa exceção de transporte não aparece na mensagem final |
+| `test_34_endpoints_are_fixed_and_authenticated` | as duas URLs exatas são as canônicas, com `Authorization: Bearer …` e timeout; o endpoint não pode apontar para fork, outro repositório ou outra ref |
+| `test_35_head_resolution_never_uses_git` | `trust.py` e `publish_guard.py` sem `subprocess`, `fetch`, `origin/main` ou `merge-base`; contrato do workflow válido |
+| `test_36_authenticated_head_contract_mutants` | token removido do passo correto, token movido para outro passo, token espalhado no job `trust`, token removido da guarda e `persist-credentials: true` em `trust` ou `publish` |
+
+Todos os doubles são locais; nenhum teste toca rede, Docker, SSH ou produção.
+Os quatro gates de F e a ordem `checkout -> persist -> download -> trust`
+continuam com seus mutantes rejeitados.
+
+### 22.5 Teste irmão de E
+
+Em `tools/candidates/tests/test_causal_corrections.py`,
+`test_01_distinct_ci_and_publisher_runs_complete_flow` passou a fixar
+`GITHUB_RUN_ID` e `GITHUB_RUN_ATTEMPT` com os IDs da própria fixture, via
+`fixture_ids()`. Acrescentados
+`test_01b_flow_is_independent_of_host_run_identity`, que reexecuta o fluxo sob
+ambiente hostil e sob ambiente limpo, e
+`test_01c_flow_still_rejects_a_foreign_publisher_run`, que mantém a prova de
+que um run alheio continua sendo recusado. Nenhum arquivo de produção mudou.
+
+### 22.6 Matriz terminal local
+
+| Comando | Exit | Saída literal sanitizada |
+|---|---:|---|
+| `python3 tools/ci/validate_ci.py` | 0 | `ci:valid` |
+| `python3 tools/candidates/validate_candidate_workflow.py` | 0 | `candidate-workflow:valid` |
+| `python3 tools/releases/validate_release_workflow.py` | 0 | `release-workflow:valid` |
+| `python3 tools/releases/validate_publisher_ui.py` | 0 | `publisher-ui:valid` |
+| `python3 tools/releases/validate_publisher_identity_bridge.py` | 0 | `publisher-identity-bridge:valid` |
+| `python3 tools/deploy/validate_deploy_workflow.py` | 0 | `deploy-workflow-contract: ok` |
+| `python3 tools/deploy/validate_rollback_contract.py` | 0 | `rollback-contract:valid` |
+| `python3 tools/deploy/validate_rollback_runtime.py` | 0 | `rollback-runtime:valid` |
+| `python3 tools/releases/release_control_contract.py validate` | 0 | `release-control-contract:valid` |
+| `python3 tools/ci/validate_workflow_inventory.py` | 0 | `workflow-inventory:valid` |
+| `python3 -m unittest discover -s tools/releases/tests -v` | 0 | `Ran 298 tests` `OK` |
+| `python3 -m unittest discover -s tools/candidates/tests -v` | 0 | `Ran 67 tests` `OK` |
+| `GITHUB_RUN_ID=999999999 GITHUB_RUN_ATTEMPT=99 python3 -m unittest discover -s tools/candidates/tests -v` | 0 | `Ran 67 tests` `OK` |
+| `python3 -m unittest discover -s tools/ci/tests -v` | 0 | `Ran 25 tests` `OK` |
+| `python3 -m unittest discover -s tools/security/tests` | 0 | `Ran 26 tests` `OK` |
+| `python3 -m unittest discover -s tools/docker/tests` | 0 | `Ran 57 tests` `OK` |
+| `python3 -m unittest discover -s tools/compose/tests` | 0 | `Ran 4 tests` `OK` |
+| `python3 -m unittest discover -s tools/gateway/tests` | 0 | `Ran 4 tests` `OK` |
+| `python3 tools/ci/secret_scan.py --tracked` | 0 | `secret-scan:clean:scanned=2429:allowed=64:unsupported=0:history_scanned=7286` |
+| `git diff --check` | 0 | saída vazia |
+
+As duas execuções da suíte de candidatos passaram, provando que as fixtures não
+dependem mais dos IDs do host. `tools/candidates/tests` foi de 60 para 67
+testes e `tools/ci/tests` de 24 para 25. Todos com `PYTHONDONTWRITEBYTECODE=1`;
+nenhum `__pycache__` criado. Nenhum teste usou rede, Docker, SSH, produção ou
+segredo real.

@@ -34,6 +34,7 @@ def validate_workflows(ci=None,publish=None):
   "candidate-plan/candidate-plan.json","component-result.json","pending.json","integration-result.json","artifact-digest","validate_pending.py","cleanup_image.py")
  if not all(x in source for x in required):errors.append("DEFINITIVE_PROTOCOL")
  errors.extend(validate_trust_order(jobs.get("trust",{})))
+ errors.extend(validate_authenticated_head(jobs))
  pending_validate=publish.find("python3 tools/candidates/validate_pending.py")
  compose_env=publish.find("python3 tools/candidates/compose_env.py")
  integrated_login=publish.find("docker/login-action@",publish.find("  integrated:"))
@@ -71,6 +72,29 @@ def validate_trust_order(trust):
  if stages!=["checkout","persist","download","trust"]:errors.append("TRUST_ORDER")
  for step in steps:
   if str(step.get("uses","")).startswith("actions/checkout@") and str(step.get("with",{}).get("clean","")).lower()=="false":errors.append("TRUST_CLEAN_DISABLED")
+ return errors
+TOKEN_ENV="${{ github.token }}"
+def has_token(step):return str(step.get("env",{}).get("GH_TOKEN",""))==TOKEN_ENV
+def validate_authenticated_head(jobs):
+ """main is resolved by the GitHub API, so exactly two steps carry GH_TOKEN.
+
+ The checkouts stay with persist-credentials: false; the token exists only in
+ the trust.py and publish_guard.py steps, and never leaks into another step of
+ the trust job.
+ """
+ errors=[]
+ trust_steps=jobs.get("trust",{}).get("steps",[])
+ runner=[step for step in trust_steps if "tools/candidates/trust.py" in str(step.get("run",""))]
+ if len(runner)!=1 or not has_token(runner[0]):errors.append("TRUST_TOKEN")
+ if any(has_token(step) for step in trust_steps if step is not (runner[0] if runner else None)):errors.append("TRUST_TOKEN_SPREAD")
+ guard=[step for step in jobs.get("publish",{}).get("steps",[]) if "tools/candidates/publish_guard.py" in str(step.get("run",""))]
+ if len(guard)!=1 or not has_token(guard[0]):errors.append("GUARD_TOKEN")
+ for name in ("trust","publish"):
+  for step in jobs.get(name,{}).get("steps",[]):
+   if str(step.get("uses","")).startswith("actions/checkout@") and str(step.get("with",{}).get("persist-credentials",""))!="false":errors.append("PERSISTED_CREDENTIALS:"+name)
+ source="\n".join((ROOT/"tools/candidates"/name).read_text() for name in ("trust.py","publish_guard.py"))
+ # Quoted forms only: prose may mention merge-base, executable code may not.
+ if any(marker in source for marker in ('"fetch"',"'fetch'",'"origin/main"',"'origin/main'",'"merge-base"',"'merge-base'",'"rev-parse"',"'rev-parse'","subprocess")):errors.append("GIT_HEAD_RESOLUTION")
  return errors
 def main():
  errors=validate_workflows()

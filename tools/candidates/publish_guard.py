@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Recheck exact HEAD and candidate idempotency immediately before publish."""
-import argparse,os,subprocess,sys,tempfile
+import argparse,os,sys,tempfile
 from pathlib import Path
-import lineage,previous_candidate
-def decide(sha,head,mode,selected):
- relation=lineage.classify(sha,head)
+import lineage,previous_candidate,trust
+def decide(sha,head,mode,selected,relation=None):
+ relation=lineage.classify(sha,head) if relation is None else relation
  if relation in ("unrelated","descendant"):raise ValueError("HEAD lineage")
  if relation=="ancestor":return "superseded"
  if mode=="already_published":return "already_published"
@@ -13,10 +13,11 @@ def decide(sha,head,mode,selected):
 def main():
  p=argparse.ArgumentParser();p.add_argument("--sha",required=True);a=p.parse_args()
  try:
-  subprocess.run(["git","fetch","--no-tags","origin","main"],check=True)
-  head=subprocess.check_output(["git","rev-parse","origin/main"],text=True).strip()
+  # main is resolved by the GitHub API: the checkout keeps persist-credentials
+  # false, so no authenticated git transport exists in this workspace.
+  relation=trust.head_relation(a.sha)
   with tempfile.TemporaryDirectory() as raw:mode,selected=previous_candidate.discover(a.sha,10,Path(raw))
-  result=decide(a.sha,head,mode,selected)
+  result=decide(a.sha,None,mode,selected,relation)
   with open(os.environ["GITHUB_OUTPUT"],"a") as f:
    f.write("mode="+result+"\n")
    if result=="already_published" and selected:

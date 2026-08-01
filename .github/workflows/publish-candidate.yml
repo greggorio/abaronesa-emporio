@@ -33,6 +33,7 @@ jobs:
         with: {name: candidate-plan, path: candidate-plan, run-id: "${{ github.event.workflow_run.id }}", github-token: "${{ github.token }}"}
       - name: Validate event plan attempt and exact HEAD
         id: verify
+        env: {GH_TOKEN: "${{ github.token }}"}
         run: python3 tools/candidates/trust.py --event workflow-run.json --plan candidate-plan/candidate-plan.json
 
   predecessor:

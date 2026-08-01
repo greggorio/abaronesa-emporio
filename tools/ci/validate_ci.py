@@ -16,7 +16,7 @@ REQUIRED_JOBS = {"plan", "contracts", "backend", "website_back", "frontend", "we
 REQUIRED_COMMANDS = (
     "python3 tools/releases/catalog.py validate --require-release-ready",
     "python3 -m unittest discover -s tools/releases/tests -v",
-    "python3 tools/releases/release_control_contract.py",
+    "python3 tools/releases/release_control_contract.py validate",
     "python3 tools/security/bootstrap_contract.py",
     "python3 -m unittest discover -s tools/security/tests -v",
     "python3 tools/docker/java_images_contract.py",
@@ -36,6 +36,7 @@ REQUIRED_COMMANDS = (
     "python3 tools/candidates/candidate_plan.py generate",
     "python3 tools/candidates/candidate_plan.py validate",
 )
+BARE_SUBCOMMANDLESS_CONTRACT = "python3 tools/releases/release_control_contract.py"
 POSTGRES_IMAGE = "postgres:16.6-alpine"
 POSTGRES_ENV = {"POSTGRES_DB": "testdb", "POSTGRES_USER": "test", "POSTGRES_PASSWORD": "test"}
 POSTGRES_PORTS = ["5432:5432"]
@@ -91,6 +92,10 @@ def validate(text: str | None = None) -> list[str]:
     for command in REQUIRED_COMMANDS:
         if command not in text:
             errors.append(f"missing command:{command}")
+    # release_control_contract.py requires a subcommand: the bare form exits 2.
+    # A substring test would accept both spellings, so reject the bare line.
+    if any(line.strip() == BARE_SUBCOMMANDLESS_CONTRACT for line in text.splitlines()):
+        errors.append("release control contract without subcommand")
     checkout_steps = [
         step
         for job in jobs.values()
