@@ -5,7 +5,7 @@
 > **Executor previsto:** CLI
 > **Diretório obrigatório:** `/home/gregorio/git/baronesa/emporio`
 > **Autoridade:** derivada da `authorization-01` da S30a, já `ACCEPTED`. Não depende da conclusão da S30a, que permanece `IN_PROGRESS`.
-> **Commit-base:** o checkpoint documental do orquestrador, mensagem exata `docs: consolidate S30a review and open S31 scope`. O executor confirma com `git rev-parse HEAD` antes de qualquer alteração, registra o SHA literal no relatório e para se não coincidir.
+> **Commit-base:** o checkpoint documental de refinamento do orquestrador, mensagem exata `docs: refine S31 delegation contract`. O executor executa o preflight fechado da §4.0 antes de qualquer alteração, registra o SHA literal no relatório e para diante de qualquer divergência.
 > **Relatório de saída:** `S31-remocao-npm-runtime-whatsapp.report.md`
 
 ## 1. Por que esta slice existe
@@ -120,6 +120,26 @@ Ao final:
 
 Estas decisões estão fechadas. O executor implementa; não escolhe alternativa.
 
+### 4.0 Preflight Git e identificação do checkpoint
+
+Antes de alterar qualquer arquivo, executar e registrar literalmente:
+
+```bash
+test "$(pwd)" = "/home/gregorio/git/baronesa/emporio"
+test "$(git branch --show-current)" = "main"
+test -z "$(git status --porcelain)"
+test "$(git rev-parse origin/main)" = "0bd563b7bb44ffcf2d2f1d705a5bbafe7a356f06"
+test "$(git log -1 --format=%s)" = "docs: refine S31 delegation contract"
+test "$(git rev-list --count origin/main..HEAD)" = "6"
+git rev-parse HEAD
+```
+
+Os seis `test` devem retornar exit 0. A saída de `git rev-parse HEAD` é o
+`SHA-base` da execução. Ela não é comparada com um SHA autorreferente embutido
+nesta task: a identidade do checkpoint é fechada por branch, worktree vazio,
+`origin/main`, mensagem exata e quantidade de commits locais. Qualquer
+divergência exige parada antes da primeira alteração.
+
 ### 4.1 Remover a instalação global de npm
 
 Excluir integralmente de `whatsapp_service/Dockerfile` a linha introduzida por
@@ -201,45 +221,71 @@ Não relaxar, remover ou tornar condicional nenhuma verificação existente.
 Em `tools/docker/tests/test_validate_node_images.py`. Usar teste parametrizado
 para a família fechada, exigindo o erro **exato** de cada caso.
 
-Devem ser **rejeitados**:
+#### Família global exaustiva — casos 1 a 18
+
+Gerar o produto cartesiano completo:
+
+```text
+flags       = -g | --global | --location=global
+subcomandos = install | i | add
+posição     = antes | depois do subcomando
+```
+
+Para cada uma das dezoito combinações, inserir no runtime uma destas formas:
+
+```text
+RUN npm <flag> <subcomando> some-cli
+RUN npm <subcomando> <flag> some-cli
+```
+
+As dezoito devem produzir exatamente `GLOBAL_CLI_FORBIDDEN`. Isso inclui a
+variante que escapou, `npm --global install`, e impede que exemplos
+representativos sejam confundidos com cobertura integral da família declarada.
+
+#### Demais rejeições — casos 19 a 26
 
 | # | Mutante | Erro esperado |
 |---|---|---|
-| 1 | `RUN npm install -g npm@12.0.2` no runtime | `GLOBAL_CLI_FORBIDDEN` |
-| 2 | `RUN npm --global install npm@12.0.2` no runtime — a variante que passou | `GLOBAL_CLI_FORBIDDEN` |
-| 3 | `RUN npm -g install npm@12.0.2` no runtime | `GLOBAL_CLI_FORBIDDEN` |
-| 4 | `RUN npm i -g npm@12.0.2` no runtime | `GLOBAL_CLI_FORBIDDEN` |
-| 5 | `RUN npm add --global npm@12.0.2` no runtime | `GLOBAL_CLI_FORBIDDEN` |
-| 6 | `RUN npm install --location=global npm@12.0.2` no runtime | `GLOBAL_CLI_FORBIDDEN` |
-| 7 | `RUN npm --location=global add npm@12.0.2` no runtime | `GLOBAL_CLI_FORBIDDEN` |
-| 8 | `RUN npx some-cli` no runtime | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
-| 9 | `RUN corepack enable` no runtime | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
-| 10 | `RUN yarn global add some-cli` no runtime | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
-| 11 | remoção da linha de purga | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
-| 12 | purga com `rm` trocado por `echo`, mantendo os caminhos no texto | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
-| 13 | purga reduzida a comentário, mantendo os caminhos no texto | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
-| 14 | purga omitindo `/opt/yarn-v1.22.22`, `yarn` e `yarnpkg` | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
-| 15 | remoção de `npm ci` do estágio `dependencies` | `NPM_CI_REQUIRED` |
+| 19 | `RUN npx some-cli` no runtime | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 20 | `RUN corepack enable` no runtime | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 21 | `RUN yarn global add some-cli` no runtime | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 22 | remoção da linha de purga | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 23 | purga com `rm` trocado por `echo`, mantendo os caminhos no texto | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 24 | purga reduzida a comentário, mantendo os caminhos no texto | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 25 | purga omitindo `/opt/yarn-v1.22.22`, `yarn` e `yarnpkg` | `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 26 | remoção de `npm ci` do estágio `dependencies` | `NPM_CI_REQUIRED` |
 
-Devem ser **aceitos**, provando ausência de falso-positivo:
+#### Aceitações — casos 27 e 28
 
 | # | Caso | Exigência |
 |---|---|---|
-| 16 | o Dockerfile corrigido íntegro | nenhum erro |
-| 17 | `npm ci` presente no estágio `dependencies` | não dispara `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
+| 27 | o Dockerfile corrigido íntegro | nenhum erro |
+| 28 | asserção focalizada sobre o mesmo Dockerfile, com `npm ci` no estágio `dependencies` | não contém `PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME` |
 
-O mutante 15 e o caso 17 existem para provar que a regra nova não canibalizou a
-antiga, em nenhuma das duas direções. Registrar no relatório o resultado literal
-dos dezessete casos.
+O mutante 26 e o caso 28 provam que a regra nova não canibalizou a antiga, em
+nenhuma das duas direções. Registrar no relatório o resultado literal dos 28
+casos, incluindo cada uma das dezoito combinações parametrizadas.
 
 ### 4.5 Prova por paridade local
 
 Docker local está **autorizado** para esta slice, exclusivamente para build,
 inspeção, scan e smoke locais do `whatsapp_service`.
 
-Estão autorizados **somente pulls de leitura** da imagem base pinada por digest,
-da imagem Trivy pinada por digest e dos bancos de vulnerabilidade do Trivy.
-Permanecem proibidos GHCR, `docker login`, `docker push` e qualquer publicação.
+Estão autorizados **somente acessos de leitura** necessários à reprodução do
+build e do scan:
+
+- pull da imagem base pinada por digest;
+- pull da imagem Trivy pinada por digest e download dos bancos de
+  vulnerabilidade do Trivy;
+- downloads feitos por `apk add --no-cache` exclusivamente dos repositórios
+  configurados em `/etc/apk/repositories` na imagem base pinada;
+- downloads e chamadas de protocolo feitos por `npm ci` exclusivamente aos
+  hosts de registry já presentes no `whatsapp_service/package-lock.json`
+  versionado — hoje `registry.npmjs.org` — incluindo endpoints de metadados e
+  auditoria usados pelo próprio npm.
+
+Qualquer outro destino de rede exige parada. Permanecem proibidos GHCR,
+`docker login`, `docker push` e qualquer publicação.
 
 Executar antes do commit e registrar:
 
@@ -275,11 +321,26 @@ Executar antes do commit e registrar:
   qualquer imagem preexistente, inclusive a base e a do Trivy.
 
 Emitir `S31-trivy-findings.whatsapp.after.json` no diretório de slices, seguindo
-o esquema de `S30a-trivy-findings.after.json`. O arquivo é obrigatório mesmo com
-lista vazia, e deve conter: `schemaVersion`, `scanner` com digest da imagem
-Trivy, `trivyDatabase` com versões e timestamps dos bancos, `measurement`,
-`measuredAtUtc`, `sourceSha`, `images` com o componente e seu `imageId`,
-`counts` com totais zerados e `findings: []`.
+integralmente o esquema de `S30a-trivy-findings.after.json`. O arquivo é
+obrigatório mesmo com lista vazia, e deve conter: `schemaVersion`, `scanner` com
+digest da imagem Trivy, `trivyDatabase` com versões e timestamps dos bancos,
+`measurement`, `measuredAtUtc`, `sourceSha`, `sourceTreeSha`, `sourceState`,
+`sourceDiffSha256`, `images` com o componente e seu `imageId`, `counts` com
+totais zerados e `findings: []`.
+
+Semântica fechada da linhagem:
+
+- `measurement` é `after`;
+- `sourceSha` é o SHA-base confirmado no preflight da §4.0;
+- `sourceState` é
+  `working-tree-after-s31-remediation-before-evidence-files`;
+- `sourceDiffSha256` é o SHA-256 do `git diff --binary` entre `sourceSha` e os
+  três arquivos de implementação (`whatsapp_service/Dockerfile`, validador e
+  testes), em ordem de caminho;
+- `sourceTreeSha` é a árvore Git medida formada pelo `sourceSha` com somente
+  esses três arquivos de implementação sobrepostos, calculada em índice Git
+  temporário. JSON e relatório ficam fora dessa árvore para evitar
+  autorreferência.
 
 **Não alterar a política do Trivy nesta slice.** Não criar `.trivyignore`, não
 introduzir exceção, não alterar `severity`, `ignore-unfixed` ou `exit-code` em
@@ -362,21 +423,33 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/releases/tests -
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/security/tests -v
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/compose/tests -v
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/gateway/tests -v
-python3 tools/ci/secret_scan.py --tracked
 git diff --check
 ```
 
-Acrescentar a paridade local da §4.5. Antes do commit, revisar a lista staged,
-confirmar que ela contém exclusivamente os caminhos da §5 e que
-`git diff --cached --check` retorna 0.
+Acrescentar a paridade local da §4.5. Depois dos gates funcionais:
+
+1. concluir o JSON e uma versão provisoriamente final do relatório;
+2. fazer stage exclusivamente dos cinco caminhos da §5;
+3. executar `python3 tools/ci/secret_scan.py --tracked` e registrar sua saída
+   literal no relatório;
+4. fazer stage novamente do relatório e repetir o mesmo secret scan; a segunda
+   saída deve ser `clean`, ter `unsupported=0` e coincidir com a primeira;
+5. se as duas saídas divergirem, parar antes do commit; não iterar nem ajustar
+   allowlist;
+6. confirmar novamente a lista staged e executar `git diff --cached --check`,
+   que deve retornar 0.
+
+Essa ordem é obrigatória porque `secret_scan.py --tracked` usa `git ls-files`:
+os dois arquivos novos só entram na varredura depois do stage.
 
 ## 8. Critérios de aceite
 
 A slice só é aceita quando, simultaneamente:
 
 1. os treze validadores e as sete suítes retornam exit 0;
-2. os quinze mutantes da §4.4 são rejeitados com o erro exato prescrito, e os
-   dois casos de aceitação passam sem erro, com resultado literal registrado;
+2. os 26 mutantes da §4.4 são rejeitados com o erro exato prescrito, e os dois
+   casos de aceitação passam sem erro, com resultado literal dos 28 casos
+   registrado;
 3. a reconfirmação da enumeração da base coincide com a lista da §4.2, e a
    inspeção da imagem construída prova ausência dos oito caminhos e presença de
    `node`;
@@ -386,7 +459,8 @@ A slice só é aceita quando, simultaneamente:
    `connected=false` e `hasQr=false`, com `WHATSAPP_INITIALIZATION_DISABLED=true`
    e sem gerenciador invocável no container;
 6. o cleanup removeu apenas os artefatos criados pela execução, sem prune amplo;
-7. o scanner de segredos permanece `clean` com `unsupported=0`;
+7. as duas execuções finais do scanner de segredos, já com os cinco caminhos
+   staged, permanecem `clean`, com `unsupported=0` e saída idêntica;
 8. existe exatamente um commit novo, local, sem push, tocando apenas os caminhos
    da §5, e `git diff --check origin/main..HEAD` retorna 0;
 9. nenhum efeito em release, tag, deploy, rollback, tráfego de WhatsApp ou
@@ -398,7 +472,7 @@ A slice só é aceita quando, simultaneamente:
 Parar e registrar o bloqueio, sem improvisar correção fora da fronteira, diante
 de:
 
-- `git rev-parse HEAD` divergente do checkpoint declarado no cabeçalho;
+- qualquer gate do preflight Git da §4.0 divergente;
 - enumeração da base divergente da lista da §4.2;
 - qualquer achado HIGH/CRITICAL remanescente no `whatsapp_service` após a purga;
 - falha do smoke, ou qualquer indício de que o runtime dependa de gerenciador;
@@ -420,9 +494,10 @@ Além do JSON exigido pela §4.5, criar somente:
 Deve conter: CWD; autoridade lida; SHA-base confirmado por `git rev-parse HEAD`
 antes das alterações; arquivos criados e alterados; implementação por decisão
 fechada; reconfirmação da enumeração da base; matriz local com comandos, exits e
-durações; resultado literal dos dezessete casos da §4.4; paridade local com
-build, inspeção, scan, smoke e cleanup; delta de achados do componente;
-mensagem exata do commit; resíduos; acessos externos; divergências.
+durações; resultado literal dos 28 casos da §4.4; paridade local com build,
+inspeção, scan, smoke e cleanup; as duas saídas finais idênticas do secret scan;
+delta de achados do componente; mensagem exata do commit; resíduos; acessos
+externos; divergências.
 
 Sobre o SHA do commit final: **o relatório está dentro do commit e não pode
 conter o próprio SHA** — acrescentá-lo mudaria o SHA de novo. O relatório
