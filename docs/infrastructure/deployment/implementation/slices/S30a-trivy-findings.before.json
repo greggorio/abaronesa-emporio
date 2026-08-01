@@ -1,0 +1,458 @@
+{
+  "schemaVersion": 1,
+  "measurement": "before",
+  "sourceSha": "5360356ede64279e47f8c55594f4410e52972991",
+  "sourceTreeSha": "a2b7722a42391bffbd0bb4a31dde1e22f57c3051",
+  "measuredAtUtc": "2026-08-01T11:16:46.460341Z",
+  "scanner": {
+    "name": "trivy",
+    "version": "0.70.0",
+    "image": "aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
+    "platform": "linux/amd64",
+    "severity": "HIGH,CRITICAL",
+    "ignoreUnfixed": false,
+    "exitCodePolicy": 1
+  },
+  "trivyDatabase": {
+    "vulnerabilityDb": {
+      "version": 2,
+      "updatedAtUtc": "2026-08-01T07:37:47.783018242Z",
+      "nextUpdateUtc": "2026-08-02T07:37:47.783017982Z",
+      "downloadedAtUtc": "2026-08-01T11:13:08.572656946Z"
+    },
+    "javaDb": {
+      "version": 1,
+      "updatedAtUtc": "2026-08-01T01:22:48.927750648Z",
+      "nextUpdateUtc": "2026-08-04T01:22:48.927750528Z",
+      "downloadedAtUtc": "2026-08-01T11:13:40.142987177Z"
+    }
+  },
+  "images": {
+    "backend": {
+      "package": "s30a-backend:before-5360356",
+      "imageId": "sha256:7f949c420a0ca94bd678994dd807d0fe666a0c891a6241db43806f17815cf84e",
+      "architecture": "amd64",
+      "os": "alpine 3.23.5"
+    },
+    "website_back": {
+      "package": "s30a-website_back:before-5360356",
+      "imageId": "sha256:15b61e8c9b203d2f2837d275d36343ca1331b936b192fdd2dafb3edaea618cda",
+      "architecture": "amd64",
+      "os": "alpine 3.23.5"
+    },
+    "whatsapp_service": {
+      "package": "s30a-whatsapp_service:before-5360356",
+      "imageId": "sha256:b1015e192df3502f32a0196adb04be4cf1689524416675f772ac401b78fb9034",
+      "architecture": "amd64",
+      "os": "alpine 3.24.1"
+    }
+  },
+  "counts": {
+    "total": 26,
+    "byComponent": {
+      "backend": {
+        "CRITICAL": 1,
+        "HIGH": 10
+      },
+      "website_back": {
+        "CRITICAL": 1,
+        "HIGH": 9
+      },
+      "whatsapp_service": {
+        "CRITICAL": 1,
+        "HIGH": 4
+      }
+    },
+    "byComponentPackage": {
+      "backend": {
+        "libexpat": 1,
+        "net.sf.jasperreports:jasperreports": 2,
+        "org.springframework.boot:spring-boot": 1,
+        "org.springframework.security:spring-security-web": 1,
+        "org.springframework:spring-core": 1,
+        "org.springframework:spring-expression": 1,
+        "org.springframework:spring-webmvc": 2,
+        "p11-kit": 1,
+        "p11-kit-trust": 1
+      },
+      "website_back": {
+        "libexpat": 1,
+        "org.springframework.boot:spring-boot": 1,
+        "org.springframework.security:spring-security-web": 1,
+        "org.springframework:spring-core": 1,
+        "org.springframework:spring-expression": 1,
+        "org.springframework:spring-webflux": 1,
+        "org.springframework:spring-webmvc": 2,
+        "p11-kit": 1,
+        "p11-kit-trust": 1
+      },
+      "whatsapp_service": {
+        "brace-expansion": 2,
+        "tar": 2,
+        "undici": 1
+      }
+    },
+    "byComponentOrigin": {
+      "backend": {
+        "alpine-runtime": 3,
+        "application-java": 8
+      },
+      "website_back": {
+        "alpine-runtime": 3,
+        "application-java": 7
+      },
+      "whatsapp_service": {
+        "npm-runtime": 5
+      }
+    },
+    "bySeverity": {
+      "CRITICAL": 3,
+      "HIGH": 23
+    },
+    "byOrigin": {
+      "alpine-runtime": 6,
+      "application-java": 15,
+      "npm-runtime": 5
+    }
+  },
+  "findings": [
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2025-10492",
+      "severity": "HIGH",
+      "packageName": "net.sf.jasperreports:jasperreports",
+      "installedVersion": "6.20.6",
+      "fixedVersion": "7.0.4",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/jasperreports-6.20.6.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-6009",
+      "severity": "HIGH",
+      "packageName": "net.sf.jasperreports:jasperreports",
+      "installedVersion": "6.20.6",
+      "fixedVersion": "7.0.7",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/jasperreports-6.20.6.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-40973",
+      "severity": "HIGH",
+      "packageName": "org.springframework.boot:spring-boot",
+      "installedVersion": "3.3.13",
+      "fixedVersion": "4.0.6, 3.5.14",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-boot-3.3.13.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-22732",
+      "severity": "CRITICAL",
+      "packageName": "org.springframework.security:spring-security-web",
+      "installedVersion": "6.3.10",
+      "fixedVersion": "6.5.9, 7.0.4",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-security-web-6.3.10.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2025-41249",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-core",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "6.2.11",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-core-6.1.21.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-41850",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-expression",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "7.0.8, 6.2.19",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-expression-6.1.21.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-41842",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-webmvc",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "7.0.8, 6.2.19",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-webmvc-6.1.21.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-41845",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-webmvc",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "7.0.8, 6.2.19",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-webmvc-6.1.21.jar"
+    },
+    {
+      "component": "backend",
+      "target": "s30a-backend:before-5360356 (alpine 3.23.5)",
+      "class": "os-pkgs",
+      "type": "alpine",
+      "vulnerabilityId": "CVE-2026-56408",
+      "severity": "HIGH",
+      "packageName": "libexpat",
+      "installedVersion": "2.8.1-r0",
+      "fixedVersion": "2.8.2-r0",
+      "packageOrigin": "alpine-runtime",
+      "originEvidence": "class=os-pkgs;type=alpine"
+    },
+    {
+      "component": "backend",
+      "target": "s30a-backend:before-5360356 (alpine 3.23.5)",
+      "class": "os-pkgs",
+      "type": "alpine",
+      "vulnerabilityId": "CVE-2026-2100",
+      "severity": "HIGH",
+      "packageName": "p11-kit",
+      "installedVersion": "0.25.5-r2",
+      "fixedVersion": "0.26.2-r0",
+      "packageOrigin": "alpine-runtime",
+      "originEvidence": "class=os-pkgs;type=alpine"
+    },
+    {
+      "component": "backend",
+      "target": "s30a-backend:before-5360356 (alpine 3.23.5)",
+      "class": "os-pkgs",
+      "type": "alpine",
+      "vulnerabilityId": "CVE-2026-2100",
+      "severity": "HIGH",
+      "packageName": "p11-kit-trust",
+      "installedVersion": "0.25.5-r2",
+      "fixedVersion": "0.26.2-r0",
+      "packageOrigin": "alpine-runtime",
+      "originEvidence": "class=os-pkgs;type=alpine"
+    },
+    {
+      "component": "website_back",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-40973",
+      "severity": "HIGH",
+      "packageName": "org.springframework.boot:spring-boot",
+      "installedVersion": "3.3.13",
+      "fixedVersion": "4.0.6, 3.5.14",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-boot-3.3.13.jar"
+    },
+    {
+      "component": "website_back",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-22732",
+      "severity": "CRITICAL",
+      "packageName": "org.springframework.security:spring-security-web",
+      "installedVersion": "6.3.10",
+      "fixedVersion": "6.5.9, 7.0.4",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-security-web-6.3.10.jar"
+    },
+    {
+      "component": "website_back",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2025-41249",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-core",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "6.2.11",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-core-6.1.21.jar"
+    },
+    {
+      "component": "website_back",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-41850",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-expression",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "7.0.8, 6.2.19",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-expression-6.1.21.jar"
+    },
+    {
+      "component": "website_back",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-41842",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-webflux",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "7.0.8, 6.2.19",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-webflux-6.1.21.jar"
+    },
+    {
+      "component": "website_back",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-41842",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-webmvc",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "7.0.8, 6.2.19",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-webmvc-6.1.21.jar"
+    },
+    {
+      "component": "website_back",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-41845",
+      "severity": "HIGH",
+      "packageName": "org.springframework:spring-webmvc",
+      "installedVersion": "6.1.21",
+      "fixedVersion": "7.0.8, 6.2.19",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/spring-webmvc-6.1.21.jar"
+    },
+    {
+      "component": "website_back",
+      "target": "s30a-website_back:before-5360356 (alpine 3.23.5)",
+      "class": "os-pkgs",
+      "type": "alpine",
+      "vulnerabilityId": "CVE-2026-56408",
+      "severity": "HIGH",
+      "packageName": "libexpat",
+      "installedVersion": "2.8.1-r0",
+      "fixedVersion": "2.8.2-r0",
+      "packageOrigin": "alpine-runtime",
+      "originEvidence": "class=os-pkgs;type=alpine"
+    },
+    {
+      "component": "website_back",
+      "target": "s30a-website_back:before-5360356 (alpine 3.23.5)",
+      "class": "os-pkgs",
+      "type": "alpine",
+      "vulnerabilityId": "CVE-2026-2100",
+      "severity": "HIGH",
+      "packageName": "p11-kit",
+      "installedVersion": "0.25.5-r2",
+      "fixedVersion": "0.26.2-r0",
+      "packageOrigin": "alpine-runtime",
+      "originEvidence": "class=os-pkgs;type=alpine"
+    },
+    {
+      "component": "website_back",
+      "target": "s30a-website_back:before-5360356 (alpine 3.23.5)",
+      "class": "os-pkgs",
+      "type": "alpine",
+      "vulnerabilityId": "CVE-2026-2100",
+      "severity": "HIGH",
+      "packageName": "p11-kit-trust",
+      "installedVersion": "0.25.5-r2",
+      "fixedVersion": "0.26.2-r0",
+      "packageOrigin": "alpine-runtime",
+      "originEvidence": "class=os-pkgs;type=alpine"
+    },
+    {
+      "component": "whatsapp_service",
+      "target": "Node.js",
+      "class": "lang-pkgs",
+      "type": "node-pkg",
+      "vulnerabilityId": "CVE-2026-13149",
+      "severity": "HIGH",
+      "packageName": "brace-expansion",
+      "installedVersion": "5.0.6",
+      "fixedVersion": "5.0.7, 1.1.16, 2.1.2",
+      "packageOrigin": "npm-runtime",
+      "originEvidence": "PkgPath=usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+    },
+    {
+      "component": "whatsapp_service",
+      "target": "Node.js",
+      "class": "lang-pkgs",
+      "type": "node-pkg",
+      "vulnerabilityId": "CVE-2026-14257",
+      "severity": "HIGH",
+      "packageName": "brace-expansion",
+      "installedVersion": "5.0.6",
+      "fixedVersion": "5.0.8, 3.0.3, 2.1.3, 1.1.17",
+      "packageOrigin": "npm-runtime",
+      "originEvidence": "PkgPath=usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json"
+    },
+    {
+      "component": "whatsapp_service",
+      "target": "Node.js",
+      "class": "lang-pkgs",
+      "type": "node-pkg",
+      "vulnerabilityId": "CVE-2026-59873",
+      "severity": "CRITICAL",
+      "packageName": "tar",
+      "installedVersion": "7.5.15",
+      "fixedVersion": "7.5.19",
+      "packageOrigin": "npm-runtime",
+      "originEvidence": "PkgPath=usr/local/lib/node_modules/npm/node_modules/tar/package.json"
+    },
+    {
+      "component": "whatsapp_service",
+      "target": "Node.js",
+      "class": "lang-pkgs",
+      "type": "node-pkg",
+      "vulnerabilityId": "CVE-2026-59874",
+      "severity": "HIGH",
+      "packageName": "tar",
+      "installedVersion": "7.5.15",
+      "fixedVersion": "7.5.18",
+      "packageOrigin": "npm-runtime",
+      "originEvidence": "PkgPath=usr/local/lib/node_modules/npm/node_modules/tar/package.json"
+    },
+    {
+      "component": "whatsapp_service",
+      "target": "Node.js",
+      "class": "lang-pkgs",
+      "type": "node-pkg",
+      "vulnerabilityId": "CVE-2026-12151",
+      "severity": "HIGH",
+      "packageName": "undici",
+      "installedVersion": "6.26.0",
+      "fixedVersion": "6.27.0, 7.28.0, 8.5.0",
+      "packageOrigin": "npm-runtime",
+      "originEvidence": "PkgPath=usr/local/lib/node_modules/npm/node_modules/undici/package.json"
+    }
+  ]
+}

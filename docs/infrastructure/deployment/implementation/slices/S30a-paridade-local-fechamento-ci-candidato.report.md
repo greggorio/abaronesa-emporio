@@ -582,3 +582,158 @@ A continuidade foi autorizada em
 [S30a — autorização de preservação e prova técnica do resíduo Trivy](./S30a-paridade-local-fechamento-ci-candidato.authorization-01.md).
 
 IN_PROGRESS — preservação local e prova técnica autorizadas
+
+## 14. Execução da authorization-01 — medição local e residual
+
+### 14.1 Preflight e preservação
+
+O executor operou exclusivamente em `/home/gregorio/git/baronesa/emporio`. No
+preflight: branch `main`; `HEAD` e `origin/main` em
+`0bd563b7bb44ffcf2d2f1d705a5bbafe7a356f06`; stage vazio; worktree contendo
+somente as alterações previstas nas classes da autorização. Não houve push.
+
+As listas staged foram conferidas antes de cada commit. Os três commits de
+preservação foram:
+
+1. `832e51661c9d15ec3a33694ffc2e757d4dffb04a` —
+   `fix: close CI command contract and local parity` — `.github/workflows/ci.yml`;
+   HANDOFF, README, RETOMADA_S30A; correções 01, 02 e 03 e relatório de S30;
+   task, amendment-02, authorization-01 e relatório de S30a; validadores,
+   invocabilidade e testes CI/candidatos.
+2. `970258e85bd5d0f1981e8ee919e3a0f568eb1299` —
+   `fix: bump hardened base images` — os seis Dockerfiles e os validadores e
+   testes Docker.
+3. `5360356ede64279e47f8c55594f4410e52972991` —
+   `fix: patch application dependencies` — `backend/pom.xml`,
+   `website_back/pom.xml` e `whatsapp_service/package-lock.json`.
+
+O primeiro `git diff --cached --check` apontou apenas whitespace preexistente
+em documentos já recebidos; nenhum arquivo de autoridade foi editado. Os três
+commits foram criados mesmo assim conforme a autorização, sem `--no-verify`.
+
+### 14.2 Build e scan
+
+Foram reconstruídos somente `backend`, `website_back` e `whatsapp_service`,
+sempre com `docker buildx build --platform linux/amd64 --load`, os argumentos
+`VCS_REF=5360356ede64279e47f8c55594f4410e52972991` e
+`IMAGE_VERSION=ci-5360356`. Todos os builds retornaram exit 0. Os IDs before
+foram `backend=sha256:7f949c420a0ca94bd678994dd807d0fe666a0c891a6241db43806f17815cf84e`,
+`website_back=sha256:15b61e8c9b203d2f2837d275d36343ca1331b936b192fdd2dafb3edaea618cda`
+e `whatsapp_service=sha256:b1015e192df3502f32a0196adb04be4cf1689524416675f772ac401b78fb9034`.
+Os IDs after finais foram `backend=sha256:75cc061b83d82b35451c851629206345a819b6084b0a77f0cb3e0e10f1325488`,
+`website_back=sha256:8c8089124beea20d93a85db1a5a29a835823874ba64d0f57ea7c0c1cc17e533f`
+e `whatsapp_service=sha256:cf0409184dd1ad4bbed25e6b5e4cf539659f08ed13dd783ad8f308c502c88bd3`.
+
+O comando Trivy usado foi o mesmo em todos os alvos: imagem pinned
+`aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e`,
+plataforma `linux/amd64`, `--severity HIGH,CRITICAL`,
+`--ignore-unfixed=false`, `--exit-code 1` e sem progresso. Os três scans
+before e os três scans after retornaram exit 1, sem alterar severidade ou
+política. A base usada nos JSONs é vulnerability DB v2
+(`updatedAt=2026-08-01T07:37:47.783018242Z`, `nextUpdate=2026-08-02T07:37:47.783017982Z`,
+`downloadedAt=2026-08-01T11:13:08.572656946Z`) e Java DB v1
+(`updatedAt=2026-08-01T01:22:48.927750648Z`, `nextUpdate=2026-08-04T01:22:48.927750528Z`,
+`downloadedAt=2026-08-01T11:13:40.142987177Z`).
+
+Os artefatos normalizados autorizados são:
+
+- `docs/infrastructure/deployment/implementation/slices/S30a-trivy-findings.before.json`
+- `docs/infrastructure/deployment/implementation/slices/S30a-trivy-findings.after.json`
+
+Eles contêm target, pacote, versão instalada, versão corrigida, origem,
+scanner, digest, metadados das bases e contagens determinísticas. A validação
+dos campos obrigatórios, origem permitida, ordenação e deduplicação pela tupla
+exata retornou exit 0.
+
+### 14.3 Delta por componente, pacote e origem
+
+O relatório anterior registra `25`; aplicando literalmente a deduplicação
+autorizada aos três targets, o JSON before localiza `26` tuplas: a ocorrência
+extra é a separação de `spring-webflux` e `spring-webmvc` pelo pacote. Portanto,
+o delta auditável é `25 documental -> 26 medido -> 16 residual`.
+
+| Componente | Before -> after | Pacotes/origens removidos | Residual por pacote/origem |
+|---|---:|---|---|
+| `backend` | 11 -> 8 | `libexpat`, `p11-kit`, `p11-kit-trust` / `alpine-runtime` (3) | `jasperreports` (2), `spring-boot` (1), `spring-security-web` (1), `spring-core` (1), `spring-expression` (1), `spring-webmvc` (2) / `application-java` (8) |
+| `website_back` | 10 -> 7 | `libexpat`, `p11-kit`, `p11-kit-trust` / `alpine-runtime` (3) | `spring-boot` (1), `spring-security-web` (1), `spring-core` (1), `spring-expression` (1), `spring-webflux` (1), `spring-webmvc` (2) / `application-java` (7) |
+| `whatsapp_service` | 5 -> 1 | `brace-expansion` CVE-2026-13149, `tar` (2), `undici` (1) / `npm-runtime` (4) | `brace-expansion` CVE-2026-14257 em 5.0.7 / `npm-runtime` (1) |
+| **Total** | **26 -> 16** | **alpine-runtime 6; npm-runtime 4** | **application-java 15; npm-runtime 1** |
+
+Os dois CRITICAL Java permaneceram; HIGH caiu de 24 para 14. Não foi criado
+novo identificador HIGH/CRITICAL. A tupla de `brace-expansion` CVE-2026-14257
+foi reemitida com a versão instalada 5.0.7, por isso há uma tupla removida e
+uma adicionada no diff mecânico, mas o identificador já existente permaneceu
+como residual.
+
+### 14.4 Correções conservadas e descartadas
+
+Foram conservadas as correções sustentadas pelo JSON:
+
+- `backend/Dockerfile` e `website_back/Dockerfile`: `apk upgrade --no-cache`
+  nomeado para `libexpat p11-kit p11-kit-trust`; os seis achados
+  `alpine-runtime` desapareceram, os builds passaram e não houve novo achado.
+- `whatsapp_service/Dockerfile`: `RUN npm --global install --no-audit
+  --no-fund npm@12.0.2`; quatro achados `npm-runtime` desapareceram, o build,
+  scan e regressão passaram e o residual foi explicitamente preservado.
+
+Não foi aplicada correção de `application-java`, conforme a regra de medição
+apenas. O primeiro texto equivalente `npm install --global` foi descartado
+porque o validador Node o classificou como instalação proibida (exit 1); a
+forma final `npm --global install` passou o mesmo validador. Uma tentativa
+temporária de forçar `brace-expansion@5.0.8` falhou na resolução do prefixo
+(`@npmcli/docs` retornou E404) e não produziu alteração em manifest ou lockfile.
+Não foram criados `.trivyignore` ou política de exceção.
+
+### 14.5 Regressões e validadores
+
+| Comando | Resultado |
+|---|---:|
+| `backend: SPRING_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:55432/testdb mvn -B verify` | exit 0; 82 testes |
+| `website_back: SPRING_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:55432/testdb mvn -B verify` | exit 0; 63 testes |
+| `whatsapp_service: npm ci` | exit 0 |
+| `whatsapp_service: npm run test` | exit 0; 7 testes |
+| `PYTHONDONTWRITEBYTECODE=1 python3 tools/docker/java_images_contract.py validate` | exit 0 |
+| `PYTHONDONTWRITEBYTECODE=1 python3 tools/docker/validate_node_images.py validate` | exit 0 após a forma final |
+| `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/docker/tests -v` | exit 0; 59 testes |
+| `git diff --check` | exit 0 |
+
+### 14.6 Quarto commit, cleanup e estado final
+
+O quarto commit local foi criado com a mensagem literal
+`fix: refresh vulnerable runtime packages`. A lista staged registrada antes
+dele continha exatamente `backend/Dockerfile`, `website_back/Dockerfile`,
+`whatsapp_service/Dockerfile`, os dois JSONs normalizados e esta seção curta do
+relatório; `git diff --cached --check` retornou exit 0. Após o cleanup, esta
+prova foi consolidada no mesmo quarto commit com `git commit --amend --no-edit`,
+sem criar um quinto commit; o SHA final é o `HEAD` entregue no handoff.
+
+O cleanup integral retornou exit 0 para o container PostgreSQL efêmero, cache
+Trivy, diretório temporário, imagens before/after, imagem Trivy, imagem
+PostgreSQL canônica, imagem WhatsApp intermediária, `node_modules` do teste e
+os diretórios `backend/target` e `website_back/target`. O `docker buildx du`
+final retornou `Reclaimable: 0B` e `Total: 0B`. Não restou nenhum artefato com
+prefixo temporário `emporio-s30a-` em `/tmp`, nenhum dos oito refs/imagens de
+execução e nenhum dos diretórios gerados.
+
+O estado Docker final foi:
+
+```text
+Images          28        1         7.69GB
+Containers       1        1         63B
+Local Volumes   19        1         1.081GB
+Build Cache      0        0         0B
+```
+
+O único container restante é o PostgreSQL preexistente
+`c78dbf3d6f6e941e6e1db6528e7d062dfda1f89d65c6f6c0e8d7126641de65ac`, imagem
+`postgres:16-alpine`, `running/healthy`, host port `5434` e volume
+`baronesa_baronesa-pg-data`. A porta efêmera `55432` não está mais escutando;
+o listener preexistente de `5432` não foi tocado. O PostgreSQL preexistente
+permaneceu intacto por identidade, imagem, estado, portas e volume.
+
+Após a consolidação, `git diff --check` retornou exit 0, `git status --short`
+retornou vazio e `git diff --cached --name-status` retornou vazio. Nenhum push
+foi executado e nenhum efeito de GHCR, workflow dispatch, tag, release, SSH,
+VPS, deploy, rollback ou produção ocorreu.
+
+IN_PROGRESS — aguardando revisão do resíduo Trivy pelo orquestrador

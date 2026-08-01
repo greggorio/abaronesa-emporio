@@ -15,6 +15,7 @@ LABEL org.opencontainers.image.source="https://github.com/greggorio/abaronesa-em
       org.opencontainers.image.version="${IMAGE_VERSION}"
 
 RUN apk add --no-cache curl ca-certificates tzdata ffmpeg fontconfig ttf-dejavu \
+    && apk upgrade --no-cache libexpat p11-kit p11-kit-trust \
     && addgroup -S -g 10001 app \
     && adduser -S -D -H -u 10001 -G app app \
     && mkdir -p /app/nfe/schemas /app/nfe/xmls \

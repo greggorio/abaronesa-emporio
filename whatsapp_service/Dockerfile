@@ -11,6 +11,7 @@ ARG IMAGE_VERSION=local
 LABEL org.opencontainers.image.source="https://github.com/greggorio/abaronesa-emporio" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.version="${IMAGE_VERSION}"
+RUN npm --global install --no-audit --no-fund npm@12.0.2
 RUN apk add --no-cache chromium ca-certificates font-liberation nss freetype harfbuzz \
     && addgroup -S -g 10001 app \
     && adduser -S -D -H -u 10001 -G app app \
