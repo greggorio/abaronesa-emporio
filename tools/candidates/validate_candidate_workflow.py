@@ -1,12 +1,34 @@
 #!/usr/bin/env python3
 """Semantic validator for definitive S12 graph and protocols."""
-import json,re,subprocess,sys
+import ast,json,re,subprocess,sys
 from pathlib import Path
 import yaml
-ROOT=Path(__file__).resolve().parents[2];PUBLISH=ROOT/".github/workflows/publish-candidate.yml";CI=ROOT/".github/workflows/ci.yml"
+ROOT=Path(__file__).resolve().parents[2];PUBLISH=ROOT/".github/workflows/publish-candidate.yml";CI=ROOT/".github/workflows/ci.yml";HARNESS=ROOT/"tools/candidates/integrated_harness.py"
 sys.path.insert(0,str(ROOT/"tools/ci"))
 import invocability
 SHA_USE=re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
+MIGRATION_PROTOCOL=(
+ ("pull",("pull","--quiet","--policy","always")),
+ ("backend",("run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate")),
+ ("website_back",("run","--rm","-T","--entrypoint","/app/bin/migrate","website_back","migrate")),
+ ("up",("up","-d","--no-build","--pull","never","--wait","--wait-timeout","600")),
+)
+def validate_migration_protocol(source):
+ try:tree=ast.parse(source)
+ except SyntaxError:return ["MIGRATION_SYNTAX"]
+ execute=next((node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name=="execute"),None)
+ if execute is None:return ["MIGRATION_EXECUTE"]
+ expected={suffix:name for name,suffix in MIGRATION_PROTOCOL};observed=[]
+ for node in ast.walk(execute):
+  if not isinstance(node,ast.Call) or not isinstance(node.func,ast.Name) or node.func.id!="runner" or not node.args:continue
+  first=node.args[0]
+  if not isinstance(first,ast.BinOp) or not isinstance(first.op,ast.Add) or not isinstance(first.left,ast.Name) or first.left.id!="command":continue
+  try:suffix=tuple(ast.literal_eval(first.right))
+  except (ValueError,TypeError):continue
+  if suffix in expected:observed.append((node.lineno,expected[suffix]))
+ observed.sort()
+ if [name for _,name in observed]!=[name for name,_ in MIGRATION_PROTOCOL]:return ["MIGRATION_ORDER"]
+ return []
 def validate_workflows(ci=None,publish=None):
  ci=ci or CI.read_text();publish=publish or PUBLISH.read_text();errors=[]
  try:p=yaml.load(publish,Loader=yaml.BaseLoader);c=yaml.load(ci,Loader=yaml.BaseLoader)
@@ -32,9 +54,10 @@ def validate_workflows(ci=None,publish=None):
  if wr!={"workflows":["CI"],"types":["completed"],"branches":["main"]}:errors.append("WORKFLOW_RUN")
  source=publish+"\n"+"\n".join(path.read_text() for path in (ROOT/"tools/candidates").glob("*.py"))
  required=("candidate-effective-plan","candidate-predecessor-context","candidate-pending","candidate-integration-result","candidate-outcome",
-  '"imagetools","inspect"','"pull","--quiet","--policy","always"','"run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"','"up","-d","--no-build","--pull","never","--wait","--wait-timeout","600"',
+  '"imagetools","inspect"','"pull","--quiet","--policy","always"','"up","-d","--no-build","--pull","never","--wait","--wait-timeout","600"',
   "candidate-plan/candidate-plan.json","component-result.json","pending.json","integration-result.json","artifact-digest","validate_pending.py","cleanup_image.py")
  if not all(x in source for x in required):errors.append("DEFINITIVE_PROTOCOL")
+ errors.extend(validate_migration_protocol(HARNESS.read_text()))
  errors.extend(validate_trust_order(jobs.get("trust",{})))
  errors.extend(validate_authenticated_head(jobs))
  pending_validate=publish.find("python3 tools/candidates/validate_pending.py")

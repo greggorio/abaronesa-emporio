@@ -59,9 +59,10 @@ em um único bind efêmero de loopback. O job autentica no GHCR somente para
 leitura. Como o banco nasce vazio e a imagem do `backend` roda com
 `spring.jpa.hibernate.ddl-auto=validate` e Flyway desligado no app, o harness
 aplica as migrations antes de subir a stack, executando `/app/bin/migrate
-migrate` a partir da própria imagem do candidato — a mesma separação que o
-passo `MIGRATE` usa em produção. Migration reprovada aborta antes do `up`.
-`config`, `pull`, `run` da migração, `up`, `ps`, probes e `down` usam os mesmos
+migrate` primeiro em `backend` e depois em `website_back`, a partir das próprias
+imagens do candidato — a mesma separação que o passo `MIGRATE` usa em produção.
+Migration reprovada aborta antes da migration seguinte e do `up`.
+`config`, `pull`, os dois `run` das migrações, `up`, `ps`, probes e `down` usam os mesmos
 dois arquivos Compose e o mesmo projeto. Probes atravessam ambos os backends, os dois
 frontends e o serviço WhatsApp. A limpeza remove containers, redes e volumes
 do prefixo exato e somente as seis imagens por digest declaradas no manifesto.

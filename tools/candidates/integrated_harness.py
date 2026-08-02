@@ -27,6 +27,7 @@ def execute(pending,compose,override,project,output,runner=subprocess.run,check_
   if len(bound)!=1 or bound[0][0]!="gateway" or bound[0][1].get("host_ip")!="127.0.0.1" or str(bound[0][1].get("published"))!=env["CANDIDATE_GATEWAY_PORT"] or bound[0][1].get("target")!=8080:raise ValueError("gateway bind")
   runner(command+["pull","--quiet","--policy","always"],check=True,env=env)
   runner(command+["run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"],check=True,env=env)
+  runner(command+["run","--rm","-T","--entrypoint","/app/bin/migrate","website_back","migrate"],check=True,env=env)
   runner(command+["up","-d","--no-build","--pull","never","--wait","--wait-timeout","600"],check=True,env=env)
   rows=compose_rows(check_output(command+["ps","--format","json"],text=True,env=env))
   by_service={r["Service"]:r for r in rows}

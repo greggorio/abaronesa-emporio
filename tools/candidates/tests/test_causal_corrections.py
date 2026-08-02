@@ -1,4 +1,4 @@
-import copy,json,os,subprocess,sys,tempfile,unittest
+import copy,io,json,os,subprocess,sys,tempfile,unittest
 from pathlib import Path
 from unittest import mock
 
@@ -280,11 +280,36 @@ class CausalCorrectionsTest(unittest.TestCase):
   produced=resolve_changes.resolve_event({"ref":"refs/heads/main","before":candidate_plan.ZERO,"after":"b"*40},"b"*40)
   self.assertEqual(self.root_plan()["resolution"],produced)
 
- def test_13_github_env_uses_real_lf(self):
+ def test_13_github_env_masks_exact_ephemeral_credentials_before_write(self):
   with tempfile.TemporaryDirectory() as raw:
    root=Path(raw);directory,effective,selection=self.bundle(root);env_file=root/"env"
    argv=["compose_env.py","--pending-dir",str(directory),"--effective",str(effective),"--selection",str(selection),"--run","200","--attempt","1"]
-   with mock.patch.object(sys,"argv",argv),mock.patch.dict(os.environ,{"GITHUB_ENV":str(env_file),"CANDIDATE_POSTGRES_IMAGE":"postgres@example"}):compose_env.main()
+   expected_sensitive=("CANDIDATE_ROOT_PASSWORD","POSTGRES_ADMIN_PASSWORD","ERP_DB_PASSWORD","WEBSITE_DB_PASSWORD","INTEGRATION_SYSTEM_TOKEN_SECRET","ERP_WEBSITE_SYNC_KEY","GOOGLE_CLIENT_SECRET")
+   hex_sentinels=["hex-postgres-admin","hex-erp-db","hex-website-db","hex-integration-secret","hex-sync-key","hex-google-secret"]
+   sentinels=dict(zip(("POSTGRES_ADMIN_PASSWORD","ERP_DB_PASSWORD","WEBSITE_DB_PASSWORD","INTEGRATION_SYSTEM_TOKEN_SECRET","ERP_WEBSITE_SYNC_KEY","GOOGLE_CLIENT_SECRET"),hex_sentinels))
+   sentinels["CANDIDATE_ROOT_PASSWORD"]="url-root-password"
+   events=[];real_open=open
+   def tracked_open(file,*args,**kwargs):
+    if str(file)==str(env_file):events.append("github_env_open")
+    return real_open(file,*args,**kwargs)
+   real_emit=compose_env.emit_masks
+   def tracked_emit(env):events.append("masks");return real_emit(env)
+   with mock.patch.object(sys,"argv",argv),mock.patch.dict(os.environ,{"GITHUB_ENV":str(env_file),"CANDIDATE_POSTGRES_IMAGE":"postgres@example"}),mock.patch.object(compose_env.secrets,"token_hex",side_effect=hex_sentinels),mock.patch.object(compose_env.secrets,"token_urlsafe",return_value=sentinels["CANDIDATE_ROOT_PASSWORD"]),mock.patch.object(compose_env,"emit_masks",side_effect=tracked_emit),mock.patch("builtins.open",side_effect=tracked_open),mock.patch.object(sys,"stdout",new_callable=io.StringIO) as stdout:
+    compose_env.main()
+   self.assertEqual(["masks","github_env_open"],events)
    data=env_file.read_bytes();self.assertNotIn(b"\\n",data);self.assertGreater(data.count(b"\n"),20)
+   values={};
+   for line in data.decode().splitlines():
+    key,value=line.split("=",1);self.assertNotIn(key,values);values[key]=value
+   expected_keys=set(compose_env.MAP.values())|set(compose_env.BASE_ALIASES.values())|{"POSTGRES_IMAGE","POSTGRES_ADMIN_USER","POSTGRES_ADMIN_PASSWORD","ERP_DB_NAME","ERP_DB_USER","ERP_DB_PASSWORD","WEBSITE_DB_NAME","WEBSITE_DB_USER","WEBSITE_DB_PASSWORD","INTEGRATION_SYSTEM_TOKEN_SECRET","ERP_WEBSITE_SYNC_KEY","GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET","CANDIDATE_ROOT_EMAIL","CANDIDATE_ROOT_PASSWORD","CANDIDATE_GATEWAY_PORT","GATEWAY_LOOPBACK_PORT"}
+   self.assertEqual(expected_keys,set(values));self.assertEqual(len(expected_keys),len(data.decode().splitlines()))
+   lines=stdout.getvalue().splitlines();mask_lines=[line for line in lines if line.startswith("::add-mask::")]
+   prefix="::add-mask::";by_value={value:key for key,value in sentinels.items()}
+   observed=[by_value.get(line[len(prefix):],"<unknown>") for line in mask_lines]
+   self.assertEqual(list(expected_sensitive),observed);self.assertEqual("candidate-compose-env:written",lines[-1])
+   non_mask="\n".join(line for line in lines if not line.startswith(prefix))
+   self.assertTrue(all(value not in non_mask for value in sentinels.values()))
+   public_masked=[key for key,value in values.items() if key not in expected_sensitive and value in [line[len(prefix):] for line in mask_lines]]
+   self.assertEqual([],public_masked)
 
 if __name__=="__main__":unittest.main()

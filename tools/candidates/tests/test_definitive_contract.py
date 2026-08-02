@@ -132,36 +132,56 @@ class DefinitiveContractTest(unittest.TestCase):
   with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{"CANDIDATE_GATEWAY_PORT":"49123"}),mock.patch("integrated_harness.probe_candidate.run",return_value=probes):
    integrated_harness.execute(pending,Path("base.yml"),Path("override.yml"),"candidate-100-1",Path(raw),runner,output)
   index=lambda token:next(i for i,c in enumerate(calls) if token in c)
-  migrate=[c for c in calls if "run" in c and "/app/bin/migrate" in c]
-  self.assertEqual(1,len(migrate))
-  self.assertEqual(["run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"],migrate[0][-7:])
+  backend=["run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"]
+  website=["run","--rm","-T","--entrypoint","/app/bin/migrate","website_back","migrate"]
+  migrate=[c[-7:] for c in calls if "/app/bin/migrate" in c]
+  self.assertEqual([backend,website],migrate)
   self.assertLess(index("pull"),index("/app/bin/migrate"))
   self.assertLess(index("/app/bin/migrate"),index("up"))
-  self.assertIn('"run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"',(ROOT/"tools/candidates/validate_candidate_workflow.py").read_text())
+  self.assertEqual([],workflow.validate_migration_protocol((ROOT/"tools/candidates/integrated_harness.py").read_text()))
 
  def test_27_harness_stops_when_migration_fails(self):
   """Migration reprovada aborta antes do up e ainda executa o cleanup dirigido."""
   pending={k:v for k,v in json.loads((ROOT/"ops/releases/examples/candidate-manifest.example.json").read_text()).items() if k!="integration"}
-  calls=[]
-  class Done:
-   def __init__(self,code=0):self.returncode=code
-  def runner(args,**kwargs):
-   calls.append(list(args))
-   if "/app/bin/migrate" in args:raise subprocess.CalledProcessError(20,args)
-   return Done(1 if args[:3]==["docker","image","inspect"] else 0)
-  model={"services":{name:{} for name in integrated_harness.SERVICES}};model["services"]["gateway"]["ports"]=[{"host_ip":"127.0.0.1","published":"49123","target":8080}]
-  def output(args,**kwargs):
-   if "config" in args:return json.dumps(model)
-   return ""
-  with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{"CANDIDATE_GATEWAY_PORT":"49123"}):
-   with self.assertRaises(subprocess.CalledProcessError):
-    integrated_harness.execute(pending,Path("base.yml"),Path("override.yml"),"candidate-100-1",Path(raw),runner,output)
-   self.assertFalse((Path(raw)/"integration-result.json").exists())
-  joined=[" ".join(c) for c in calls]
-  self.assertFalse(any(" up " in " "+c+" " for c in joined))
-  self.assertTrue(any(" down " in " "+c+" " for c in joined))
-  self.assertEqual(6,sum(c.startswith("docker image rm ") for c in joined))
-  self.assertTrue(any(c=="docker logout ghcr.io" for c in joined))
+  backend=["run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"]
+  website=["run","--rm","-T","--entrypoint","/app/bin/migrate","website_back","migrate"]
+  for failure,expected in (("backend",[backend]),("website_back",[backend,website])):
+   with self.subTest(failure=failure):
+    calls=[]
+    class Done:
+     def __init__(self,code=0):self.returncode=code
+    def runner(args,kwargs=None,**more):
+     calls.append(list(args))
+     if args[-2:]==[failure,"migrate"]:raise subprocess.CalledProcessError(20,args)
+     return Done(1 if args[:3]==["docker","image","inspect"] else 0)
+    model={"services":{name:{} for name in integrated_harness.SERVICES}};model["services"]["gateway"]["ports"]=[{"host_ip":"127.0.0.1","published":"49123","target":8080}]
+    def output(args,**kwargs):
+     if "config" in args:return json.dumps(model)
+     return ""
+    with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{"CANDIDATE_GATEWAY_PORT":"49123"}):
+     with self.assertRaises(subprocess.CalledProcessError):
+      integrated_harness.execute(pending,Path("base.yml"),Path("override.yml"),"candidate-100-1",Path(raw),runner,output)
+     self.assertFalse((Path(raw)/"integration-result.json").exists())
+    joined=[" ".join(c) for c in calls]
+    self.assertEqual(expected,[c[-7:] for c in calls if "/app/bin/migrate" in c])
+    self.assertFalse(any(" up " in " "+c+" " for c in joined))
+    self.assertTrue(any(" down " in " "+c+" " for c in joined))
+    self.assertEqual(6,sum(c.startswith("docker image rm ") for c in joined))
+    self.assertEqual(6,sum(c.startswith("docker image inspect ") for c in joined))
+    self.assertTrue(any(c=="docker logout ghcr.io" for c in joined))
+
+ def test_27b_migration_validator_rejects_structural_mutants(self):
+  source=(ROOT/"tools/candidates/integrated_harness.py").read_text()
+  self.assertEqual([],workflow.validate_migration_protocol(source))
+  backend_line=next(i for i,line in enumerate(source.splitlines()) if '"backend","migrate"' in line)
+  website_line=next(i for i,line in enumerate(source.splitlines()) if '"website_back","migrate"' in line)
+  up_line=next(i for i,line in enumerate(source.splitlines()) if '"up","-d"' in line)
+  def swap(first,second):
+   lines=source.splitlines();lines[first],lines[second]=lines[second],lines[first];return "\n".join(lines)
+  self.assertTrue(workflow.validate_migration_protocol(source.replace('"backend","migrate"','"backend","wrong"',1)))
+  self.assertTrue(workflow.validate_migration_protocol(source.replace('"backend","migrate"','"website_back","migrate"',1)))
+  self.assertTrue(workflow.validate_migration_protocol(swap(backend_line,website_line)))
+  self.assertTrue(workflow.validate_migration_protocol(swap(website_line,up_line)))
 
  def test_28_compose_ps_accepts_json_lines_and_array(self):
   """docker compose ps --format json emite JSON Lines; o array antigo segue aceito."""
