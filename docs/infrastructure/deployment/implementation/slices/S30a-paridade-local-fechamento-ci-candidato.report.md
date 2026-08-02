@@ -798,3 +798,27 @@ resíduo local a aceitar. A
 e o Publish Candidate associados ao SHA exato.
 
 IN_PROGRESS — aguardando CI e candidato remotos do checkpoint autorizado
+
+## 17. Resultado remoto da authorization-02
+
+> **Data:** 02/08/2026
+> **SHA publicado:** `0d6f11f826f5a538f9a008bc4a3326c1d4fd09fb`
+> **Estado:** `IN_PROGRESS — correção causal S34 aberta`
+
+O push único foi fast-forward e a CI `30742017194` concluiu os 13 jobs em
+`success`, incluindo os seis scans de imagem. O fechamento remoto dos grupos
+A, B e C está aceito.
+
+O `Publish Candidate` `30742264661` chegou pela primeira vez aos seis builds:
+build, Trivy e push ao GHCR passaram em todos; o passo seguinte falhou porque o
+GitHub não disponibiliza artifact attestations neste repositório privado de
+propriedade de usuário. Sem os resultados de componente, `assemble` e
+`integrated` foram pulados e nenhum manifesto/outcome final foi emitido.
+
+A evidência e a parada sem retry estão aceitas. A opção de tornar o repositório
+público foi rejeitada. A decisão é remover a atestação nativa do contrato, sem
+stub ou substituto, mantendo como controle efetivo a identidade
+`imageRepository@sha256:digest` validada em candidato, release e deploy. A S34
+fecha essa mudança antes de nova autorização remota.
+
+IN_PROGRESS — aguardando execução e aceite da S34
