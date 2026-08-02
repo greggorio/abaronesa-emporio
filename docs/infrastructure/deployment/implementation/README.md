@@ -1,6 +1,6 @@
 # Implementacao de Docker, CI/CD e Controle de Releases
 
-> **Estado geral:** S01 a S29 e S31 aceitas; S30 dividida; S30a em andamento; S32 aberta
+> **Estado geral:** S01 a S29, S31 e S32 aceitas; S30 dividida; S30a em andamento; S33 aberta
 
 Esta pasta registra os contratos e as evidencias das slices usadas para implementar a arquitetura definida em [proposta-docker-ci-cd-producao-emporio.md](../proposta-docker-ci-cd-producao-emporio.md).
 
@@ -80,6 +80,7 @@ O arquivo `.task.md` e o contrato imutavel da delegacao. O arquivo `.report.md` 
 | S28 | [Empacotamento operacional isolado do release control](./slices/S28-empacotamento-operacional-release-control.task.md) | [Relatório](./slices/S28-empacotamento-operacional-release-control.report.md) | `ACCEPTED` — 31/07/2026 |
 | S29 | [Gate do primeiro commit e ativação remota](./slices/S29-gate-primeiro-commit-ativacao-remota.task.md) | [Relatório](./slices/S29-gate-primeiro-commit-ativacao-remota.report.md) | `ACCEPTED` — 31/07/2026 |
 | S30 | [Ensaio remoto de candidato, publisher e release](./slices/S30-ensaio-remoto-candidato-publisher-release.task.md) | [Relatório](./slices/S30-ensaio-remoto-candidato-publisher-release.report.md) | `SPLIT` — 01/08/2026; contrato-pai histórico, dividido em S30a e S30b |
-| S30a | [Paridade local e fechamento da CI e do candidato](./slices/S30a-paridade-local-fechamento-ci-candidato.task.md) | [Relatório](./slices/S30a-paridade-local-fechamento-ci-candidato.report.md) | `IN_PROGRESS` — authorization-01 aceita; grupo B fechado pela S31; restam A Spring (6 CVEs/13 ocorrências) e C Jasper (2/2), sem push |
+| S30a | [Paridade local e fechamento da CI e do candidato](./slices/S30a-paridade-local-fechamento-ci-candidato.task.md) | [Relatório](./slices/S30a-paridade-local-fechamento-ci-candidato.report.md) | `IN_PROGRESS` — grupos A e B fechados por S32/S31; restam somente C Jasper (2 CVEs/2 ocorrências), sem push |
 | S31 | [Remoção dos gerenciadores de pacotes do runtime do whatsapp_service](./slices/S31-remocao-npm-runtime-whatsapp.task.md) ([correction-01](./slices/S31-remocao-npm-runtime-whatsapp.correction-01.md), [correction-02](./slices/S31-remocao-npm-runtime-whatsapp.correction-02.md)) | [Relatório](./slices/S31-remocao-npm-runtime-whatsapp.report.md) | `ACCEPTED` — 02/08/2026; grupo B fechado, Trivy HIGH/CRITICAL 1 → 0, sem push |
-| S32 | [Migração da linha Spring para Boot 3.5](./slices/S32-migracao-spring-boot-3-5.task.md) ([correction-01](./slices/S32-migracao-spring-boot-3-5.correction-01.md)) | [Relatório](./slices/S32-migracao-spring-boot-3-5.report.md) | `IN_PROGRESS` — grupo A fechado; correction-01 autoriza restaurar o BOM OkHttp 4.12.0 removido pelo Boot 3.5.16; sem push |
+| S32 | [Migração da linha Spring para Boot 3.5](./slices/S32-migracao-spring-boot-3-5.task.md) ([correction-01](./slices/S32-migracao-spring-boot-3-5.correction-01.md)) | [Relatório](./slices/S32-migracao-spring-boot-3-5.report.md) | `ACCEPTED` — 02/08/2026; grupo A fechado, OkHttp preservado em 4.12.0, sem push |
+| S33 | [Remoção da cadeia JasperReports não utilizada](./slices/S33-remocao-java-danfe-jasperreports.task.md) | [Relatório](./slices/S33-remocao-java-danfe-jasperreports.report.md) | `PLANNED` — grupo C; delegação autorizada após o checkpoint documental |

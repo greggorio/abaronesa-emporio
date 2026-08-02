@@ -931,3 +931,42 @@ arquivo fora dos doze caminhos.
 commit final = HEAD entregue
 
 IN_PROGRESS — aguardando revisão do orquestrador
+
+## 11. Revisão terminal do orquestrador — 02/08/2026
+
+**Veredito: `ACCEPTED`.** A S32 fechou integralmente o grupo A sem introduzir
+novo achado. O estado terminal contém somente os dois achados JasperReports já
+reservados ao grupo C.
+
+A revisão independente confirmou no commit
+`94c4b738cb3511696bc4d44ffd2f72e4864d8fe0`:
+
+- mensagem contratual exata e somente os 12 caminhos da §3;
+- `java-images-contract:valid` e os 105 testes da suíte Docker com exit 0;
+- árvore `service 0.18.2 -> retrofit 2.9.0 -> okhttp 4.12.0 -> okio/okio-jvm
+  3.6.0`, sem OkHttp 3.14.9;
+- `sourceDiffSha256=74d89c6803a96760df2c8287296ba4d6bfca0696109369f79647772253e61315`
+  e `sourceTreeSha=63125e67168b3d481fbe420bf2e6a859409f5886` reproduzidos sobre os
+  dez arquivos técnicos;
+- JSON válido com duas ocorrências, ambas `net.sf.jasperreports:jasperreports`
+  no `backend`, e `website_back` zerado;
+- secret scan atual `clean`, `unsupported=0`; worktree e stage vazios; 12
+  commits locais; `git diff --check origin/main..HEAD` com exit 0;
+- cleanup concluído, Build Cache `0B`, recursos nominais ausentes e o volume
+  não atribuído `358ec441…` preservado.
+
+Decisões sobre os pontos relatados:
+
+1. a mudança do `imageId` do `backend` é causal e esperada: a árvore empacotada
+   substituiu OkHttp 3.14.9 por 4.12.0 e Okio 1.17.2 por 3.6.0;
+2. preservar a medição anterior do `website_back` é válido porque seus arquivos
+   não mudaram; `measuredAtUtc` por componente torna a composição explícita;
+3. `docker rm -v` foi o cleanup nominal correto para o PostgreSQL efêmero e não
+   tocou o volume de origem indeterminada;
+4. a ausência de trailers é exigida pela mensagem literal do contrato e não é
+   divergência.
+
+A linha `IN_PROGRESS` anterior permanece como declaração do executor. Esta
+seção é o aceite do orquestrador. A S33 fecha o grupo C removendo a dependência
+`java-danfe` não utilizada; não haverá migração para JasperReports 7 nem exceção
+Trivy. Não houve push.
