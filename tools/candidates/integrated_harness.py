@@ -29,6 +29,11 @@ def execute(pending,compose,override,project,output,runner=subprocess.run,check_
   probes=probe_candidate.run()
   runner(command+["exec","-T","backend","curl","-fsS","http://whatsapp_service:3001/status"],check=True,stdout=subprocess.DEVNULL,env=env)
   probes.append({"id":"whatsapp_internal","status":"passed"})
+ except Exception:
+  for diagnostic in (["ps","-a"],["logs","--no-color","--timestamps","--tail","200"]):
+   try:print("integration:diagnostic:"+" ".join(diagnostic)+"\n"+check_output(command+diagnostic,text=True,env=env),file=sys.stderr)
+   except Exception:pass
+  raise
  finally:
   def run_cleanup(name,args,absence=False):
    try:result=runner(args,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env=env)
