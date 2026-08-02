@@ -372,3 +372,181 @@ nenhuma `authorization-01` é emitida enquanto permanecerem pendentes:
 Nenhuma ação externa foi autorizada por esta revisão.
 
 IN_PROGRESS — etapa A aceita; aguardando inputs humanos e checks seguros para a authorization-01
+
+## Execução authorization-01
+
+> **Data:** 02/08/2026
+> **CWD:** `/home/gregorio/git/baronesa/emporio`
+> **Estado terminal:** bloqueada fail-closed antes da primeira mutação
+
+### Autoridade e snapshot reconfirmados
+
+Os três documentos foram lidos integralmente, nesta ordem, e seus hashes foram
+confirmados antes da execução:
+
+```text
+sha256sum docs/infrastructure/deployment/implementation/slices/S30b-preflight-publicacao-release-global-publisher.task.md
+exit 0; 91c890d52154dc983edfdf1b62a0e18d556234c03679fbee97bf32c492b55e11
+
+sha256sum docs/infrastructure/deployment/implementation/slices/S30b-preflight-publicacao-release-global-publisher.report.md
+exit 0; 1fd095cb747a7457858f6c9b4a9ac67cd17487514315d260a05fb027c754ba31
+
+sha256sum docs/infrastructure/deployment/implementation/slices/S30b-preflight-publicacao-release-global-publisher.authorization-01.md
+exit 0; 33543ec2cc399d3a82c9d21cd4ba815465e0b40927d91043a6bc55cb7a897961
+```
+
+O preflight Git/GitHub obrigatório passou antes de qualquer ação:
+
+```text
+git status --short --branch
+exit 0; ## main...origin/main [ahead 3]
+
+git rev-parse HEAD origin/main
+exit 0
+7297501d76fac902ddcfc2ea4448133854b855d5
+50f423a979d7723d0e15d56b1d72625ea2b8ebea
+
+git log --oneline --decorate -5
+exit 0
+7297501 (HEAD -> main) docs: authorize S30b release publication
+73108f2 docs: accept S30b read-only preflight
+da0a63e docs: accept S36 and open S30b
+50f423a (origin/main) fix: close candidate integration security gates
+
+git merge-base --is-ancestor origin/main HEAD
+exit 0
+
+git diff --check origin/main..HEAD
+exit 0
+
+git ls-remote origin refs/heads/main
+exit 0; 50f423a979d7723d0e15d56b1d72625ea2b8ebea	refs/heads/main
+
+git ls-remote --tags origin
+exit 0; vazio
+
+gh run list --branch main --limit 30
+exit 0; somente runs completed; nenhum queued ou in_progress
+
+gh run list --workflow publish-release.yml --branch main --limit 20
+exit 0; vazio
+
+gh release list --limit 20
+exit 0; vazio
+```
+
+`git diff --name-status origin/main..HEAD` mostrou somente o conjunto
+documental herdado nos três commits autorizados; o stage permaneceu vazio e o
+worktree permaneceu limpo nesta reconfirmação. Não houve pull, push, merge,
+rebase, amend, commit ou alteração de qualquer documento de autoridade.
+
+### Descoberta segura da GitHub App publisher
+
+Antes de configurar `RELEASE_PUBLISHER_ACTOR_IDS` ou iniciar qualquer serviço,
+foram consultados somente nomes de variáveis e paths, sem abrir conteúdo de
+segredo:
+
+```text
+sed -n '1,220p' release_control/.env.example
+exit 0; somente placeholders versionados; nenhum valor operacional
+
+if test -e release_control/.env; then printf 'release_control/.env=PRESENT\n'; else printf 'release_control/.env=ABSENT\n'; fi
+if test -e ops/env/release-control.env; then printf 'ops/env/release-control.env=PRESENT\n'; else printf 'ops/env/release-control.env=ABSENT\n'; fi
+if test -e /run/secrets/github-app-private-key; then printf '/run/secrets/github-app-private-key=PRESENT\n'; else printf '/run/secrets/github-app-private-key=ABSENT\n'; fi
+exit 0
+release_control/.env=ABSENT
+ops/env/release-control.env=ABSENT
+/run/secrets/github-app-private-key=ABSENT
+
+find /home/gregorio/.config /home/gregorio/.secrets /home/gregorio/secrets /run/secrets /etc/emporio /etc/release-control /opt/emporio-release-control -maxdepth 6 -type f \( -name '*github*app*' -o -name '*publisher*' -o -name '*release-control*' -o -name '*.pem' \) -print 2>/dev/null | sort
+exit 0; saída vazia
+
+names=$(env | cut -d= -f1 | rg -i 'RELEASE_CONTROL_GITHUB|RELEASE_PUBLISHER_ACTOR_IDS|GITHUB_APP|PUBLISHER')
+if test -n "$names"; then printf '%s\n' "$names"; else printf 'CONFIG_ENV_NAMES=ABSENT\n'; fi
+exit 0; CONFIG_ENV_NAMES=ABSENT
+
+if gh api repos/greggorio/abaronesa-emporio/actions/variables --paginate --jq '.variables[]?.name' | rg -qx 'RELEASE_PUBLISHER_ACTOR_IDS'; then printf 'RELEASE_PUBLISHER_ACTOR_IDS=PRESENT\n'; else printf 'RELEASE_PUBLISHER_ACTOR_IDS=MISSING\n'; fi
+exit 0; RELEASE_PUBLISHER_ACTOR_IDS=MISSING
+```
+
+O único arquivo versionado disponível é o exemplo com placeholders para
+`RELEASE_CONTROL_GITHUB_APP_ID`, `RELEASE_CONTROL_GITHUB_INSTALLATION_ID` e
+`RELEASE_CONTROL_GITHUB_PRIVATE_KEY_PATH`; não existe configuração operacional
+no checkout, no ambiente ou nos paths seguros consultados. A chave privada
+publisher, o App ID, o installation ID, o slug, o ator bot e as permissões
+efetivas não puderam ser descobertos sem inventar valores ou abrir um segredo
+não localizado. Nenhum JWT, installation token, chave PEM, senha, pepper ou
+token foi lido, criado ou impresso.
+
+### Primeira causa e ponto de parada
+
+Esta é a primeira causa técnica comprovada: a configuração real da GitHub App
+publisher e sua chave privada, obrigatórias pela seção 7 da authorization-01,
+estão ausentes dos paths seguros e do ambiente disponível. A autorização exige
+validar App, instalação, repositório, `actions: write`, `contents: read`, ator
+bot e chave antes de alterar `RELEASE_PUBLISHER_ACTOR_IDS`; portanto a variável
+permaneceu `MISSING` e não foi criada nem alterada. Não houve chamada ao
+endpoint `/app` sem JWT de App, não houve tentativa de criar App, rotacionar
+chave, ampliar permissão ou usar o token pessoal do `gh` como substituto.
+
+A execução parou imediatamente antes de configurar a variável, criar o
+diretório de prova, gerar segredos/chave RSA, iniciar PostgreSQL/ERP/publisher/
+frontend, aplicar migrations, abrir a UI, emitir os POSTs ou observar qualquer
+dispatch. O candidato, artifacts e workflows não foram rebaixados nem
+substituídos; a revalidação operacional da etapa B não prosseguiu porque o
+primeiro gate específico da authorization-01 já era bloqueante.
+
+### Ambiente, resíduos e negativos preservados
+
+- Nenhum `mktemp -d` da authorization-01 foi criado; não houve processos, PIDs,
+  browser, container, rede, volume, banco ou segredo temporário para limpar.
+- O container preexistente `baronesa-postgres`, suas portas 5432/5434 e seus
+  volumes não foram tocados; sua presença foi apenas observada em consulta
+  read-only anterior.
+- `RELEASE_PUBLISHER_ACTOR_IDS` remoto permaneceu `MISSING`; nenhuma variável,
+  tag, release, run, artifact ou log remoto foi criado, excluído ou alterado.
+- Não houve início de ERP, PostgreSQL, publisher ou frontend; migration,
+  bootstrap SYSTEM, autenticação, UI, POST, dispatch, replay, restart,
+  publicação, tag, GitHub Release, deploy, rollback, SSH, VPS, produção ou
+  acesso GHCR.
+- Não houve retry, rerun, cancel, dispatch manual, nova chave idempotente,
+  segunda operação ou segunda release.
+- Não houve stage, commit, push, pull, merge, rebase ou amend. Nenhum arquivo
+  além deste relatório foi editado; task e authorization-01 permanecem
+  imutáveis.
+- A decisão de aceitar a S30b permanece com o orquestrador; não foi criada a
+  próxima slice.
+
+O relatório foi apenas acrescentado com esta seção e permanece local,
+modificado, não staged e não commitado.
+
+BLOCKED — authorization-01 interrompida fail-closed na primeira causa
+
+## Revisão do orquestrador — parada da authorization-01 aceita
+
+> **Data:** 02/08/2026
+> **Resultado da execução:** `ACCEPTED — fail-closed conforme contrato`
+> **Estado da S30b:** `IN_PROGRESS`
+
+O orquestrador confirmou `HEAD=7297501d76fac902ddcfc2ea4448133854b855d5`,
+`origin/main` e remoto em
+`50f423a979d7723d0e15d56b1d72625ea2b8ebea`, stage vazio e somente este
+relatório modificado. Task e authorization-01 conservaram os hashes esperados.
+
+A inspeção independente confirmou que não há configuração publisher no
+checkout, ambiente ou paths seguros nominais e que
+`RELEASE_PUBLISHER_ACTOR_IDS` permanece ausente. A tentativa somente leitura de
+listar instalações com a autenticação atual do `gh` recebeu HTTP 403 por falta
+de autoridade do token; ela não fornece credencial de App e não autoriza usar o
+token pessoal como substituto.
+
+Não houve variável criada, serviço iniciado, migration, POST, dispatch, tag,
+release, deploy ou efeito em produção. A primeira causa foi corretamente
+isolada antes da primeira mutação. A S30b não é rejeitada nem aceita: sua
+continuidade exige provisionar uma GitHub App publisher própria, instalá-la
+somente no repositório canônico e armazenar sua chave privada fora do
+repositório. Criar e instalar essa identidade administrativa não estava
+autorizado pela authorization-01, que explicitamente proibia inventar ou criar
+a App.
+
+IN_PROGRESS — parada aceita; aguardando autoridade para provisionar a GitHub App publisher
