@@ -822,3 +822,24 @@ stub ou substituto, mantendo como controle efetivo a identidade
 fecha essa mudança antes de nova autorização remota.
 
 IN_PROGRESS — aguardando execução e aceite da S34
+
+## 18. S34 aceita e retomada remota terminal
+
+> **Data:** 02/08/2026
+> **Estado:** `IN_PROGRESS — authorization-03 aberta`
+
+A S34 foi aceita no commit técnico
+`5a8178e2b7574ebd42441811b4a4cdae3a8f762e`. A atestação nativa incompatível
+foi removida do workflow e dos contratos, sem placeholder, mantendo a
+integridade causal por `imageRepository@sha256:digest` em todas as camadas.
+
+A revisão reproduziu os validadores, 682 testes focais, os hashes canônicos das
+fixtures e os dois hashes da linhagem. Os 903 testes consolidados da execução
+permanecem verdes. Não há correção técnica local pendente.
+
+A authorization-03 permite um único push fast-forward do checkpoint documental
+que aceita a S34, seguido da observação da CI e do Publish Candidate do SHA
+exato. O run reprovado `30742264661` não é predecessor válido; o novo run deve
+resolver `first` e construir os seis componentes.
+
+IN_PROGRESS — aguardando execução da authorization-03

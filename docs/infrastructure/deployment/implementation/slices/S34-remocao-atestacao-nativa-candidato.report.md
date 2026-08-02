@@ -604,3 +604,27 @@ alterados; a S30a e a S30b não avançaram.
 commit final = HEAD entregue
 
 IN_PROGRESS — aguardando revisão do orquestrador
+
+## 8. Revisão do orquestrador
+
+> **Data:** 02/08/2026
+> **Estado:** `ACCEPTED`
+
+A implementação e a correction-01 estão aceitas. A revisão independente
+confirmou:
+
+- 30 testes de CI, 299 de releases e 353 de deploy, todos verdes;
+- os cinco validadores focais com exit 0;
+- digest canônico do candidato `sha256:b818a0462d2333b74e36d6d09b1084fe97389be7e5602400cee6bb98ce8ee1c9`;
+- digest canônico da release `sha256:cfa61fcf2d0d731fbcd68cb383e5491bfc6075733b378ff446bd28dbf702957e`;
+- `sourceDiffSha256 = f4f040f2668fccec17e05209337ceaee46172c3ed6dc32083f203c415dc2b903` e `sourceTreeSha = a603198bf56a873b50afc8a372ef0b7ddc2ebfe8` reproduzidos sobre os 24 caminhos da linhagem;
+- ausência da action, das permissões e do comando de atestação no caminho executável; as ocorrências residuais de `provenance` são mutantes de rejeição intencionais;
+- `git diff --check origin/main..HEAD` com exit 0 e estado Git limpo.
+
+O commit `5a8178e2b7574ebd42441811b4a4cdae3a8f762e` remove o controle indisponível
+sem criar substituto nominal. A identidade efetiva continua fechada por
+`imageRepository@sha256:digest` no resultado, candidato, release e deploy.
+
+S34 aceita. A ação seguinte está limitada pela authorization-03 da S30a.
+
+ACCEPTED
