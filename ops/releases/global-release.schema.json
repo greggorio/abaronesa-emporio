@@ -92,21 +92,10 @@
         "org.opencontainers.image.created": {"$ref": "#/$defs/time"}
       }
     },
-    "provenance": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["attestationId", "attestationUrl", "verifiedSubject", "verifiedAt"],
-      "properties": {
-        "attestationId": {"$ref": "#/$defs/positiveString"},
-        "attestationUrl": {"type": "string", "pattern": "^https://github\\.com/greggorio/abaronesa-emporio/attestations/[1-9][0-9]*$"},
-        "verifiedSubject": {"type": "string", "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-[a-z0-9-]+@sha256:[0-9a-f]{64}$"},
-        "verifiedAt": {"$ref": "#/$defs/time"}
-      }
-    },
     "component": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "imageRepository", "tag", "digest", "immutableRef", "commitSha", "workflowRunId", "workflowAttempt", "builtAt", "state", "originCandidateId", "labels", "checks", "provenance"],
+      "required": ["id", "imageRepository", "tag", "digest", "immutableRef", "commitSha", "workflowRunId", "workflowAttempt", "builtAt", "state", "originCandidateId", "labels", "checks"],
       "properties": {
         "id": {"enum": ["backend", "website_back", "frontend", "website_front", "whatsapp_service", "gateway"]},
         "imageRepository": {"type": "string", "pattern": "^ghcr\\.io/greggorio/abaronesa-emporio-[a-z0-9-]+$"},
@@ -120,8 +109,7 @@
         "state": {"enum": ["built", "inherited"]},
         "originCandidateId": {"anyOf": [{"type": "string", "pattern": "^candidate-[a-z0-9._-]+$"}, {"type": "null"}]},
         "labels": {"$ref": "#/$defs/labels"},
-        "checks": {"$ref": "#/$defs/checks"},
-        "provenance": {"$ref": "#/$defs/provenance"}
+        "checks": {"$ref": "#/$defs/checks"}
       },
       "allOf": [
         {

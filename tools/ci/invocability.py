@@ -19,7 +19,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 CI = ROOT / ".github/workflows/ci.yml"
 PUBLISH = ROOT / ".github/workflows/publish-candidate.yml"
-EXPECTED_COMMANDS = 27
+EXPECTED_COMMANDS = 26
 SELF_COMMANDS = {
     "tools/ci/validate_ci.py",
     "tools/ci/invocability.py",
@@ -51,15 +51,13 @@ def _synthetic(expression: re.Match[str]) -> str:
         return ""
     if "artifact-digest" in value or "digest" in value:
         return "a" * 64
-    if "attestation-url" in value:
-        return "https://example.invalid/attestation"
     if "repository" in value:
         return "ghcr.io/greggorio/abaronesa-emporio-backend"
     if "component" in value:
         return "backend"
     if "sha" in value:
         return "1" * 40
-    if any(token in value for token in ("run_id", "run_attempt", "artifact-id", "attestation-id")):
+    if any(token in value for token in ("run_id", "run_attempt", "artifact-id")):
         return "1"
     if any(token in value for token in ("head_mode", "outputs.mode", "outputs.status")):
         return "continue"

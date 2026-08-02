@@ -12,9 +12,8 @@ REPOSITORY="greggorio/abaronesa-emporio";ORDER=catalog.CANONICAL
 PENDING_KEYS={"schemaVersion","kind","deployable","candidateId","repository","commitSha","ref","createdAt","workflow","sourceCi","catalog","predecessor","resolution","components"}
 RECEIPT_KEYS={"schemaVersion","status","repository","commitSha","workflowRunId","workflowAttempt","pendingSha256","checkedAt","services","probes","cleanup"}
 WORKFLOW_KEYS={"runId","attempt","url"}
-COMPONENT_KEYS={"id","imageRepository","tag","digest","immutableRef","commitSha","workflowRunId","workflowAttempt","builtAt","state","originCandidateId","labels","checks","provenance"}
+COMPONENT_KEYS={"id","imageRepository","tag","digest","immutableRef","commitSha","workflowRunId","workflowAttempt","builtAt","state","originCandidateId","labels","checks"}
 LABEL_KEYS={"org.opencontainers.image.source","org.opencontainers.image.revision","org.opencontainers.image.version","org.opencontainers.image.created"}
-PROVENANCE_KEYS={"attestationId","attestationUrl","verifiedSubject","verifiedAt"}
 SERVICES=["postgresql","backend","website_back","frontend","website_front","whatsapp_service","gateway"]
 PROBES=["website_root","erp_root","website_theme_api","erp_login","erp_whatsapp_api","publisher_route_absent","deployer_route_absent","unknown_host_denied","whatsapp_internal"]
 SHA_RE=re.compile(r"[0-9a-f]{40}");DIGEST_RE=re.compile(r"sha256:[0-9a-f]{64}");DECIMAL_RE=re.compile(r"[1-9][0-9]*")
@@ -42,11 +41,6 @@ def _validate_component(item,pending,previous=None):
  expected_labels={"org.opencontainers.image.source":"https://github.com/"+REPOSITORY,"org.opencontainers.image.revision":commit,"org.opencontainers.image.version":f"candidate-{commit}-{run}-{attempt}","org.opencontainers.image.created":item.get("builtAt")}
  if labels!=expected_labels:errors.append(f"{cid}:labels")
  if item.get("checks")!={"build":"passed","test":"passed","scan":"passed"}:errors.append(f"{cid}:checks")
- provenance=item.get("provenance")
- if not isinstance(provenance,dict) or set(provenance)!=PROVENANCE_KEYS:errors.append(f"{cid}:provenance shape")
- else:
-  attestation_id=str(provenance.get("attestationId",""))
-  if not DECIMAL_RE.fullmatch(attestation_id) or provenance.get("attestationUrl")!=f"https://github.com/{REPOSITORY}/attestations/{attestation_id}" or provenance.get("verifiedSubject")!=item.get("immutableRef") or not _utc(provenance.get("verifiedAt")):errors.append(f"{cid}:provenance")
  builds=pending.get("resolution",{}).get("buildComponents",[])
  inherited=pending.get("resolution",{}).get("inheritedComponents",[])
  if cid in builds:
@@ -58,7 +52,7 @@ def _validate_component(item,pending,previous=None):
    expected=dict(prior) if prior else None
    if expected:
     expected["state"]="inherited";expected["originCandidateId"]=prior.get("originCandidateId") or previous.get("candidateId")
-   if item!=expected:errors.append(f"{cid}:inherited provenance")
+   if item!=expected:errors.append(f"{cid}:inherited identity")
  else:errors.append(f"{cid}:partition")
  return errors
 def validate_pending(value,effective=None,previous=None):
@@ -125,7 +119,7 @@ def write_atomic(path,value,overwrite=False):
  atomic_json_pair(path,value)
 def _pair_is_valid(path,sidecar):return Path(sidecar).read_bytes()==artifact_io.sidecar(Path(path).read_bytes())
 def component_from_result(result,state="built",origin=None):
- return {"id":result["component"],"imageRepository":result["repository"],"tag":result["tag"],"digest":result["digest"],"immutableRef":result["immutableRef"],"commitSha":result["commitSha"],"workflowRunId":result["workflowRunId"],"workflowAttempt":result["workflowAttempt"],"builtAt":result["builtAt"],"state":state,"originCandidateId":origin,"labels":result["labels"],"checks":result["checks"],"provenance":result["provenance"]}
+ return {"id":result["component"],"imageRepository":result["repository"],"tag":result["tag"],"digest":result["digest"],"immutableRef":result["immutableRef"],"commitSha":result["commitSha"],"workflowRunId":result["workflowRunId"],"workflowAttempt":result["workflowAttempt"],"builtAt":result["builtAt"],"state":state,"originCandidateId":origin,"labels":result["labels"],"checks":result["checks"]}
 def pending_from(effective,results,previous,created_at,run,attempt):
  if effective.get("mode")!="continue":raise ManifestError("pending effective mode")
  resolution=effective["resolution"];built={r["component"]:r for r in results};prior={c["id"]:c for c in previous.get("components",[])} if previous else {}

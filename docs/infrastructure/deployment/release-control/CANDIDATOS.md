@@ -21,14 +21,17 @@ os dois IDs coincidam.
 Somente o job de build recebe escrita em packages e OIDC. Cada componente
 afetado é construído uma vez para `linux/amd64`, examinado antes da
 autenticação, enviado ao GHCR sem rebuild e identificado pelo digest retornado
-pelo registry. A attestation de build provenance é criada e verificada para
-esse mesmo subject.
+pelo registry. O controle de integridade do componente é a referência
+imutável `immutableRef == imageRepository + "@" + digest`, exigida em todas as
+camadas. A attestation nativa de build provenance foi removida por ser
+indisponível em repositório privado de propriedade de usuário; nenhum
+placeholder ou substituto nominal ocupa seu lugar.
 
 ## Herança e primeiro candidato
 
 O candidato anterior é procurado em uma janela limitada de execuções verdes e
 aceito somente com shape, checksum, schema e metadados válidos. Componentes não
-reconstruídos preservam byte a byte `immutableRef` e provenance. Origem ausente,
+reconstruídos preservam byte a byte `immutableRef` e digest. Origem ausente,
 circular ou divergente é rejeitada.
 
 Fim normal da paginação produz `no_previous`; atingir o limite configurado com

@@ -84,8 +84,8 @@ fizer push.
 O schema e gerador locais descrevem um candidato intermediario,
 `deployable: false`. O exemplo e fictício. O workflow separado
 `publish-candidate.yml` poderá publicar imagens e o manifesto candidato apenas
-após uma CI confiável: valida o plano, publica por digest com provenance
-verificada, preserva digest e provenance herdidos e valida os seis componentes
+após uma CI confiável: valida o plano, publica por digest e vincula a
+referência imutável, preserva digest e referência herdados e valida os seis componentes
 em Compose efêmero. Ele não promove release, não cria manifesto global
 implantável e não executa deploy.
 

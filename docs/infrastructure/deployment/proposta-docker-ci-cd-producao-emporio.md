@@ -293,7 +293,7 @@ O exemplo conceitual inicial foi substituido pelo contrato verificavel da S13:
 `ops/releases/global-release.schema.json`, exemplo integral em
 `ops/releases/examples/global-release.example.json` e documentação em
 `release-control/RELEASES.md`. O contrato preserva o BOM de seis componentes,
-provenance, changelog e auditoria, e usa fingerprints Flyway com
+referência imutável por digest, changelog e auditoria, e usa fingerprints Flyway com
 `required_on_change` e `restore_required`; ele não alega reversibilidade de
 SQL. Nesta fase a geração é somente offline, sem tag ou publicação.
 

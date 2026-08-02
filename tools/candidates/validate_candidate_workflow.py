@@ -14,7 +14,7 @@ def validate_workflows(ci=None,publish=None):
  if p.get("permissions")!={"contents":"read","actions":"read"}:errors.append("GLOBAL_PERMISSIONS")
  jobs=p.get("jobs",{})
  if list(jobs)!=["trust","predecessor","build","assemble","integrated","publish"]:errors.append("JOB_GRAPH")
- expected_build={"contents":"read","actions":"read","packages":"write","id-token":"write","attestations":"write"}
+ expected_build={"contents":"read","actions":"read","packages":"write"}
  expected_integrated={"contents":"read","actions":"read","packages":"read"}
  if jobs.get("build",{}).get("permissions")!=expected_build:errors.append("BUILD_PERMISSIONS")
  if jobs.get("integrated",{}).get("permissions")!=expected_integrated:errors.append("INTEGRATED_PERMISSIONS")
@@ -44,6 +44,8 @@ def validate_workflows(ci=None,publish=None):
  if min(pending_validate,compose_env,integrated_login,harness)<0 or not pending_validate<compose_env<integrated_login<harness:errors.append("PENDING_BEFORE_DOCKER")
  forbidden=("Repo"+"Digests","extract"+"all","gh api "+"--output","publish_"+"manifest:","\n  pre"+"vious:","as"+"sert ")
  if any(x in source for x in forbidden):errors.append("FORBIDDEN_LEGACY")
+ attestation=("attest"+"-build-prove"+"nance","gh attest"+"ation","attest"+"ations:","id-"+"token:","prove"+"nance","attestation"+"Id","attestation"+"Url","verified"+"Subject")
+ if any(x in source for x in attestation):errors.append("ATTESTATION_FORBIDDEN")
  if 'schemaVersion":2' not in (ROOT/"tools/candidates/candidate_plan.py").read_text().replace(" ",""):errors.append("PLAN_V2")
  if "candidate-plan/candidate-plan.json" not in ci or "candidate-plan/plan.json" in ci:errors.append("CI_PLAN_NAME")
  commands,inventory_errors=invocability.inventory(ci,publish)

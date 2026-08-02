@@ -248,8 +248,6 @@ def _validate_target_invariants(target: dict[str, Any]) -> None:
             component.get("imageRepository") != repository
             or DIGEST_RE.fullmatch(str(digest)) is None
             or immutable != repository + "@" + str(digest)
-            or not isinstance(component.get("provenance"), dict)
-            or component["provenance"].get("verifiedSubject") != immutable
         ):
             raise DeploymentPlanError("INVALID_CONTRACT")
     _ids_in_order(target.get("databases"), DATABASES, "INVALID_CONTRACT")

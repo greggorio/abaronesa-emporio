@@ -13,7 +13,13 @@ class CandidateManifestV2Test(unittest.TestCase):
   for key in ("sourceCi","predecessor","integration"):
    value=copy.deepcopy(self.example);value.pop(key);self.assertTrue(candidate_manifest.validate_manifest(value))
  def test_04_component_binding(self):
-  value=copy.deepcopy(self.example);value["components"][0]["provenance"]["verifiedSubject"]="ghcr.io/x@sha256:"+"0"*64;self.assertTrue(candidate_manifest.validate_manifest(value))
+  for change in (
+   lambda c:c.update(digest="sha256:"+"9"*64),
+   lambda c:c.update(immutableRef=c["imageRepository"]+"@sha256:"+"9"*64),
+   lambda c:c.update(immutableRef="ghcr.io/greggorio/abaronesa-emporio-gateway@"+c["digest"]),
+   lambda c:c.update(provenance={"attestationId":"1","attestationUrl":"https://github.com/greggorio/abaronesa-emporio/attestations/1","verifiedSubject":c["immutableRef"],"verifiedAt":"2026-07-29T12:10:00Z"}),
+  ):
+   value=copy.deepcopy(self.example);change(value["components"][0]);self.assertTrue(candidate_manifest.validate_manifest(value),change)
  def _pending_receipt(self):
   pending={k:v for k,v in self.example.items() if k!="integration"};integration=self.example["integration"]
   receipt={"schemaVersion":1,"status":"passed","repository":pending["repository"],"commitSha":pending["commitSha"],"workflowRunId":pending["workflow"]["runId"],"workflowAttempt":pending["workflow"]["attempt"],"pendingSha256":artifact_io.digest(artifact_io.canonical(pending)),"checkedAt":integration["checkedAt"],"services":integration["services"],"probes":integration["probes"],"cleanup":integration["cleanup"]}

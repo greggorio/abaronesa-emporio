@@ -48,7 +48,6 @@ class DeploymentPlanTest(unittest.TestCase):
         immutable = f"{item['imageRepository']}@{digest}"
         item["digest"] = digest
         item["immutableRef"] = immutable
-        item["provenance"]["verifiedSubject"] = immutable
 
     def set_migrations(self, database: dict, migrations: list[dict]) -> None:
         database["migrations"] = copy.deepcopy(migrations)
@@ -269,7 +268,7 @@ class DeploymentPlanTest(unittest.TestCase):
             self.target,
         )
 
-    def test_repository_digest_and_provenance_mutants_fail(self) -> None:
+    def test_repository_digest_and_immutable_mutants_fail(self) -> None:
         mutants = []
         repository = copy.deepcopy(self.target)
         repository["components"][0]["imageRepository"] += "-wrong"
@@ -277,11 +276,16 @@ class DeploymentPlanTest(unittest.TestCase):
         digest = copy.deepcopy(self.target)
         digest["components"][0]["digest"] = "sha256:" + "f" * 64
         mutants.append(digest)
-        provenance = copy.deepcopy(self.target)
-        provenance["components"][0]["provenance"]["verifiedSubject"] = (
-            provenance["components"][1]["immutableRef"]
+        immutable = copy.deepcopy(self.target)
+        immutable["components"][0]["immutableRef"] = (
+            immutable["components"][0]["imageRepository"] + "@sha256:" + "f" * 64
         )
-        mutants.append(provenance)
+        mutants.append(immutable)
+        swapped = copy.deepcopy(self.target)
+        swapped["components"][0]["immutableRef"] = (
+            swapped["components"][1]["immutableRef"]
+        )
+        mutants.append(swapped)
         for index, mutant in enumerate(mutants):
             with self.subTest(index=index):
                 self.assert_code("INVALID_CONTRACT", planner._validate_target_contract, mutant)

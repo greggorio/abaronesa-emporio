@@ -90,10 +90,14 @@ class DefinitiveContractTest(unittest.TestCase):
   self.assertEqual("sha256:"+"a"*64,image_result.remote_digest("repo:tag",runner));self.assertIn("imagetools",calls[0]);self.assertNotIn("Repo"+"Digests"," ".join(calls[0]))
  def test_15_component_result_strict(self):
   example=json.loads((ROOT/"ops/releases/examples/candidate-manifest.example.json").read_text());c=example["components"][0]
-  value={"schemaVersion":1,"component":c["id"],"repository":c["imageRepository"],"tag":c["tag"],"digest":c["digest"],"immutableRef":c["immutableRef"],"commitSha":c["commitSha"],"workflowRunId":c["workflowRunId"],"workflowAttempt":c["workflowAttempt"],"builtAt":c["builtAt"],"labels":c["labels"],"checks":c["checks"],"provenance":c["provenance"]}
+  value={"schemaVersion":1,"component":c["id"],"repository":c["imageRepository"],"tag":c["tag"],"digest":c["digest"],"immutableRef":c["immutableRef"],"commitSha":c["commitSha"],"workflowRunId":c["workflowRunId"],"workflowAttempt":c["workflowAttempt"],"builtAt":c["builtAt"],"labels":c["labels"],"checks":c["checks"]}
   self.assertEqual([],image_result.validate(value,c["id"],c["imageRepository"],c["commitSha"],c["workflowRunId"],1))
-  for key in ("labels","checks","provenance"):
+  for key in ("labels","checks"):
    mutant=copy.deepcopy(value);mutant[key]["extra"]="x";self.assertTrue(image_result.validate(mutant,c["id"],c["imageRepository"],c["commitSha"],c["workflowRunId"],1))
+  reintroduced=copy.deepcopy(value);reintroduced["provenance"]={"attestationId":"1","attestationUrl":"https://github.com/greggorio/abaronesa-emporio/attestations/1","verifiedSubject":value["immutableRef"],"verifiedAt":"2026-07-29T12:10:00Z"}
+  self.assertIn("RESULT_SHAPE",image_result.validate(reintroduced,c["id"],c["imageRepository"],c["commitSha"],c["workflowRunId"],1))
+  for change in (lambda v:v.update(digest="sha256:"+"9"*64),lambda v:v.update(immutableRef=v["repository"]+"@sha256:"+"9"*64),lambda v:v.update(immutableRef="ghcr.io/greggorio/abaronesa-emporio-gateway@"+v["digest"])):
+   mutant=copy.deepcopy(value);change(mutant);self.assertIn("RESULT_DIGEST",image_result.validate(mutant,c["id"],c["imageRepository"],c["commitSha"],c["workflowRunId"],1))
  def test_16_outcomes_all_modes_and_raw_digest(self):
   candidate={"id":"c","artifactId":"12","artifactDigest":"a"*64}
   for status in outcome.STATUSES:
@@ -311,7 +315,7 @@ class DefinitiveContractTest(unittest.TestCase):
  def test_37_invocability_gate_covers_both_workflows(self):
   jobs=self._jobs();self.assertTrue(jobs)
   commands,errors=workflow.invocability.inventory()
-  self.assertEqual([],errors);self.assertEqual(27,len(commands))
+  self.assertEqual([],errors);self.assertEqual(26,len(commands))
   ci=workflow.CI.read_text();self.assertIn("python3 tools/ci/invocability.py",ci)
   removed=ci.replace("          python3 tools/ci/invocability.py\n","",1)
   self.assertIn("INVOCABILITY_GATE",workflow.validate_workflows(ci=removed))

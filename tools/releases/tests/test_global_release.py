@@ -91,11 +91,13 @@ class GlobalReleaseTest(unittest.TestCase):
         self.assertEqual(candidate["components"],release["components"])
         self.assertEqual(candidate_manifest.ORDER,[item["id"] for item in release["components"]])
 
-    def test_12_component_digest_immutable_or_provenance_tamper_rejected(self):
+    def test_12_component_digest_or_immutable_tamper_rejected(self):
         for mutation in (
             lambda item:item.update(digest="sha256:"+"f"*64),
             lambda item:item.update(immutableRef="ghcr.io/wrong@sha256:"+"f"*64),
-            lambda item:item["provenance"].update(verifiedSubject="ghcr.io/wrong@sha256:"+"f"*64),
+            lambda item:item.update(immutableRef=item["imageRepository"]+"@sha256:"+"f"*64),
+            lambda item:item.update(imageRepository="ghcr.io/greggorio/abaronesa-emporio-gateway"),
+            lambda item:item.update(provenance={"attestationId":"1","attestationUrl":"https://github.com/greggorio/abaronesa-emporio/attestations/1","verifiedSubject":item["immutableRef"],"verifiedAt":"2026-07-29T12:10:00Z"}),
         ):
             release=self.build();mutation(release["components"][0])
             with self.subTest(mutation=mutation):self.assertTrue(global_release.validate_release(release))

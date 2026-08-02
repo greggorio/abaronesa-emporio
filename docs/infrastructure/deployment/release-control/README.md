@@ -51,7 +51,7 @@ consumido pelo deployer.
 `ci.yml` valida e constrói sem push; em push verde para `main`, emite somente o
 plano autoritativo. `publish-candidate.yml` está configurado para consumir esse
 plano, publicar imagens afetadas e montar o manifesto não implantável com
-digests e provenance verificadas. Candidatos incrementais e documentais são
+digests e referências imutáveis verificadas. Candidatos incrementais e documentais são
 revalidados contra o candidato anterior selecionado e vinculado ao run,
 artifact e SHA. Nenhum workflow foi executado remotamente.
 

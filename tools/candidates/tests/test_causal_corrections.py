@@ -143,7 +143,7 @@ class CausalCorrectionsTest(unittest.TestCase):
   good={"conclusion":"success","name":"CI","event":"push","head_branch":"main","head_repository":{"full_name":trust.REPO},"repository":{"full_name":trust.REPO,"owner":{"login":"greggorio"}},"head_sha":"1"*40,"run_attempt":1}
   self.assertEqual([],trust.event(good));bad=copy.deepcopy(good);bad["repository"]["full_name"]="fork/repo";self.assertTrue(trust.event(bad))
 
- def test_08_component_time_tag_labels_state_origin_and_provenance_are_bound(self):
+ def test_08_component_time_tag_labels_state_origin_and_digest_are_bound(self):
   pending=self.pending()
   changes=[
    lambda c:c.update(builtAt="not-a-time"),
@@ -151,7 +151,10 @@ class CausalCorrectionsTest(unittest.TestCase):
    lambda c:c["labels"].update({"org.opencontainers.image.revision":"2"*40}),
    lambda c:c.update(state="inherited"),
    lambda c:c.update(originCandidateId="candidate-old"),
-   lambda c:c["provenance"].update(verifiedSubject="ghcr.io/wrong@sha256:"+"0"*64),
+   lambda c:c.update(digest="sha256:"+"9"*64),
+   lambda c:c.update(immutableRef=c["imageRepository"]+"@sha256:"+"9"*64),
+   lambda c:c.update(immutableRef="ghcr.io/greggorio/abaronesa-emporio-gateway@"+c["digest"]),
+   lambda c:c.update(imageRepository="ghcr.io/greggorio/abaronesa-emporio-gateway"),
   ]
   for change in changes:
    mutant=copy.deepcopy(pending);change(mutant["components"][0]);self.assertTrue(candidate_manifest.validate_pending(mutant),change)

@@ -280,14 +280,6 @@ def _validate_components(components: Any) -> list[str]:
         }
         if item.get("labels") != expected_labels:
             errors.append(component_id + ":LABELS")
-        provenance = item.get("provenance", {})
-        attestation_id = str(provenance.get("attestationId", ""))
-        if (
-            provenance.get("verifiedSubject") != immutable
-            or provenance.get("attestationUrl")
-            != f"https://github.com/{REPOSITORY}/attestations/{attestation_id}"
-        ):
-            errors.append(component_id + ":PROVENANCE")
         if item.get("state") == "built" and item.get("originCandidateId") is not None:
             errors.append(component_id + ":BUILT_ORIGIN")
         if item.get("state") == "inherited" and not re.fullmatch(

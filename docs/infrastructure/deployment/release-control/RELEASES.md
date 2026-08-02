@@ -22,8 +22,8 @@ paths ou a versão final. O BOM sempre preserva, nesta ordem:
 5. `whatsapp_service`;
 6. `gateway`.
 
-Cada componente é copiado sem reduzir seus labels, checks ou provenance.
-Imagens herdadas mantêm o digest, o commit, o run, a attestation e o
+Cada componente é copiado sem reduzir seus labels, checks ou referência
+imutável. Imagens herdadas mantêm o digest, o commit, o run e o
 `originCandidateId` do candidato que as originou.
 
 ## SemVer determinístico

@@ -139,6 +139,41 @@ class TerminalAmendmentTest(unittest.TestCase):
    else:self.write_candidate(target)
   return api,download,manifest
 
+ def test_09_failed_candidate_run_is_not_a_predecessor_and_keeps_first_release(self):
+  """Run reprovado nao vira predecessor: proximo candidato segue first com os seis builds."""
+  sha="1"*40
+  failed={"id":30742264661,"run_attempt":1,"name":"Publish Candidate","event":"workflow_run","status":"completed","conclusion":"failure","head_branch":"main","head_sha":"0d6f11f826f5a538f9a008bc4a3326c1d4fd09fb","head_repository":{"full_name":previous_candidate.REPO},"repository":{"full_name":previous_candidate.REPO,"owner":{"login":"greggorio"}}}
+  seen=[]
+  def api(endpoint):
+   seen.append(endpoint)
+   if "/runs?" in endpoint:
+    self.assertIn("status=success",endpoint)
+    return {"workflow_runs":[run for run in [failed] if run["conclusion"]=="success"]}
+   return {"artifacts":[]}
+  def download(artifact,target,name,limits):raise AssertionError("nenhum artefato deve ser baixado")
+  with tempfile.TemporaryDirectory() as raw,mock.patch.object(previous_candidate,"api",side_effect=api),mock.patch.object(previous_candidate,"_download",side_effect=download):
+   mode,selected=previous_candidate.discover(sha,1,Path(raw))
+  self.assertEqual("first",mode);self.assertIsNone(selected)
+  plan=self.plan();effective=lineage.effective(plan,selected,None,lineage.mode_for(mode,None))
+  self.assertEqual("continue",effective["mode"])
+  self.assertEqual("first",effective["predecessor"]["status"])
+  self.assertIsNone(effective["predecessor"]["candidateId"])
+  self.assertEqual([],lineage.validate_effective(effective,plan))
+  self.assertEqual(
+   ["backend","website_back","frontend","website_front","whatsapp_service","gateway"],
+   sorted(effective["resolution"]["buildComponents"],key=["backend","website_back","frontend","website_front","whatsapp_service","gateway"].index))
+  self.assertEqual(6,len(effective["resolution"]["buildComponents"]))
+  self.assertEqual([],effective["resolution"].get("inheritedComponents",[]))
+
+ def test_10_successful_run_without_outcome_cannot_be_inherited(self):
+  """Run success sem candidate-outcome falha fechado, nunca e herdado em silencio."""
+  sha="1"*40
+  run={"id":300,"run_attempt":1,"name":"Publish Candidate","event":"workflow_run","status":"completed","conclusion":"success","head_branch":"main","head_sha":sha,"head_repository":{"full_name":previous_candidate.REPO},"repository":{"full_name":previous_candidate.REPO,"owner":{"login":"greggorio"}}}
+  def api(endpoint):return {"workflow_runs":[run]} if "/runs?" in endpoint else {"artifacts":[]}
+  def download(artifact,target,name,limits):raise AssertionError("sem artefato para baixar")
+  with tempfile.TemporaryDirectory() as raw,mock.patch.object(previous_candidate,"api",side_effect=api),mock.patch.object(previous_candidate,"_download",side_effect=download):
+   with self.assertRaisesRegex(ValueError,"outcome"):previous_candidate.discover(sha,1,Path(raw))
+
  def test_08_terminal_outputs_use_real_lf(self):
   selected=self.selected()
   for mode in ("already_published","no_changes","superseded"):

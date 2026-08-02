@@ -255,6 +255,20 @@ class ReleasePublicationTests(unittest.TestCase):
                 inner.tag = None
         return Remote()
 
+    def test_00_example_manifest_bindings_are_derived_from_the_examples(self):
+        """candidate bindings = digest do candidato; target/outcome = digest da release."""
+        candidate = json.loads((ROOT / "ops/releases/examples/candidate-manifest.example.json").read_text())
+        release = json.loads((ROOT / "ops/releases/examples/global-release.example.json").read_text())
+        candidate_digest = artifact_io.digest(artifact_io.canonical(candidate))
+        release_digest = artifact_io.digest(artifact_io.canonical(release))
+        self.assertNotEqual(candidate_digest, release_digest)
+        self.assertEqual(candidate_digest, release["candidate"]["manifestSha256"])
+        self.assertEqual(candidate_digest, self.plan_example["candidate"]["manifestSha256"])
+        self.assertEqual(release_digest, self.plan_example["target"]["manifestSha256"])
+        self.assertEqual(release_digest, self.outcome_example["manifestSha256"])
+        self.assertEqual(release_digest, rp.digest(rp.canonical(release)))
+        self.assertEqual(release_digest, rp.digest(self.bundle()["release.json"]))
+
     def test_01_plan_schema_example(self): rp.validate_schema(self.plan_example, rp.PLAN_SCHEMA)
     def test_02_outcome_schema_example(self): rp.validate_schema(self.outcome_example, rp.OUTCOME_SCHEMA)
     def test_03_event_five_inputs(self): self.assertEqual("release_operation_0001", rp.request_from_event(self.event())[0])
@@ -1004,7 +1018,7 @@ class ReleasePublicationTests(unittest.TestCase):
             name for name in dir(self)
             if name.startswith("test_") and not name.startswith("test_c02")
         ]
-        self.assertEqual(65, len(previous))
+        self.assertEqual(66, len(previous))
 
     def test_c02a_01_http_status_returncode_compatibility_matrix(self):
         endpoint = f"/repos/{rp.REPOSITORY}/releases/tags/v0.0.1"
@@ -1119,7 +1133,7 @@ class ReleasePublicationTests(unittest.TestCase):
             name for name in dir(self)
             if name.startswith("test_") and not name.startswith("test_c02a_")
         ]
-        self.assertEqual(80, len(previous))
+        self.assertEqual(81, len(previous))
 
 
 if __name__ == "__main__":

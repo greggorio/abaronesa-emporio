@@ -14,7 +14,7 @@ tambem alimenta o scan local de segredos e a resolucao conservadora de paths.
 por push confiável em `main`. Antes de checkout ou permissão de escrita ele
 reconfere execução, repositório, SHA, branch e artifact pela API. Constrói
 somente os componentes afetados, faz scan antes do login, publica a mesma
-imagem por digest, gera e verifica provenance, herda o restante do candidato
+imagem por digest, fixa a identidade imutavel do registry, herda o restante do candidato
 anterior validado e testa o BOM completo por digest numa stack efêmera.
 
 O job integrado conserva somente `packages: read`, autentica no GHCR para

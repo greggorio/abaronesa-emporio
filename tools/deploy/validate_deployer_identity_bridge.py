@@ -20,9 +20,11 @@ import sys
 from pathlib import Path
 
 
-# Snapshot fechado do pom.xml antes da S23. A comparação é intencionalmente
-# estática: ler o mesmo pom mutado como baseline faria a validação aceitar a
-# própria alteração que deveria detectar.
+# Snapshot fechado do pom.xml no baseline aceito atual: S23, mais as alterações
+# já aceitas de 5360356 (BeanUtils e Neethi), 94c4b73 (BOM OkHttp) e db9cc90
+# (remoção de java-danfe). A comparação é intencionalmente estática: ler o mesmo
+# pom mutado como baseline faria a validação aceitar a própria alteração que
+# deveria detectar.
 KNOWN_MAVEN_DEPENDENCIES = frozenset(
     {
         "org.springframework.boot:spring-boot-starter-web",
@@ -50,7 +52,9 @@ KNOWN_MAVEN_DEPENDENCIES = frozenset(
         "com.theokanning.openai-gpt3-java:service",
         "org.json:json",
         "br.com.swconsultoria:java-nfe",
-        "br.com.swconsultoria:java-danfe",
+        "com.squareup.okhttp3:okhttp-bom",
+        "commons-beanutils:commons-beanutils",
+        "org.apache.neethi:neethi",
         "jakarta.xml.soap:jakarta.xml.soap-api",
         "com.sun.xml.messaging.saaj:saaj-impl",
         "wsdl4j:wsdl4j",

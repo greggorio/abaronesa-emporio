@@ -818,9 +818,6 @@ class ProductionAdapterTest(unittest.TestCase):
                     component["immutableRef"] = (
                         component["imageRepository"] + "@" + digest
                     )
-                    component["provenance"]["verifiedSubject"] = component[
-                        "immutableRef"
-                    ]
             return value
 
         self._tampered_source_bundle(mutate)

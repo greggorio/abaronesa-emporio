@@ -65,8 +65,6 @@ jobs:
       contents: read
       actions: read
       packages: write
-      id-token: write
-      attestations: write
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -102,15 +100,6 @@ jobs:
         run: |
           docker push "${{ matrix.repository }}:sha-${{ needs.trust.outputs.sha }}"
           python3 tools/candidates/image_result.py remote --component "${{ matrix.component }}" --repository "${{ matrix.repository }}" --tag "${{ matrix.repository }}:sha-${{ needs.trust.outputs.sha }}" --output result/component-result.json
-      - name: Attest exact immutable subject
-        id: attest
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with: {subject-name: "${{ matrix.repository }}", subject-digest: "${{ steps.remote.outputs.digest }}", push-to-registry: true}
-      - name: Verify attestation then finalize result
-        env: {GH_TOKEN: "${{ github.token }}"}
-        run: |
-          gh attestation verify "oci://${{ matrix.repository }}@${{ steps.remote.outputs.digest }}" --repo greggorio/abaronesa-emporio
-          python3 tools/candidates/image_result.py attest --result result/component-result.json --attestation-id "${{ steps.attest.outputs.attestation-id }}" --attestation-url "${{ steps.attest.outputs.attestation-url }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with: {name: "candidate-component-${{ matrix.component }}", path: result/component-result.json, if-no-files-found: error, retention-days: 1, overwrite: false}
       - name: Logout remove exact tag and prove absence
