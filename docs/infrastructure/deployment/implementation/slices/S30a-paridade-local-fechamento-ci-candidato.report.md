@@ -843,3 +843,22 @@ exato. O run reprovado `30742264661` não é predecessor válido; o novo run dev
 resolver `first` e construir os seis componentes.
 
 IN_PROGRESS — aguardando execução da authorization-03
+
+## 19. Resultado remoto da authorization-03
+
+> **Data:** 02/08/2026
+> **SHA publicado:** `cf02e2aa7010f16d0b02da8e9ecd54cbc273b6af`
+> **Estado:** `IN_PROGRESS — correção causal S35 aberta`
+
+A CI `30746044072` concluiu os 13 jobs em `success`. O Publish Candidate
+`30746220083` superou o bloqueio da S34: os seis builds, scans, pushes ao GHCR,
+resultados de componente e o assemble passaram. O primeiro gate reprovado foi
+o startup integrado, porque somente o `backend` não alcançou `Healthy`.
+
+A parada sem retry está aceita. A stack usa banco novo, mantém Flyway desligado
+nos runtimes e inicia o `backend` com `ddl-auto=validate`, mas o harness não
+executava as migrations antes do `up`. A S35 corrige a ordem do ensaio para a
+mesma separação usada em produção: migrar os bancos `erp` e `website` com as
+imagens candidatas e somente então subir os sete serviços.
+
+IN_PROGRESS — aguardando execução e aceite da S35
