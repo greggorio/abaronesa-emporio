@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import br.com.swconsultoria.nfe.exception.NfeException;
 
 import java.io.IOException;
@@ -118,6 +119,24 @@ public class ApiExceptionHandler {
         responseBody.put("error", error);
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(responseBody);
+    }
+
+    /**
+     * Rota inexistente cai no ResourceHttpRequestHandler e chega aqui como
+     * NoResourceFoundException. Sem este handler ela era tratada pelo handler
+     * genérico e devolvia 500, reportando erro de cliente como erro de servidor.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNoResourceFound(NoResourceFoundException ex) {
+        log.warn("Rota não encontrada: {}", ex.getResourcePath());
+        Map<String, Object> error = new HashMap<>();
+        error.put("code", "not_found");
+        error.put("message", "Recurso não encontrado");
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("error", error);
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
     @ExceptionHandler(NotFoundException.class)
