@@ -550,3 +550,146 @@ autorizado pela authorization-01, que explicitamente proibia inventar ou criar
 a App.
 
 IN_PROGRESS — parada aceita; aguardando autoridade para provisionar a GitHub App publisher
+
+## Retomada authorization-02
+
+> **Data:** 02/08/2026
+> **CWD:** `/home/gregorio/git/baronesa/emporio`
+> **Resultado:** `BLOCKED — authorization-02 interrompida fail-closed na primeira causa`
+
+Esta retomada foi executada sob o contrato cumulativo da task, da
+authorization-01 e da authorization-02, sem editar esses documentos. As
+integridades verificadas antes da primeira mutação foram:
+
+| Documento | SHA-256 verificado |
+|---|---|
+| `S30b-preflight-publicacao-release-global-publisher.task.md` | `91c890d52154dc983edfdf1b62a0e18d556234c03679fbee97bf32c492b55e11` |
+| `S30b-preflight-publicacao-release-global-publisher.authorization-01.md` | `33543ec2cc399d3a82c9d21cd4ba815465e0b40927d91043a6bc55cb7a897961` |
+| `S30b-preflight-publicacao-release-global-publisher.authorization-02.md` | `96245fc58b5fdd32b7fac454614ca2d9caa694b4dad870c2c2625691cd598044` |
+| relatório antes da retomada | `066f4180bd7470ff8cb73ca8174c44a28f82fbcf43f9c805cde8c2c8773a29cf` |
+
+### Preflight obrigatório antes da mutação
+
+Os comandos de reconciliação foram somente leitura e retornaram os seguintes
+resultados:
+
+| Comando | Exit | Resultado sanitizado |
+|---|---:|---|
+| `git status --short --branch` | 0 | `main...origin/main [ahead 5]`; sem alterações locais antes deste apêndice |
+| `git rev-parse HEAD origin/main` | 0 | `HEAD=991bb35acc16d69cc2033f731ba3400fd96d266e`; `origin/main=50f423a979d7723d0e15d56b1d72625ea2b8ebea` |
+| `git rev-list --count origin/main..HEAD` | 0 | `5` |
+| `git rev-list --oneline origin/main..HEAD` | 0 | cinco commits documentais lineares, iniciando em `991bb35` e terminando em `da0a63e` |
+| `git merge-base --is-ancestor origin/main HEAD` | 0 | base preservada e fast-forward |
+| `git diff --check origin/main..HEAD` | 0 | sem erro de whitespace |
+| `git ls-remote origin refs/heads/main` | 0 | remoto `main=50f423a979d7723d0e15d56b1d72625ea2b8ebea` |
+| `git ls-remote --tags origin` | 0 | nenhuma tag remota |
+| `gh auth status` | 0 | autenticação disponível; nenhum token impresso |
+| `gh run list --branch main --limit 30` | 0 | nenhum run ativo |
+| `gh run list --workflow publish-release.yml --branch main --limit 20` | 0 | nenhum run retornado |
+| `gh run list --workflow deploy-production.yml --branch main --limit 20` | 0 | nenhum run retornado |
+| `gh run list --workflow rollback-production.yml --branch main --limit 20` | 0 | nenhum run retornado |
+| `gh release list --limit 20` | 0 | nenhuma release retornada |
+| `gh api repos/greggorio/abaronesa-emporio/actions/variables --paginate --jq '.variables[]?.name'` filtrado para `RELEASE_PUBLISHER_ACTOR_IDS` | 0 | variável `MISSING` |
+
+O stage estava vazio e a única alteração anterior ao trabalho desta retomada
+era o estado documental já registrado no relatório. O remoto não apresentava
+tag, release, run de publicação ou operação concorrente.
+
+### Provisionamento oficial da App e primeira causa
+
+Foi iniciado um único fluxo Manifest oficial, com o nome, proprietário,
+repositório, URL, descrição, App privada, webhook inativo, eventos vazios e
+somente `actions: write` e `contents: read` conforme a authorization-02. O
+callback local usado foi `http://127.0.0.1:52359/`; o estado, o código de
+conversão, a chave privada, o client secret, o webhook secret e qualquer token
+foram mantidos fora do relatório e não foram impressos.
+
+A página oficial foi aberta e a única instrução humana apresentada foi:
+
+> `Confirme no GitHub a criação da App com o nome e as duas permissões exibidas. Não altere os campos. Conclua login/2FA se solicitado.`
+
+O processo único do fluxo Manifest terminou com:
+
+```text
+AUTHORIZATION_02_BLOCKED:manifest_identity_mismatch
+TEMP_DIR=/tmp/emporio-s30b-auth02-wua_h76n
+exit=3
+```
+
+Esse é o primeiro gate de identidade da resposta oficial da conversão. O
+marcador `CREATION_CONFIRMED` não foi emitido; portanto não houve avanço
+autorizado para a URL de instalação. Não foi feita segunda conversão, segunda
+App, nova chave, instalação manual, uso de PAT como identidade publisher,
+retry, rerun ou dispatch.
+
+As verificações posteriores foram somente de preservação e não constituem
+tentativa de correção:
+
+| Comando | Exit | Resultado sanitizado |
+|---|---:|---|
+| `test -e /home/gregorio/.config/emporio/release-control/publisher-github-app.pem` | 0 | ausente |
+| `test -e /home/gregorio/.config/emporio/release-control/publisher-github-app.env` | 0 | ausente |
+| `gh api repos/greggorio/abaronesa-emporio/actions/variables/RELEASE_PUBLISHER_ACTOR_IDS --jq '.name'` | 1 | variável ausente/não criada |
+| `gh api /apps/emporio-publisher-1315264421 --jq '[.id,.slug,.name] | @tsv'` | 1 | lookup público não confirmou a App; nenhum dado sensível foi exibido |
+| `find /tmp/emporio-s30b-auth02-wua_h76n -mindepth 1 -maxdepth 1 -print` | 0 | diretório temporário vazio |
+| `rmdir /tmp/emporio-s30b-auth02-wua_h76n` | 0 | resíduo temporário vazio removido |
+
+Como a identidade retornada não passou no gate declarado pelo contrato, não se
+assume criação bem-sucedida nem se faz qualquer operação destrutiva remota. Se
+o GitHub tiver preservado algum objeto intermediário da conversão, ele foi
+deixado intacto para inspeção do orquestrador; não há instalação, chave local
+ou credencial confirmada para remover ou substituir.
+
+### Escopo não executado, arquivos e negativos preservados
+
+- Não foram criados nem alterados `publisher-github-app.pem`,
+  `publisher-github-app.env` ou `RELEASE_PUBLISHER_ACTOR_IDS`; não foram
+  impressos PEM, JWT, installation token, client secret, webhook secret,
+  state, code, header, senha ou valor de variável sensível.
+- Não houve instalação, validação de escopo/permissões, derivação do ator,
+  ambiente local, PostgreSQL, backend, migrations, bootstrap SYSTEM, publisher,
+  frontend, browser de negócio, POST de publicação, replay, restart, dispatch,
+  observação de run, tag, GitHub Release, artifact, BOM, deploy, rollback, SSH,
+  VPS, GHCR ou produção.
+- O container preexistente `baronesa-postgres`, seus volumes e portas não foram
+  tocados. Nenhum recurso remoto foi excluído, cancelado, reexecutado ou
+  substituído.
+- O único arquivo editado nesta retomada é este relatório. Não houve stage,
+  commit, push, pull, merge, rebase ou amend; task, authorizations, tracker e
+  demais arquivos permaneceram inalterados. O relatório permanece local,
+  modificado, não staged e não commitado.
+- A S30b não foi aceita e nenhuma próxima slice foi criada. A primeira causa
+  permanece `manifest_identity_mismatch`, aguardando decisão do orquestrador
+  sobre a evidência remota sem nova tentativa automática.
+
+BLOCKED — authorization-02 interrompida fail-closed na primeira causa
+
+## Revisão do orquestrador — parada da authorization-02 aceita
+
+> **Data:** 02/08/2026
+> **Resultado da execução:** `ACCEPTED — parada fail-closed conforme contrato`
+> **Estado da S30b:** `IN_PROGRESS`
+
+O orquestrador confirmou `HEAD=991bb35acc16d69cc2033f731ba3400fd96d266e`,
+`origin/main` e remoto em
+`50f423a979d7723d0e15d56b1d72625ea2b8ebea`, stage vazio e somente este
+relatório modificado. Os quatro documentos de entrada conservaram os hashes
+esperados. A conta autenticada continua sendo `greggorio`, ID `35626201`; não
+há instalação, variável publisher, tag, release ou run de publicação.
+
+A parada antes de instalação e persistência foi segura. Entretanto,
+`manifest_identity_mismatch` não é uma pendência humana nem um bloqueio
+terminal da S30b. A authorization-02 fixou antecipadamente um slug que é saída
+derivada do registro no GitHub e não exigiu que o executor preservasse no
+relatório a tupla sanitizada recebida. Com a resposta descartada e o diretório
+temporário removido, não é possível distinguir pelo relatório entre uma App
+criada com slug derivado diferente e uma conversão sem objeto persistido.
+
+A continuidade correta é reconciliar primeiro as GitHub Apps pertencentes à
+conta pela interface administrativa, reutilizar uma única App produzida pela
+tentativa se ela existir e recuperar uma chave privada operacional. Somente se
+nenhuma App compatível existir será admissível repetir uma vez o Manifest flow.
+O slug real confirmado pelo GitHub passa a ser o vínculo canônico; nome,
+owner, repositório e permissões continuam fechados.
+
+IN_PROGRESS — parada aceita; aguardando retomada de reconciliação da GitHub App
