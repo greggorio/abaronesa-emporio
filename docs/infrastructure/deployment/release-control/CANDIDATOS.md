@@ -56,8 +56,13 @@ Antes do artifact final, o BOM completo é referenciado somente por digest em
 uma stack Compose efêmera. O harness usa nomes exclusivos, variáveis
 sanitizadas `.invalid`, banco novo, sete serviços saudáveis e somente o gateway
 em um único bind efêmero de loopback. O job autentica no GHCR somente para
-leitura. `config`, `up`, `ps`, probes e `down` usam os mesmos dois arquivos
-Compose e o mesmo projeto. Probes atravessam ambos os backends, os dois
+leitura. Como o banco nasce vazio e a imagem do `backend` roda com
+`spring.jpa.hibernate.ddl-auto=validate` e Flyway desligado no app, o harness
+aplica as migrations antes de subir a stack, executando `/app/bin/migrate
+migrate` a partir da própria imagem do candidato — a mesma separação que o
+passo `MIGRATE` usa em produção. Migration reprovada aborta antes do `up`.
+`config`, `pull`, `run` da migração, `up`, `ps`, probes e `down` usam os mesmos
+dois arquivos Compose e o mesmo projeto. Probes atravessam ambos os backends, os dois
 frontends e o serviço WhatsApp. A limpeza remove containers, redes e volumes
 do prefixo exato e somente as seis imagens por digest declaradas no manifesto.
 

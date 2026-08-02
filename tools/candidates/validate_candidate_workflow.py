@@ -32,7 +32,7 @@ def validate_workflows(ci=None,publish=None):
  if wr!={"workflows":["CI"],"types":["completed"],"branches":["main"]}:errors.append("WORKFLOW_RUN")
  source=publish+"\n"+"\n".join(path.read_text() for path in (ROOT/"tools/candidates").glob("*.py"))
  required=("candidate-effective-plan","candidate-predecessor-context","candidate-pending","candidate-integration-result","candidate-outcome",
-  '"imagetools","inspect"','"pull","--quiet","--policy","always"','"up","-d","--no-build","--pull","never","--wait","--wait-timeout","600"',
+  '"imagetools","inspect"','"pull","--quiet","--policy","always"','"run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"','"up","-d","--no-build","--pull","never","--wait","--wait-timeout","600"',
   "candidate-plan/candidate-plan.json","component-result.json","pending.json","integration-result.json","artifact-digest","validate_pending.py","cleanup_image.py")
  if not all(x in source for x in required):errors.append("DEFINITIVE_PROTOCOL")
  errors.extend(validate_trust_order(jobs.get("trust",{})))

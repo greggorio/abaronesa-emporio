@@ -115,6 +115,54 @@ class DefinitiveContractTest(unittest.TestCase):
   source=workflow.PUBLISH.read_text()
   for old,new in (("  predecessor:","  previous:"),("contents: read\n  actions: read","contents: read\n  packages: write"),("docker/login-action@5e57","docker/login-action@main"),("name: candidate-outcome","name: removed-outcome")):
    with self.subTest(old=old):self.assertTrue(workflow.validate_workflows(publish=source.replace(old,new,1)))
+ def test_26_harness_migrates_erp_schema_before_starting_the_stack(self):
+  """A stack efemera aplica migrations antes do up, como o passo MIGRATE de producao."""
+  pending={k:v for k,v in json.loads((ROOT/"ops/releases/examples/candidate-manifest.example.json").read_text()).items() if k!="integration"}
+  calls=[]
+  class Done:
+   def __init__(self,code=0):self.returncode=code
+  def runner(args,**kwargs):calls.append(list(args));return Done(1 if args[:3]==["docker","image","inspect"] else 0)
+  model={"services":{name:{} for name in integrated_harness.SERVICES}};model["services"]["gateway"]["ports"]=[{"host_ip":"127.0.0.1","published":"49123","target":8080}]
+  rows=[{"Service":name,"State":"running","Health":"healthy"} for name in integrated_harness.SERVICES]
+  def output(args,**kwargs):
+   if "config" in args:return json.dumps(model)
+   if "ps" in args and "--format" in args:return json.dumps(rows)
+   return ""
+  probes=[{"id":x,"status":"passed"} for x in ("website_root","erp_root","website_theme_api","erp_login","erp_whatsapp_api","publisher_route_absent","deployer_route_absent","unknown_host_denied")]
+  with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{"CANDIDATE_GATEWAY_PORT":"49123"}),mock.patch("integrated_harness.probe_candidate.run",return_value=probes):
+   integrated_harness.execute(pending,Path("base.yml"),Path("override.yml"),"candidate-100-1",Path(raw),runner,output)
+  index=lambda token:next(i for i,c in enumerate(calls) if token in c)
+  migrate=[c for c in calls if "run" in c and "/app/bin/migrate" in c]
+  self.assertEqual(1,len(migrate))
+  self.assertEqual(["run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"],migrate[0][-7:])
+  self.assertLess(index("pull"),index("/app/bin/migrate"))
+  self.assertLess(index("/app/bin/migrate"),index("up"))
+  self.assertIn('"run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"',(ROOT/"tools/candidates/validate_candidate_workflow.py").read_text())
+
+ def test_27_harness_stops_when_migration_fails(self):
+  """Migration reprovada aborta antes do up e ainda executa o cleanup dirigido."""
+  pending={k:v for k,v in json.loads((ROOT/"ops/releases/examples/candidate-manifest.example.json").read_text()).items() if k!="integration"}
+  calls=[]
+  class Done:
+   def __init__(self,code=0):self.returncode=code
+  def runner(args,**kwargs):
+   calls.append(list(args))
+   if "/app/bin/migrate" in args:raise subprocess.CalledProcessError(20,args)
+   return Done(1 if args[:3]==["docker","image","inspect"] else 0)
+  model={"services":{name:{} for name in integrated_harness.SERVICES}};model["services"]["gateway"]["ports"]=[{"host_ip":"127.0.0.1","published":"49123","target":8080}]
+  def output(args,**kwargs):
+   if "config" in args:return json.dumps(model)
+   return ""
+  with tempfile.TemporaryDirectory() as raw,mock.patch.dict(os.environ,{"CANDIDATE_GATEWAY_PORT":"49123"}):
+   with self.assertRaises(subprocess.CalledProcessError):
+    integrated_harness.execute(pending,Path("base.yml"),Path("override.yml"),"candidate-100-1",Path(raw),runner,output)
+   self.assertFalse((Path(raw)/"integration-result.json").exists())
+  joined=[" ".join(c) for c in calls]
+  self.assertFalse(any(" up " in " "+c+" " for c in joined))
+  self.assertTrue(any(" down " in " "+c+" " for c in joined))
+  self.assertEqual(6,sum(c.startswith("docker image rm ") for c in joined))
+  self.assertTrue(any(c=="docker logout ghcr.io" for c in joined))
+
  def test_20_cleanup_protocol_tokens(self):
   source=(ROOT/"tools/candidates/integrated_harness.py").read_text()
   for token in ('["docker","image","rm",ref]','["docker","image","inspect",ref]','["docker","logout","ghcr.io"]',"project-residue"):self.assertIn(token,source)
