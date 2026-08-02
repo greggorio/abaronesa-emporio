@@ -23,8 +23,11 @@ def run():
  status,data=request(port,erp,"/api/whatsapp/status",token=token)
  if status!=200 or not isinstance(json.loads(data),dict):raise ValueError("erp_whatsapp_api")
  passed.append({"id":"erp_whatsapp_api","status":"passed"})
+ # Autenticado de proposito: sem token o Spring Security responde 401 antes de
+ # rotear, e 401 nao distingue rota ausente de rota existente. Com token valido,
+ # 404 prova que a rota nao existe nesta imagem.
  for pid,path in (("publisher_route_absent","/api/release-publisher/v1/candidates"),("deployer_route_absent","/api/deployment-control/v1/current")):
-  status,_=request(port,erp,path)
+  status,_=request(port,erp,path,token=token)
   if status!=404:raise ValueError(pid)
   passed.append({"id":pid,"status":"passed"})
  try:status,_=request(port,"unknown.invalid","/")
