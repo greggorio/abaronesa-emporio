@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "measurement": "after",
+  "sourceSha": "5b859b039d064c536b9eaba1348babc6890e2e7f",
+  "sourceTreeSha": "63125e67168b3d481fbe420bf2e6a859409f5886",
+  "sourceState": "working-tree-after-s32-spring-baseline-before-evidence-files",
+  "sourceDiffSha256": "74d89c6803a96760df2c8287296ba4d6bfca0696109369f79647772253e61315",
+  "measuredAtUtc": "2026-08-02T08:33:16.444193767Z",
+  "scanner": {
+    "name": "trivy",
+    "version": "0.70.0",
+    "image": "aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
+    "platform": "linux/amd64",
+    "severity": "HIGH,CRITICAL",
+    "ignoreUnfixed": false,
+    "exitCodePolicy": 1
+  },
+  "trivyDatabase": {
+    "vulnerabilityDb": {
+      "version": 2,
+      "updatedAtUtc": "2026-08-02T07:39:59.003136Z",
+      "nextUpdateUtc": "2026-08-03T07:39:59.00313571Z",
+      "downloadedAtUtc": "2026-08-02T08:32:42.931129239Z"
+    },
+    "javaDb": {
+      "version": 1,
+      "updatedAtUtc": "2026-08-02T01:25:19.348774871Z",
+      "nextUpdateUtc": "2026-08-05T01:25:19.348774701Z",
+      "downloadedAtUtc": "2026-08-02T08:33:16.145997075Z"
+    }
+  },
+  "images": {
+    "backend": {
+      "package": "s32-spring-5b859b0-backend:local",
+      "imageId": "sha256:127c76de37763bdb5bcefb429c64e5f7afc94afc61c35ee39a0928d0abae5aab",
+      "architecture": "amd64",
+      "os": "alpine 3.23.5",
+      "measuredAtUtc": "2026-08-02T08:33:16.444193767Z"
+    },
+    "website_back": {
+      "package": "s32-spring-5b859b0-website-back:local",
+      "imageId": "sha256:4356a2a83077a3e67406bf00917395e3f6f721b71593ec4f7f65abf8b3b977aa",
+      "architecture": "amd64",
+      "os": "alpine 3.23.5",
+      "measuredAtUtc": "2026-08-02T07:59:39.045446522Z"
+    }
+  },
+  "counts": {
+    "total": 2,
+    "byComponent": {
+      "backend": {
+        "CRITICAL": 0,
+        "HIGH": 2
+      },
+      "website_back": {
+        "CRITICAL": 0,
+        "HIGH": 0
+      }
+    },
+    "byComponentPackage": {
+      "backend": {
+        "net.sf.jasperreports:jasperreports": 2
+      },
+      "website_back": {}
+    },
+    "byComponentOrigin": {
+      "backend": {
+        "application-java": 2
+      },
+      "website_back": {}
+    },
+    "bySeverity": {
+      "CRITICAL": 0,
+      "HIGH": 2
+    },
+    "byOrigin": {
+      "application-java": 2
+    }
+  },
+  "findings": [
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2025-10492",
+      "severity": "HIGH",
+      "packageName": "net.sf.jasperreports:jasperreports",
+      "installedVersion": "6.20.6",
+      "fixedVersion": "7.0.4",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/jasperreports-6.20.6.jar"
+    },
+    {
+      "component": "backend",
+      "target": "Java",
+      "class": "lang-pkgs",
+      "type": "jar",
+      "vulnerabilityId": "CVE-2026-6009",
+      "severity": "HIGH",
+      "packageName": "net.sf.jasperreports:jasperreports",
+      "installedVersion": "6.20.6",
+      "fixedVersion": "7.0.7",
+      "packageOrigin": "application-java",
+      "originEvidence": "PkgPath=app/app.jar/BOOT-INF/lib/jasperreports-6.20.6.jar"
+    }
+  ]
+}

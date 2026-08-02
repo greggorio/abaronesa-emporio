@@ -5,6 +5,7 @@ import java.util.Objects;
 import java.util.function.Function;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.CoreErrorCode;
 import org.flywaydb.core.api.ErrorCode;
 import org.flywaydb.core.api.logging.Log;
 import org.flywaydb.core.api.logging.LogCreator;
@@ -83,6 +84,12 @@ public final class ProductionMigrationMain {
     private static int finish(PrintStream output, int exitCode, String marker) {
         output.println(marker);
         return exitCode;
+    }
+
+    static boolean isPending(ValidateOutput migration) {
+        ErrorCode code = migration.errorDetails.errorCode;
+        return code == CoreErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED
+                || code == CoreErrorCode.RESOLVED_REPEATABLE_MIGRATION_NOT_APPLIED;
     }
 
     private static MigrationOperations createFlywayOperations(
@@ -171,7 +178,7 @@ public final class ProductionMigrationMain {
             if (allowPending
                     && !result.invalidMigrations.isEmpty()
                     && result.invalidMigrations.stream()
-                            .allMatch(FlywayOperations::isPending)) {
+                            .allMatch(ProductionMigrationMain::isPending)) {
                 return;
             }
             throw new IllegalStateException("invalid migrations");
@@ -185,12 +192,6 @@ public final class ProductionMigrationMain {
         @Override
         public void migrate() {
             flyway.migrate();
-        }
-
-        private static boolean isPending(ValidateOutput migration) {
-            ErrorCode code = migration.errorDetails.errorCode;
-            return code == ErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED
-                    || code == ErrorCode.RESOLVED_REPEATABLE_MIGRATION_NOT_APPLIED;
         }
     }
 }

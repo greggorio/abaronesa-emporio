@@ -22,6 +22,43 @@ RUNTIME_BASE = (
     "sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c"
 )
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
+FRONTEND_BASE = (
+    "docker.io/docker/dockerfile@"
+    "sha256:b5f3b260a9678e1d83d2fce86eeddf79420b79147eaba2a25986f47133d73720"
+)
+FRONTEND_DIRECTIVE = f"# syntax={FRONTEND_BASE}"
+SPRING_BOOT_BASELINE = "3.5.16"
+SPRINGDOC_BASELINE = "2.8.17"
+BOM_OWNED = re.compile(r"jackson|tomcat", re.I)
+OKHTTP_BOM_GROUP = "com.squareup.okhttp3"
+OKHTTP_BOM_ARTIFACT = "okhttp-bom"
+OKHTTP_BOM_VERSION = "${okhttp.version}"
+PROTECTIVE_PROPERTIES = {
+    "backend": {
+        "postgresql.version": "42.7.12",
+        "thymeleaf.version": "3.1.5.RELEASE",
+        "okhttp.version": "4.12.0",
+    },
+    "website_back": {
+        "postgresql.version": "42.7.12",
+        "netty.version": "4.1.136.Final",
+    },
+}
+PROTECTIVE_MANAGED = {
+    "backend": {
+        "commons-beanutils": "1.11.0",
+        "neethi": "3.2.2",
+    },
+    "website_back": {
+        "protobuf-java": "3.25.5",
+        "grpc-netty-shaded": "1.75.0",
+    },
+}
+FLYWAY_REQUIRED = (
+    "CoreErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED",
+    "CoreErrorCode.RESOLVED_REPEATABLE_MIGRATION_NOT_APPLIED",
+)
+FLYWAY_OBSOLETE = re.compile(r"(?<!Core)\bErrorCode\.RESOLVED_")
 REQUIRED_IGNORES = {
     ".git", ".github", ".env", ".env.*", "!.env.example", "target", "uploads",
     "*.pfx", "*.p12", "*.pem", "*.key", "*.hprof", "hs_err_pid*",
@@ -40,6 +77,9 @@ class ContractFiles:
     website_prod_properties: Path
     website_security: Path
     documentation: Path
+    backend_pom: Path
+    backend_migration: Path
+    website_migration: Path
 
 
 def default_files(root: Path = ROOT) -> ContractFiles:
@@ -53,6 +93,9 @@ def default_files(root: Path = ROOT) -> ContractFiles:
         root / "website_back/src/main/resources/application-prod.properties",
         root / "website_back/src/main/java/com/baronesa/website/config/SecurityConfig.java",
         root / "docs/infrastructure/deployment/images/JAVA_IMAGES.md",
+        root / "backend/pom.xml",
+        root / "backend/src/main/java/com/baronesa/emporio/migration/ProductionMigrationMain.java",
+        root / "website_back/src/main/java/com/baronesa/website/migration/ProductionMigrationMain.java",
     )
 
 
@@ -69,7 +112,63 @@ def _runtime(dockerfile: str) -> str:
     return "FROM " + parts[2] if len(parts) == 3 else ""
 
 
+def _validate_pom(name: str, text: str, errors: list[str]) -> None:
+    parent = re.search(r"(?s)<parent>(.*?)</parent>", text)
+    parent_text = parent.group(1) if parent else ""
+    parent_version = re.search(r"<version>\s*([^<\s]+)\s*</version>", parent_text)
+    if (
+        "<artifactId>spring-boot-starter-parent</artifactId>" not in parent_text
+        or parent_version is None
+        or parent_version.group(1) != SPRING_BOOT_BASELINE
+    ):
+        errors.append(f"SPRING_BOOT_BASELINE_INVALID:{name}")
+
+    springdoc = re.search(r"<springdoc\.version>\s*([^<\s]+)\s*</springdoc\.version>", text)
+    if springdoc is None or springdoc.group(1) != SPRINGDOC_BASELINE:
+        errors.append(f"SPRINGDOC_BASELINE_INVALID:{name}")
+
+    properties = re.search(r"(?s)<properties>(.*?)</properties>", text)
+    declared = re.findall(r"(?m)^\s*<([A-Za-z][\w.\-]*)>", properties.group(1) if properties else "")
+    if any(BOM_OWNED.search(item) for item in declared):
+        errors.append(f"SPRING_BOM_OVERRIDE_FORBIDDEN:{name}")
+
+    for prop, version in PROTECTIVE_PROPERTIES[name].items():
+        if f"<{prop}>{version}</{prop}>" not in text:
+            errors.append(f"PROTECTIVE_OVERRIDE_MISSING:{name}:{prop}")
+    for artifact, version in PROTECTIVE_MANAGED[name].items():
+        block = re.search(
+            r"(?s)<artifactId>%s</artifactId>\s*<version>\s*([^<\s]+)\s*</version>" % re.escape(artifact),
+            text,
+        )
+        if block is None or block.group(1) != version:
+            errors.append(f"PROTECTIVE_OVERRIDE_MISSING:{name}:{artifact}")
+
+    if name == "backend" and not _imports_okhttp_bom(text):
+        errors.append(f"OKHTTP_BOM_IMPORT_REQUIRED:{name}")
+
+
+def _imports_okhttp_bom(text: str) -> bool:
+    for block in re.findall(r"(?s)<dependency>(.*?)</dependency>", text):
+        if f"<artifactId>{OKHTTP_BOM_ARTIFACT}</artifactId>" not in block:
+            continue
+        return (
+            f"<groupId>{OKHTTP_BOM_GROUP}</groupId>" in block
+            and f"<version>{OKHTTP_BOM_VERSION}</version>" in block
+            and "<type>pom</type>" in block
+            and "<scope>import</scope>" in block
+        )
+    return False
+
+
+def _validate_migration(name: str, text: str, errors: list[str]) -> None:
+    missing = any(marker not in text for marker in FLYWAY_REQUIRED)
+    if missing or FLYWAY_OBSOLETE.search(text):
+        errors.append(f"FLYWAY_ERROR_CODE_INVALID:{name}")
+
+
 def _validate_dockerfile(name: str, text: str, errors: list[str]) -> None:
+    if text.splitlines()[:1] != [FRONTEND_DIRECTIVE]:
+        errors.append(f"DOCKERFILE_FRONTEND_INVALID:{name}")
     from_lines = re.findall(r"(?m)^FROM\s+(\S+)\s+AS\s+(\w+)\s*$", text)
     if len(from_lines) != 2 or [stage for _, stage in from_lines] != ["build", "runtime"]:
         errors.append(f"STAGES_INVALID:{name}")
@@ -162,11 +261,18 @@ def validate(files: ContractFiles | None = None) -> list[str]:
     prod = _read(files.website_prod_properties, errors)
     security = _read(files.website_security, errors)
     _read(files.documentation, errors)
+    backend_pom = _read(files.backend_pom, errors)
+    backend_migration = _read(files.backend_migration, errors)
+    website_migration = _read(files.website_migration, errors)
     if errors:
         return errors
 
     _validate_dockerfile("backend", backend, errors)
     _validate_dockerfile("website_back", website, errors)
+    _validate_pom("backend", backend_pom, errors)
+    _validate_pom("website_back", pom, errors)
+    _validate_migration("backend", backend_migration, errors)
+    _validate_migration("website_back", website_migration, errors)
     for name, content in (("backend", backend_ignore), ("website_back", website_ignore)):
         entries = {line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")}
         if not REQUIRED_IGNORES <= entries:

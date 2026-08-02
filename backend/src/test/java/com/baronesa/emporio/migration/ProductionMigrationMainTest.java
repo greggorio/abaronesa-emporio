@@ -12,6 +12,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.flywaydb.core.api.CoreErrorCode;
+import org.flywaydb.core.api.ErrorCode;
+import org.flywaydb.core.api.ErrorDetails;
+import org.flywaydb.core.api.output.ValidateOutput;
 import org.junit.jupiter.api.Test;
 
 class ProductionMigrationMainTest {
@@ -120,6 +124,30 @@ class ProductionMigrationMainTest {
                 ProductionMigrationMain.FAILED_MARKER + System.lineSeparator(),
                 result.output());
         assertFalse(result.output().contains("fictional secret"));
+    }
+
+    @Test
+    void pendingClassifierAcceptsOnlyResolvedNotAppliedCodes() {
+        assertTrue(ProductionMigrationMain.isPending(
+                validation(CoreErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED)));
+        assertTrue(ProductionMigrationMain.isPending(
+                validation(CoreErrorCode.RESOLVED_REPEATABLE_MIGRATION_NOT_APPLIED)));
+    }
+
+    @Test
+    void pendingClassifierRejectsEveryOtherFlywayErrorCode() {
+        assertFalse(ProductionMigrationMain.isPending(
+                validation(CoreErrorCode.APPLIED_VERSIONED_MIGRATION_NOT_RESOLVED)));
+        assertFalse(ProductionMigrationMain.isPending(
+                validation(CoreErrorCode.APPLIED_REPEATABLE_MIGRATION_NOT_RESOLVED)));
+    }
+
+    private static ValidateOutput validation(ErrorCode code) {
+        return new ValidateOutput(
+                "1",
+                "baseline",
+                "db/migration/V1__baseline.sql",
+                new ErrorDetails(code, "fictional validation detail"));
     }
 
     private static Invocation invoke(

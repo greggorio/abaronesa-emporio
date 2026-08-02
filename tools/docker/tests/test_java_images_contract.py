@@ -192,6 +192,222 @@ class JavaImagesContractTest(unittest.TestCase):
         self.mutate(self.files.backend_dockerfile, contract.BUILD_BASE, previous)
         self.assertIn("BASE_TAG_INVALID:backend", contract.validate(self.files))
 
+    def assert_error(self, error: str):
+        self.assertIn(error, contract.validate(self.files))
+
+    def dockerfile(self, component: str) -> Path:
+        return (
+            self.files.backend_dockerfile
+            if component == "backend"
+            else self.files.website_dockerfile
+        )
+
+    def pom(self, component: str) -> Path:
+        return (
+            self.files.backend_pom
+            if component == "backend"
+            else self.files.website_pom
+        )
+
+    def migration(self, component: str) -> Path:
+        return (
+            self.files.backend_migration
+            if component == "backend"
+            else self.files.website_migration
+        )
+
+    def test_38_floating_frontend_is_rejected(self):
+        for component in ("backend", "website_back"):
+            with self.subTest(component=component):
+                self.setUp()
+                self.mutate(
+                    self.dockerfile(component),
+                    contract.FRONTEND_DIRECTIVE,
+                    "# syntax=docker/dockerfile:1.7",
+                )
+                self.assert_error(f"DOCKERFILE_FRONTEND_INVALID:{component}")
+
+    def test_39_frontend_without_digest_is_rejected(self):
+        self.mutate(
+            self.files.backend_dockerfile,
+            contract.FRONTEND_DIRECTIVE,
+            "# syntax=docker.io/docker/dockerfile:1.7",
+        )
+        self.assert_error("DOCKERFILE_FRONTEND_INVALID:backend")
+
+    def test_40_spring_boot_baseline_is_exact(self):
+        for component in ("backend", "website_back"):
+            with self.subTest(component=component):
+                self.setUp()
+                self.mutate(
+                    self.pom(component),
+                    f"<version>{contract.SPRING_BOOT_BASELINE}</version>",
+                    "<version>3.3.13</version>",
+                )
+                self.assert_error(f"SPRING_BOOT_BASELINE_INVALID:{component}")
+
+    def test_41_springdoc_baseline_is_exact(self):
+        for component in ("backend", "website_back"):
+            with self.subTest(component=component):
+                self.setUp()
+                self.mutate(
+                    self.pom(component),
+                    f"<springdoc.version>{contract.SPRINGDOC_BASELINE}</springdoc.version>",
+                    "<springdoc.version>2.6.0</springdoc.version>",
+                )
+                self.assert_error(f"SPRINGDOC_BASELINE_INVALID:{component}")
+
+    def test_42_tomcat_override_is_forbidden(self):
+        for component in ("backend", "website_back"):
+            with self.subTest(component=component):
+                self.setUp()
+                self.mutate(
+                    self.pom(component),
+                    "        <springdoc.version>",
+                    "        <tomcat.version>10.1.55</tomcat.version>\n        <springdoc.version>",
+                )
+                self.assert_error(f"SPRING_BOM_OVERRIDE_FORBIDDEN:{component}")
+
+    def test_43_jackson_override_is_forbidden(self):
+        for component in ("backend", "website_back"):
+            with self.subTest(component=component):
+                self.setUp()
+                self.mutate(
+                    self.pom(component),
+                    "        <springdoc.version>",
+                    "        <jackson-bom.version>2.18.8</jackson-bom.version>\n        <springdoc.version>",
+                )
+                self.assert_error(f"SPRING_BOM_OVERRIDE_FORBIDDEN:{component}")
+
+    def test_44_protective_property_removal_is_rejected(self):
+        cases = (
+            ("backend", "postgresql.version", "42.7.12"),
+            ("backend", "thymeleaf.version", "3.1.5.RELEASE"),
+            ("website_back", "postgresql.version", "42.7.12"),
+            ("website_back", "netty.version", "4.1.136.Final"),
+        )
+        for component, prop, version in cases:
+            with self.subTest(component=component, property=prop):
+                self.setUp()
+                self.mutate(self.pom(component), f"<{prop}>{version}</{prop}>", "")
+                self.assert_error(
+                    f"PROTECTIVE_OVERRIDE_MISSING:{component}:{prop}"
+                )
+
+    def test_45_protective_managed_downgrade_is_rejected(self):
+        cases = (
+            ("backend", "commons-beanutils", "1.11.0", "1.9.4"),
+            ("backend", "neethi", "3.2.2", "3.1.1"),
+            ("website_back", "protobuf-java", "3.25.5", "3.25.1"),
+            ("website_back", "grpc-netty-shaded", "1.75.0", "1.68.0"),
+        )
+        for component, artifact, version, downgrade in cases:
+            with self.subTest(component=component, artifact=artifact):
+                self.setUp()
+                self.mutate(
+                    self.pom(component),
+                    f"<artifactId>{artifact}</artifactId>\n"
+                    f"                <version>{version}</version>",
+                    f"<artifactId>{artifact}</artifactId>\n"
+                    f"                <version>{downgrade}</version>",
+                )
+                self.assert_error(
+                    f"PROTECTIVE_OVERRIDE_MISSING:{component}:{artifact}"
+                )
+
+    def test_46_missing_core_error_code_is_rejected(self):
+        for component in ("backend", "website_back"):
+            with self.subTest(component=component):
+                self.setUp()
+                self.mutate(
+                    self.migration(component),
+                    "CoreErrorCode.RESOLVED_REPEATABLE_MIGRATION_NOT_APPLIED",
+                    "CoreErrorCode.NULL_VARIABLE",
+                )
+                self.assert_error(f"FLYWAY_ERROR_CODE_INVALID:{component}")
+
+    def test_47_obsolete_error_code_form_is_rejected(self):
+        for component in ("backend", "website_back"):
+            with self.subTest(component=component):
+                self.setUp()
+                self.mutate(
+                    self.migration(component),
+                    "CoreErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED",
+                    "ErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED",
+                )
+                self.assert_error(f"FLYWAY_ERROR_CODE_INVALID:{component}")
+
+    def test_49_okhttp_property_value_is_exact(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<okhttp.version>4.12.0</okhttp.version>",
+            "<okhttp.version>3.14.9</okhttp.version>",
+        )
+        self.assert_error("PROTECTIVE_OVERRIDE_MISSING:backend:okhttp.version")
+
+    def test_50_okhttp_property_removal_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<okhttp.version>4.12.0</okhttp.version>",
+            "",
+        )
+        self.assert_error("PROTECTIVE_OVERRIDE_MISSING:backend:okhttp.version")
+
+    def test_51_okhttp_bom_import_is_required(self):
+        text = self.files.backend_pom.read_text(encoding="utf-8")
+        block = (
+            "<dependency>\n"
+            "                <groupId>com.squareup.okhttp3</groupId>\n"
+            "                <artifactId>okhttp-bom</artifactId>\n"
+            "                <version>${okhttp.version}</version>\n"
+            "                <type>pom</type>\n"
+            "                <scope>import</scope>\n"
+            "            </dependency>\n            "
+        )
+        self.assertIn(block, text)
+        self.files.backend_pom.write_text(text.replace(block, "", 1), encoding="utf-8")
+        self.assert_error("OKHTTP_BOM_IMPORT_REQUIRED:backend")
+
+    def test_52_okhttp_bom_literal_version_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<version>${okhttp.version}</version>",
+            "<version>4.12.0</version>",
+        )
+        self.assert_error("OKHTTP_BOM_IMPORT_REQUIRED:backend")
+
+    def test_53_okhttp_bom_without_pom_type_is_rejected(self):
+        self.mutate(self.files.backend_pom, "<type>pom</type>\n", "")
+        self.assert_error("OKHTTP_BOM_IMPORT_REQUIRED:backend")
+
+    def test_54_okhttp_bom_without_import_scope_is_rejected(self):
+        self.mutate(self.files.backend_pom, "<scope>import</scope>\n", "")
+        self.assert_error("OKHTTP_BOM_IMPORT_REQUIRED:backend")
+
+    def test_55_isolated_okhttp_property_is_not_enough(self):
+        text = self.files.backend_pom.read_text(encoding="utf-8")
+        block = (
+            "<dependency>\n"
+            "                <groupId>com.squareup.okhttp3</groupId>\n"
+            "                <artifactId>okhttp-bom</artifactId>\n"
+            "                <version>${okhttp.version}</version>\n"
+            "                <type>pom</type>\n"
+            "                <scope>import</scope>\n"
+            "            </dependency>\n            "
+        )
+        self.files.backend_pom.write_text(text.replace(block, "", 1), encoding="utf-8")
+        errors = contract.validate(self.files)
+        self.assertEqual(["OKHTTP_BOM_IMPORT_REQUIRED:backend"], errors)
+
+    def test_48_broadened_tolerated_error_list_is_rejected(self):
+        self.mutate(
+            self.files.backend_migration,
+            "CoreErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED",
+            "ErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED",
+        )
+        errors = contract.validate(self.files)
+        self.assertEqual(["FLYWAY_ERROR_CODE_INVALID:backend"], errors)
+
 
 if __name__ == "__main__":
     unittest.main()
