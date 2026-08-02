@@ -862,3 +862,57 @@ mesma separação usada em produção: migrar os bancos `erp` e `website` com as
 imagens candidatas e somente então subir os sete serviços.
 
 IN_PROGRESS — aguardando execução e aceite da S35
+
+## 20. Fechamento terminal pela S36
+
+> **Data:** 02/08/2026
+> **SHA terminal:** `50f423a979d7723d0e15d56b1d72625ea2b8ebea`
+> **Estado:** `ACCEPTED`
+
+O histórico exploratório posterior ao checkpoint `1824cf6` foi preservado sem
+rebase, squash ou exclusão de evidência:
+
+| SHA | Causa tratada | CI | Publish Candidate |
+|---|---|---:|---:|
+| `13fda32` | migration ERP antes do startup | `30747925929` success | `30748153320` failure |
+| `8f4ecc0` | diagnóstico sanitizado da integração | `30748515262` success | `30748718048` failure |
+| `e2eedaa` | seed idempotente do grupo Admin | `30749174374` failure | `30749241187` failure |
+| `6d18c38` | fixtures e hashes após migration | `30749655445` success | `30749916445` failure |
+| `47ac25f` | parser do JSON Lines do Compose | `30750432188` success | `30750649542` failure |
+| `44758a2` | token válido nos probes protegidos | `30751150117` success | `30751442252` failure |
+| `68a3528` | 404 correto para rota API ausente | `30751925552` success | `30752210806` success |
+
+Esses runs intermediários permanecem evidência causal, mas seus artifacts
+reprovados não foram reutilizados. O candidato `68a3528...` foi a primeira
+prova funcional completa e permaneceu predecessor válido do fechamento.
+
+A S36 fechou os dois riscos terminais no commit
+`50f423a979d7723d0e15d56b1d72625ea2b8ebea`: as imagens candidatas executam as
+migrations de `backend` e `website_back`, nessa ordem e antes do `up`, e as
+sete credenciais efêmeras são mascaradas antes da gravação no ambiente do
+runner. A matriz local terminou com 65 testes focais, 17 validadores e os gates
+de deploy e secret scan verdes, com `unsupported=0`.
+
+A CI `30757174785` concluiu 13/13 jobs em `success`. O Publish Candidate
+`30757430990` concluiu 11/11 jobs em `success`; a auditoria sanitizada registrou
+as sete chaves como `MASKED`, sem atribuição não mascarada. Os três artifacts
+finais foram validados independentemente:
+
+| Artifact | ID | Digest API |
+|---|---:|---|
+| `candidate-effective-plan` | `8836368371` | `sha256:f409bdde9726cbabe48e57ba71726f05e8b5ba37ac28ab7419af24462b82dd84` |
+| `candidate-manifest` | `8836442429` | `sha256:6b8e0bd3eafedefd8dfe55828c54c270b53f28cc995265345f5262b70e182bfd` |
+| `candidate-outcome` | `8836442612` | `sha256:88864e8f49930d8fe68c267dd5ad41c1b94e0d0bc6c032c170fb65d522830d3d` |
+
+O candidato terminal é
+`candidate-50f423a979d7723d0e15d56b1d72625ea2b8ebea-30757430990-1`, com os seis
+componentes canônicos, checks e integração `passed`, referências por digest e
+outcome `published`. Não houve release, tag, deploy, rollback, VPS ou efeito de
+produção.
+
+S35 permanece `SUPERSEDED`: sua task histórica não foi fingida como executada.
+O fechamento funcional que a ultrapassou está registrado pelos commits e runs
+reais acima. Com a revisão independente da S36, não resta item terminal da
+S30a.
+
+ACCEPTED — S30a encerrada; continuidade transferida à S30b
