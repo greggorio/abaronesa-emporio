@@ -779,3 +779,22 @@ avanço da S30a até o usuário aceitar ou rejeitar o risco dos nove CVEs e nome
 o responsável pela remediação.
 
 IN_PROGRESS — aguardando decisão humana sobre nove CVEs residuais
+
+## 16. Fechamento local dos grupos A, B e C
+
+> **Data:** 02/08/2026
+> **Estado:** `IN_PROGRESS — fechamento remoto autorizado`
+
+As slices S31, S32 e S33 foram aceitas e removeram, respectivamente, os grupos
+B (npm no runtime WhatsApp), A (linha Spring) e C (cadeia JasperReports não
+utilizada). A medição final aceita retorna zero achado HIGH/CRITICAL nos seis
+componentes do inventário local da S30a.
+
+A decisão humana anteriormente pendente foi substituída por remediação causal,
+sem `.trivyignore`, redução de severidade ou exceção de workflow. Não resta
+resíduo local a aceitar. A
+`S30a-paridade-local-fechamento-ci-candidato.authorization-02.md` autoriza a
+única ação seguinte: publicar a cadeia local por fast-forward e observar a CI
+e o Publish Candidate associados ao SHA exato.
+
+IN_PROGRESS — aguardando CI e candidato remotos do checkpoint autorizado

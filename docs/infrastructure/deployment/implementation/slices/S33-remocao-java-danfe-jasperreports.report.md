@@ -504,3 +504,33 @@ caminhos.
 commit final = HEAD entregue
 
 IN_PROGRESS — aguardando revisão do orquestrador
+
+## 9. Revisão do orquestrador
+
+> **Data:** 02/08/2026
+> **Resultado:** `ACCEPTED`
+> **Commit aceito:** `db9cc9030f290b955b74b89438a0e87950bbe7b8`
+
+A revisão independente reconfirmou o validador Java, os 117 testes da suíte
+Docker, a árvore Maven sem `java-danfe`/JasperReports e com `java-nfe` e o
+renderer preservados, a ausência dos três jars no artefato empacotado, o teste
+focal que gera PDF real e o secret scan completo com `unsupported=0`.
+
+Os hashes de linhagem foram reproduzidos sobre os quatro arquivos técnicos:
+
+```text
+sourceDiffSha256 = 1616c3319203d86c19cf6d7991c32c255673f844d412924979a1550b860cc744
+sourceTreeSha = 5ebb197b8dd1798d84c003fbd9c3d65372569961
+```
+
+O refinamento do token do contrato de `swconsultoria` para o artefato
+`java-danfe` é aceito: o grupo Maven é compartilhado pelo `java-nfe` que a
+slice deve preservar, e o caso 67 fixa essa distinção. A contagem de commits
+também está correta: 13 no preflight e 14 após o commit técnico.
+
+O JSON aceito registra zero HIGH/CRITICAL no `backend`; com os resultados já
+aceitos de S31 e S32, os grupos A, B e C da S30a estão integralmente fechados.
+O commit contém exatamente os seis caminhos autorizados, o worktree está
+limpo e nenhum push foi realizado.
+
+ACCEPTED
