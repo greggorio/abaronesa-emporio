@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "measurement": "after",
+  "sourceSha": "93f4629dfa4469c36f1103069902a0a7272e4a49",
+  "sourceTreeSha": "5ebb197b8dd1798d84c003fbd9c3d65372569961",
+  "sourceState": "working-tree-after-s33-jasperreports-removal-before-evidence-files",
+  "sourceDiffSha256": "1616c3319203d86c19cf6d7991c32c255673f844d412924979a1550b860cc744",
+  "measuredAtUtc": "2026-08-02T09:02:54.088479638Z",
+  "scanner": {
+    "name": "trivy",
+    "version": "0.70.0",
+    "image": "aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
+    "platform": "linux/amd64",
+    "severity": "HIGH,CRITICAL",
+    "ignoreUnfixed": false,
+    "exitCodePolicy": 1
+  },
+  "trivyDatabase": {
+    "vulnerabilityDb": {
+      "version": 2,
+      "updatedAtUtc": "2026-08-02T07:39:59.003136Z",
+      "nextUpdateUtc": "2026-08-03T07:39:59.00313571Z",
+      "downloadedAtUtc": "2026-08-02T09:02:19.432089816Z"
+    },
+    "javaDb": {
+      "version": 1,
+      "updatedAtUtc": "2026-08-02T01:25:19.348774871Z",
+      "nextUpdateUtc": "2026-08-05T01:25:19.348774701Z",
+      "downloadedAtUtc": "2026-08-02T09:02:53.827717505Z"
+    }
+  },
+  "images": {
+    "backend": {
+      "package": "s33-jasper-93f4629-backend:local",
+      "imageId": "sha256:b5272f07ccb848707b1a271b143d8910c62633d560d773ad86aa6dfe0c64105e",
+      "architecture": "amd64",
+      "os": "alpine 3.23.5",
+      "measuredAtUtc": "2026-08-02T09:02:54.088479638Z"
+    }
+  },
+  "counts": {
+    "total": 0,
+    "byComponent": {
+      "backend": {
+        "CRITICAL": 0,
+        "HIGH": 0
+      }
+    },
+    "byComponentPackage": {
+      "backend": {}
+    },
+    "byComponentOrigin": {
+      "backend": {}
+    },
+    "bySeverity": {
+      "CRITICAL": 0,
+      "HIGH": 0
+    },
+    "byOrigin": {}
+  },
+  "findings": []
+}

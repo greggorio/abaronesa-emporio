@@ -399,6 +399,119 @@ class JavaImagesContractTest(unittest.TestCase):
         errors = contract.validate(self.files)
         self.assertEqual(["OKHTTP_BOM_IMPORT_REQUIRED:backend"], errors)
 
+    def test_56_java_danfe_property_reintroduction_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "        <java-nfe.version>4.00.42</java-nfe.version>",
+            "        <java-nfe.version>4.00.42</java-nfe.version>\n"
+            "        <java-danfe.version>1.8</java-danfe.version>",
+        )
+        self.assert_error("UNUSED_JAVA_DANFE_FORBIDDEN:backend")
+
+    def test_57_java_danfe_dependency_reintroduction_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "        <dependency>\n            <groupId>com.google.zxing</groupId>",
+            "        <dependency>\n"
+            "            <groupId>br.com.swconsultoria</groupId>\n"
+            "            <artifactId>java-danfe</artifactId>\n"
+            "            <version>1.8</version>\n"
+            "        </dependency>\n"
+            "        <dependency>\n            <groupId>com.google.zxing</groupId>",
+        )
+        self.assert_error("UNUSED_JAVA_DANFE_FORBIDDEN:backend")
+
+    def test_58_direct_jasperreports_dependency_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "        <dependency>\n            <groupId>com.google.zxing</groupId>",
+            "        <dependency>\n"
+            "            <groupId>net.sf.jasperreports</groupId>\n"
+            "            <artifactId>jasperreports</artifactId>\n"
+            "            <version>7.0.4</version>\n"
+            "        </dependency>\n"
+            "        <dependency>\n            <groupId>com.google.zxing</groupId>",
+        )
+        self.assert_error("JASPERREPORTS_FORBIDDEN:backend")
+
+    def test_59_jasperreports_fonts_dependency_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "        <dependency>\n            <groupId>com.google.zxing</groupId>",
+            "        <dependency>\n"
+            "            <groupId>net.sf.jasperreports</groupId>\n"
+            "            <artifactId>jasperreports-fonts</artifactId>\n"
+            "            <version>6.20.6</version>\n"
+            "        </dependency>\n"
+            "        <dependency>\n            <groupId>com.google.zxing</groupId>",
+        )
+        self.assert_error("JASPERREPORTS_FORBIDDEN:backend")
+
+    def test_60_jasperreports_property_reintroduction_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "        <java-nfe.version>4.00.42</java-nfe.version>",
+            "        <java-nfe.version>4.00.42</java-nfe.version>\n"
+            "        <jasperreports.version>6.20.6</jasperreports.version>",
+        )
+        self.assert_error("JASPERREPORTS_FORBIDDEN:backend")
+
+    def test_61_thymeleaf_starter_removal_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<artifactId>spring-boot-starter-thymeleaf</artifactId>",
+            "<artifactId>spring-boot-starter-web</artifactId>",
+        )
+        self.assert_error("DANFE_RENDERER_REQUIRED:backend")
+
+    def test_62_flying_saucer_removal_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<artifactId>flying-saucer-pdf-openpdf</artifactId>",
+            "<artifactId>flying-saucer-core</artifactId>",
+        )
+        self.assert_error("DANFE_RENDERER_REQUIRED:backend")
+
+    def test_63_flying_saucer_downgrade_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<artifactId>flying-saucer-pdf-openpdf</artifactId>\n"
+            "            <version>9.1.22</version>",
+            "<artifactId>flying-saucer-pdf-openpdf</artifactId>\n"
+            "            <version>9.1.20</version>",
+        )
+        self.assert_error("DANFE_RENDERER_REQUIRED:backend")
+
+    def test_64_zxing_core_downgrade_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<artifactId>core</artifactId>\n            <version>3.5.3</version>",
+            "<artifactId>core</artifactId>\n            <version>3.4.1</version>",
+        )
+        self.assert_error("DANFE_RENDERER_REQUIRED:backend")
+
+    def test_65_zxing_javase_downgrade_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<artifactId>javase</artifactId>\n            <version>3.5.3</version>",
+            "<artifactId>javase</artifactId>\n            <version>3.4.1</version>",
+        )
+        self.assert_error("DANFE_RENDERER_REQUIRED:backend")
+
+    def test_66_zxing_javase_removal_is_rejected(self):
+        self.mutate(
+            self.files.backend_pom,
+            "<artifactId>javase</artifactId>",
+            "<artifactId>javase-removed</artifactId>",
+        )
+        self.assert_error("DANFE_RENDERER_REQUIRED:backend")
+
+    def test_67_java_nfe_is_not_confused_with_java_danfe(self):
+        text = self.files.backend_pom.read_text(encoding="utf-8")
+        self.assertIn("<artifactId>java-nfe</artifactId>", text)
+        self.assertIn("<groupId>br.com.swconsultoria</groupId>", text)
+        self.assertEqual([], contract.validate(self.files))
+
     def test_48_broadened_tolerated_error_list_is_rejected(self):
         self.mutate(
             self.files.backend_migration,

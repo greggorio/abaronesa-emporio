@@ -30,7 +30,6 @@
         <jjwt.version>0.12.6</jjwt.version>
         <lombok.version>1.18.34</lombok.version>
         <java-nfe.version>4.00.42</java-nfe.version>
-        <java-danfe.version>1.8</java-danfe.version>
         <saaj.version>3.0.2</saaj.version>
         <wsdl4j.version>1.6.3</wsdl4j.version>
         <postgresql.version>42.7.12</postgresql.version>
@@ -228,26 +227,6 @@
             <groupId>br.com.swconsultoria</groupId>
             <artifactId>java-nfe</artifactId>
             <version>${java-nfe.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>xml-apis</groupId>
-                    <artifactId>xml-apis</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>xerces</groupId>
-                    <artifactId>xercesImpl</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>xalan</groupId>
-                    <artifactId>xalan</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>br.com.swconsultoria</groupId>
-            <artifactId>java-danfe</artifactId>
-            <version>${java-danfe.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>xml-apis</groupId>

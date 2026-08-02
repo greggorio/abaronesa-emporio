@@ -54,6 +54,14 @@ PROTECTIVE_MANAGED = {
         "grpc-netty-shaded": "1.75.0",
     },
 }
+JAVA_DANFE_TOKENS = ("java-danfe",)
+JASPERREPORTS_TOKENS = ("jasperreports",)
+DANFE_RENDERER_REQUIRED = (
+    ("org.springframework.boot", "spring-boot-starter-thymeleaf", None),
+    ("org.xhtmlrenderer", "flying-saucer-pdf-openpdf", "9.1.22"),
+    ("com.google.zxing", "core", "3.5.3"),
+    ("com.google.zxing", "javase", "3.5.3"),
+)
 FLYWAY_REQUIRED = (
     "CoreErrorCode.RESOLVED_VERSIONED_MIGRATION_NOT_APPLIED",
     "CoreErrorCode.RESOLVED_REPEATABLE_MIGRATION_NOT_APPLIED",
@@ -145,6 +153,52 @@ def _validate_pom(name: str, text: str, errors: list[str]) -> None:
 
     if name == "backend" and not _imports_okhttp_bom(text):
         errors.append(f"OKHTTP_BOM_IMPORT_REQUIRED:{name}")
+
+    if name == "backend":
+        _validate_danfe_chain(name, text, declared, errors)
+
+
+def _validate_danfe_chain(
+    name: str,
+    text: str,
+    declared: list[str],
+    errors: list[str],
+) -> None:
+    blocks = re.findall(r"(?s)<dependency>(.*?)</dependency>", text)
+    lowered = [block.lower() for block in blocks]
+    properties = [item.lower() for item in declared]
+
+    if any(token in item for item in properties for token in JAVA_DANFE_TOKENS) or any(
+        token in block for block in lowered for token in JAVA_DANFE_TOKENS
+    ):
+        errors.append(f"UNUSED_JAVA_DANFE_FORBIDDEN:{name}")
+
+    if any(token in item for item in properties for token in JASPERREPORTS_TOKENS) or any(
+        token in block for block in lowered for token in JASPERREPORTS_TOKENS
+    ):
+        errors.append(f"JASPERREPORTS_FORBIDDEN:{name}")
+
+    for group, artifact, version in DANFE_RENDERER_REQUIRED:
+        if not _declares_renderer_part(blocks, group, artifact, version):
+            errors.append(f"DANFE_RENDERER_REQUIRED:{name}")
+            return
+
+
+def _declares_renderer_part(
+    blocks: list[str],
+    group: str,
+    artifact: str,
+    version: str | None,
+) -> bool:
+    for block in blocks:
+        if f"<groupId>{group}</groupId>" not in block:
+            continue
+        if f"<artifactId>{artifact}</artifactId>" not in block:
+            continue
+        if version is None:
+            return True
+        return f"<version>{version}</version>" in block
+    return False
 
 
 def _imports_okhttp_bom(text: str) -> bool:
