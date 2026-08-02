@@ -38,7 +38,7 @@
     {
       "id": "erp",
       "ownerComponent": "backend",
-      "migrationSetSha256": "sha256:569e332b67450a16f5e5819e0b55455ed5d04207acc0309590f6b254a3c77f84",
+      "migrationSetSha256": "sha256:156e6049bff42c10b187d5f269a68fc57562b5716c8ea0266b0891008acff5eb",
       "migrations": [
         {
           "path": "backend/src/main/resources/db/migration/V1__init.sql",
@@ -289,6 +289,11 @@
           "path": "backend/src/main/resources/db/migration/V20260331100000__set_produto_controles_default_true.sql",
           "sha256": "sha256:e50c7c39506d14c52cc6967b68ec0a4ce41d9f1915413c943d133c691279f75d",
           "version": "20260331100000"
+        },
+        {
+          "path": "backend/src/main/resources/db/migration/V20260802120000__seed_admin_group.sql",
+          "sha256": "sha256:c992cf8f0f196d464e4ef9ea3317a16070e6107efb067eef8347c5ae2c73af47",
+          "version": "20260802120000"
         }
       ]
     },
