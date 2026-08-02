@@ -7,6 +7,12 @@ ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/"tools/relea
 import artifact_io,candidate_manifest,probe_candidate,validate_pending
 SERVICES=("postgresql","backend","website_back","frontend","website_front","whatsapp_service","gateway")
 def now():return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z")
+def compose_rows(raw):
+ """docker compose ps --format json emite JSON Lines; versoes antigas emitem um array."""
+ text=raw.strip()
+ if not text:return []
+ if text.startswith("["):return json.loads(text)
+ return [json.loads(line) for line in text.splitlines() if line.strip()]
 def execute(pending,compose,override,project,output,runner=subprocess.run,check_output=subprocess.check_output):
  pending_errors=candidate_manifest.validate_pending(pending)
  if pending_errors:raise ValueError("pending:"+",".join(pending_errors))
@@ -22,7 +28,7 @@ def execute(pending,compose,override,project,output,runner=subprocess.run,check_
   runner(command+["pull","--quiet","--policy","always"],check=True,env=env)
   runner(command+["run","--rm","-T","--entrypoint","/app/bin/migrate","backend","migrate"],check=True,env=env)
   runner(command+["up","-d","--no-build","--pull","never","--wait","--wait-timeout","600"],check=True,env=env)
-  rows=json.loads(check_output(command+["ps","--format","json"],text=True,env=env))
+  rows=compose_rows(check_output(command+["ps","--format","json"],text=True,env=env))
   by_service={r["Service"]:r for r in rows}
   if set(by_service)!=set(SERVICES) or any(r.get("State")!="running" or r.get("Health")!="healthy" for r in rows):raise ValueError("service state")
   service_receipt=[{"id":s,"state":"running","health":"healthy"} for s in SERVICES]
