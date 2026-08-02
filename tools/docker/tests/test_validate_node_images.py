@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 import unittest
+from itertools import product
 from pathlib import Path
 
 from tools.docker import validate_node_images as contract
@@ -23,6 +24,17 @@ FILES = [
     "whatsapp_service/app.js",
     "whatsapp_service/package.json",
 ]
+RUNTIME_INSERTION_POINT = "RUN apk add --no-cache chromium"
+PURGE_BLOCK = """    && rm -rf \\
+        /usr/local/lib/node_modules/npm \\
+        /usr/local/lib/node_modules/corepack \\
+        /opt/yarn-v1.22.22 \\
+        /usr/local/bin/npm \\
+        /usr/local/bin/npx \\
+        /usr/local/bin/corepack \\
+        /usr/local/bin/yarn \\
+        /usr/local/bin/yarnpkg \\
+"""
 
 
 class NodeImagesContractTest(unittest.TestCase):
@@ -51,6 +63,17 @@ class NodeImagesContractTest(unittest.TestCase):
     def assert_mutant(self, relative, old, new, expected):
         self.mutate(relative, old, new)
         self.assertTrue(any(item.startswith(expected) for item in self.errors()))
+
+    def assert_exact_whatsapp_mutant(self, old, new, expected):
+        self.mutate("whatsapp_service/Dockerfile", old, new)
+        self.assertEqual([expected], self.errors())
+
+    def insert_whatsapp_runtime_command(self, command, expected):
+        self.assert_exact_whatsapp_mutant(
+            RUNTIME_INSERTION_POINT,
+            f"{command}\n{RUNTIME_INSERTION_POINT}",
+            expected,
+        )
 
     def test_01_real_contract_is_valid(self):
         self.assertEqual([], contract.validate())
@@ -131,6 +154,105 @@ class NodeImagesContractTest(unittest.TestCase):
         errors = self.errors()
         self.assertIn("NODE24_BASE_REQUIRED:whatsapp_service", errors)
         self.assertIn("NGINX_BASE_REQUIRED:frontend", errors)
+
+    def test_s31_case_19_npx_in_runtime_is_rejected(self):
+        self.insert_whatsapp_runtime_command(
+            "RUN npx some-cli", "PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME"
+        )
+
+    def test_s31_case_20_corepack_in_runtime_is_rejected(self):
+        self.insert_whatsapp_runtime_command(
+            "RUN corepack enable", "PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME"
+        )
+
+    def test_s31_case_21_yarn_in_runtime_is_rejected(self):
+        self.insert_whatsapp_runtime_command(
+            "RUN yarn global add some-cli", "PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME"
+        )
+
+    def test_s31_case_22_missing_purge_is_rejected(self):
+        self.assert_exact_whatsapp_mutant(
+            PURGE_BLOCK, "", "PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME"
+        )
+
+    def test_s31_case_23_echo_purge_is_rejected(self):
+        self.assert_exact_whatsapp_mutant(
+            "    && rm -rf \\",
+            "    && echo \\",
+            "PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME",
+        )
+
+    def test_s31_case_24_commented_purge_is_rejected(self):
+        commented = """    # rm -rf /usr/local/lib/node_modules/npm
+    # /usr/local/lib/node_modules/corepack
+    # /opt/yarn-v1.22.22
+    # /usr/local/bin/npm
+    # /usr/local/bin/npx
+    # /usr/local/bin/corepack
+    # /usr/local/bin/yarn
+    # /usr/local/bin/yarnpkg
+"""
+        self.assert_exact_whatsapp_mutant(
+            PURGE_BLOCK, commented, "PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME"
+        )
+
+    def test_s31_case_25_incomplete_yarn_purge_is_rejected(self):
+        incomplete = PURGE_BLOCK
+        for path in (
+            "/opt/yarn-v1.22.22",
+            "/usr/local/bin/yarn",
+            "/usr/local/bin/yarnpkg",
+        ):
+            incomplete = incomplete.replace(f"        {path} \\\n", "")
+        self.assert_exact_whatsapp_mutant(
+            PURGE_BLOCK, incomplete, "PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME"
+        )
+
+    def test_s31_case_26_npm_ci_remains_independently_required(self):
+        self.assert_exact_whatsapp_mutant(
+            "RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev",
+            "RUN true",
+            "NPM_CI_REQUIRED:whatsapp_service",
+        )
+
+    def test_s31_case_27_corrected_dockerfile_is_accepted(self):
+        self.assertEqual([], self.errors())
+
+    def test_s31_case_28_dependencies_npm_ci_does_not_trigger_runtime_rule(self):
+        dockerfile = (self.root / "whatsapp_service/Dockerfile").read_text()
+        self.assertIn("npm ci", dockerfile)
+        self.assertNotIn("PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME", self.errors())
+
+
+def global_cli_test(flag, subcommand, position, case_number):
+    def test(self):
+        arguments = (
+            f"{flag} {subcommand}"
+            if position == "before"
+            else f"{subcommand} {flag}"
+        )
+        self.insert_whatsapp_runtime_command(
+            f"RUN npm {arguments} some-cli",
+            "GLOBAL_CLI_FORBIDDEN:whatsapp_service",
+        )
+
+    test.__name__ = (
+        f"test_s31_case_{case_number:02d}_global_cli_"
+        f"{flag.lstrip('-').replace('=', '_')}_{subcommand}_{position}"
+    )
+    return test
+
+
+for case_number, (flag, subcommand, position) in enumerate(
+    product(
+        contract.GLOBAL_NPM_FLAGS,
+        contract.GLOBAL_NPM_SUBCOMMANDS,
+        ("before", "after"),
+    ),
+    start=1,
+):
+    test = global_cli_test(flag, subcommand, position, case_number)
+    setattr(NodeImagesContractTest, test.__name__, test)
 
 
 if __name__ == "__main__":

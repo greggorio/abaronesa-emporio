@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "measurement": "after",
+  "sourceSha": "10db6b3ec4c07025fbe1eed1dbc20c34c2b77f0a",
+  "sourceTreeSha": "18502627415bd282debd45663f94e338e1e9bf73",
+  "sourceState": "working-tree-after-s31-remediation-before-evidence-files",
+  "sourceDiffSha256": "adedb70bdd7650887801ba910eaff8309d5425a3d57126c1c3c8ecd68c0a59d7",
+  "measuredAtUtc": "2026-08-02T07:05:18.318539895Z",
+  "scanner": {
+    "name": "trivy",
+    "version": "0.70.0",
+    "image": "aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e",
+    "platform": "linux/amd64",
+    "severity": "HIGH,CRITICAL",
+    "ignoreUnfixed": false,
+    "exitCodePolicy": 1
+  },
+  "trivyDatabase": {
+    "vulnerabilityDb": {
+      "version": 2,
+      "updatedAtUtc": "2026-08-02T00:55:42.260375924Z",
+      "nextUpdateUtc": "2026-08-03T00:55:42.260375303Z",
+      "downloadedAtUtc": "2026-08-02T07:05:13.962606527Z"
+    },
+    "javaDb": null
+  },
+  "images": {
+    "whatsapp_service": {
+      "package": "s31-whatsapp-runtime:local-10db6b3",
+      "imageId": "sha256:48fad4ca931b493617efcb27be3d533ef54473c1b6e25788806f2df39835596e",
+      "architecture": "amd64",
+      "os": "alpine 3.24.1"
+    }
+  },
+  "counts": {
+    "total": 0,
+    "byComponent": {
+      "whatsapp_service": {
+        "CRITICAL": 0,
+        "HIGH": 0
+      }
+    },
+    "byComponentPackage": {
+      "whatsapp_service": {}
+    },
+    "byComponentOrigin": {
+      "whatsapp_service": {}
+    },
+    "bySeverity": {
+      "CRITICAL": 0,
+      "HIGH": 0
+    },
+    "byOrigin": {}
+  },
+  "findings": []
+}

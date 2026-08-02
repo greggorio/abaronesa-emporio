@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -30,6 +32,19 @@ IGNORE_REQUIRED = (
     "*.pfx",
     "*.key",
 )
+GLOBAL_NPM_FLAGS = ("-g", "--global", "--location=global")
+GLOBAL_NPM_SUBCOMMANDS = ("install", "i", "add")
+WHATSAPP_PACKAGE_MANAGERS = ("npm", "npx", "corepack", "yarn", "yarnpkg")
+WHATSAPP_RUNTIME_PURGE_PATHS = (
+    "/usr/local/lib/node_modules/npm",
+    "/usr/local/lib/node_modules/corepack",
+    "/opt/yarn-v1.22.22",
+    "/usr/local/bin/npm",
+    "/usr/local/bin/npx",
+    "/usr/local/bin/corepack",
+    "/usr/local/bin/yarn",
+    "/usr/local/bin/yarnpkg",
+)
 
 
 def read(root: Path, relative: str, errors: list[str]) -> str:
@@ -38,6 +53,134 @@ def read(root: Path, relative: str, errors: list[str]) -> str:
         errors.append(f"MISSING_FILE:{relative}")
         return ""
     return path.read_text(encoding="utf-8")
+
+
+def dockerfile_instructions(dockerfile: str) -> list[tuple[str, str]]:
+    """Return logical Dockerfile instructions with continuations collapsed."""
+    instructions: list[tuple[str, str]] = []
+    logical = ""
+    for raw_line in dockerfile.splitlines():
+        line = raw_line.strip()
+        if not logical and (not line or line.startswith("#")):
+            continue
+        logical = f"{logical} {line}".strip()
+        if line.endswith("\\"):
+            logical = logical[:-1].rstrip()
+            continue
+        match = re.match(r"^([A-Za-z]+)\s+(.*)$", logical, re.DOTALL)
+        if match:
+            instructions.append((match.group(1).upper(), match.group(2).strip()))
+        logical = ""
+    return instructions
+
+
+def docker_stage(dockerfile: str, alias: str) -> str:
+    stage = re.search(
+        rf"(?mi)^FROM\s+[^\n]+\s+AS\s+{re.escape(alias)}\s*(?:#.*)?$",
+        dockerfile,
+    )
+    if not stage:
+        return ""
+    next_stage = re.search(r"(?mi)^FROM\s+", dockerfile[stage.end() :])
+    end = stage.end() + next_stage.start() if next_stage else len(dockerfile)
+    return dockerfile[stage.start() : end]
+
+
+def shell_commands(body: str) -> list[list[str]]:
+    """Tokenize direct shell commands separated by common shell operators."""
+    commands: list[list[str]] = []
+    for segment in re.split(r"\s*(?:&&|\|\||;|\|)\s*", body):
+        try:
+            tokens = shlex.split(segment, comments=True, posix=True)
+        except ValueError:
+            continue
+        while tokens and tokens[0].startswith("--mount="):
+            tokens.pop(0)
+        while tokens and tokens[0] in {"!", "then", "do", "command", "exec"}:
+            tokens.pop(0)
+        if tokens and tokens[0] == "env":
+            tokens.pop(0)
+            while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
+                tokens.pop(0)
+        while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
+            tokens.pop(0)
+        if tokens:
+            commands.append(tokens)
+    return commands
+
+
+def docker_commands(dockerfile: str) -> list[list[str]]:
+    commands: list[list[str]] = []
+    for instruction, body in dockerfile_instructions(dockerfile):
+        if instruction in {"RUN", "CMD", "ENTRYPOINT", "HEALTHCHECK"}:
+            command_body = body
+            if instruction == "HEALTHCHECK" and body.upper().startswith("CMD "):
+                command_body = body[4:].strip()
+            if command_body.startswith("["):
+                try:
+                    command = json.loads(command_body)
+                except json.JSONDecodeError:
+                    command = []
+                if isinstance(command, list) and all(
+                    isinstance(token, str) for token in command
+                ):
+                    commands.append(command)
+                    continue
+            commands.extend(shell_commands(command_body))
+    return commands
+
+
+def command_name(tokens: list[str]) -> str:
+    return Path(tokens[0]).name if tokens else ""
+
+
+def is_global_npm_install(tokens: list[str]) -> bool:
+    if command_name(tokens) != "npm":
+        return False
+    arguments = tokens[1:]
+    return any(
+        (index + 1 < len(arguments) and arguments[index + 1] in GLOBAL_NPM_SUBCOMMANDS)
+        or (index > 0 and arguments[index - 1] in GLOBAL_NPM_SUBCOMMANDS)
+        for index, value in enumerate(arguments)
+        if value in GLOBAL_NPM_FLAGS
+    )
+
+
+def has_non_global_npm_install(dockerfile: str) -> bool:
+    return any(
+        command_name(tokens) == "npm"
+        and "install" in tokens[1:]
+        and not is_global_npm_install(tokens)
+        for tokens in docker_commands(dockerfile)
+    )
+
+
+def whatsapp_runtime_is_clean(dockerfile: str) -> bool:
+    runtime = docker_stage(dockerfile, "runtime")
+    if not runtime:
+        return False
+    commands = docker_commands(runtime)
+    package_manager_invocation = any(
+        command_name(tokens) in WHATSAPP_PACKAGE_MANAGERS
+        and not is_global_npm_install(tokens)
+        for tokens in commands
+    )
+    removed_paths = {
+        token
+        for tokens in commands
+        if command_name(tokens) == "rm"
+        and any(
+            option.startswith("-")
+            and ("r" in option[1:].lower() or option == "--recursive")
+            for option in tokens[1:]
+        )
+        for token in tokens[1:]
+        if not token.startswith("-")
+    }
+    return (
+        not package_manager_invocation
+        and set(WHATSAPP_RUNTIME_PURGE_PATHS).issubset(removed_paths)
+    )
 
 
 def validate(root: Path = ROOT) -> list[str]:
@@ -61,9 +204,9 @@ def validate(root: Path = ROOT) -> list[str]:
             errors.append(f"LATEST_FORBIDDEN:{name}")
         if NODE_BASE not in from_lines:
             errors.append(f"NODE24_BASE_REQUIRED:{name}")
-        if "npm ci" not in dockerfile or re.search(r"\bnpm install\b", dockerfile):
+        if "npm ci" not in dockerfile or has_non_global_npm_install(dockerfile):
             errors.append(f"NPM_CI_REQUIRED:{name}")
-        if "npm install -g" in dockerfile or "quasar build" in dockerfile:
+        if any(is_global_npm_install(tokens) for tokens in docker_commands(dockerfile)) or "quasar build" in dockerfile:
             errors.append(f"GLOBAL_CLI_FORBIDDEN:{name}")
         args = re.findall(r"(?mi)^ARG\s+([A-Za-z_][A-Za-z0-9_]*)", dockerfile)
         if sorted(args) != ["IMAGE_VERSION", "VCS_REF"]:
@@ -127,6 +270,8 @@ def validate(root: Path = ROOT) -> list[str]:
 
     whatsapp_docker = dockerfiles["whatsapp_service"]
     whatsapp_app = entries["whatsapp_service"]
+    if not whatsapp_runtime_is_clean(whatsapp_docker):
+        errors.append("PACKAGE_MANAGER_IN_WHATSAPP_RUNTIME")
     if "USER 10001:10001" not in whatsapp_docker:
         errors.append("WHATSAPP_NONROOT_REQUIRED")
     if "SESSION_DIR=/data/session" not in whatsapp_docker or "chmod 0700 /data/session" not in whatsapp_docker:
