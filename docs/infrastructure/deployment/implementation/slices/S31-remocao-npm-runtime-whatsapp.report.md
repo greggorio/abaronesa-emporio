@@ -1105,3 +1105,49 @@ sem force, sem tag, sem outra branch, sem outro remote e sem commit adicional.
 commit final = HEAD entregue
 
 IN_PROGRESS — aguardando revisão do orquestrador
+
+## 12. Revisão terminal do orquestrador — 02/08/2026
+
+**Veredito: `ACCEPTED`.** A S31 fechou o grupo B: o
+`whatsapp_service` passou de um achado HIGH de origem `npm-runtime` para zero
+achados HIGH/CRITICAL, manteve o serviço funcional e tornou a regressão
+observável pelo contrato.
+
+A revisão independente confirmou no commit
+`1a5224e071d54dda2bb7d216bdc8b1696dd07f70`:
+
+- os 13 validadores e as sete suítes, totalizando 517 testes, com exit 0;
+- os três arquivos técnicos como única diferença da árvore medida, com
+  `sourceDiffSha256=adedb70bdd7650887801ba910eaff8309d5425a3d57126c1c3c8ecd68c0a59d7`
+  e `sourceTreeSha=18502627415bd282debd45663f94e338e1e9bf73` reproduzidos;
+- o JSON com `findings: []`, contagens zeradas e a identidade da imagem
+  efetivamente examinada;
+- `secret-scan:clean`, `unsupported=0`, sobre o estado rastreado já contendo o
+  commit S31;
+- worktree e stage vazios, nove commits locais sobre `origin/main`,
+  `git diff --check origin/main..HEAD` com exit 0 e ausência de push;
+- cleanup nominal concluído, `Build Cache 0B` e ausência dos recursos Docker
+  criados pela execução.
+
+Decisões sobre as divergências relatadas:
+
+1. a correção da linha vazia em EOF foi necessária, mínima e seguida por novo
+   stage, novo secret scan e novo `git diff --cached --check`; o conteúdo
+   commitado foi efetivamente varrido;
+2. a mudança de `imageId` decorre do rebuild e não rompe a linhagem: o JSON
+   registra a imagem que o Trivy examinou, e os arquivos, digests, argumentos e
+   plataforma da construção permaneceram fechados;
+3. `trivyDatabase.javaDb=null` é coerente com uma imagem sem artefatos Java e
+   mantém a chave do esquema; com `findings: []`, mapas de agrupamento vazios e
+   totais explícitos em zero são a representação correta.
+
+Ressalva não bloqueante: a lista da §11.8 cita dois dos 42 arquivos `.pyc`
+preexistentes. A revisão do filesystem confirmou que todos têm data de
+01/08/2026 e nenhum foi criado em 02/08/2026. A lista é incompleta como
+inventário histórico, mas não oculta resíduo da S31 e não autoriza novo commit
+técnico.
+
+A linha `IN_PROGRESS` anterior é preservada como declaração do executor, que
+não tinha autoridade para aceitar a própria slice. Esta seção é a decisão
+terminal do orquestrador. O grupo A segue para a S32; o grupo C permanece
+reservado à S33. Não houve push.
