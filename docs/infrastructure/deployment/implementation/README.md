@@ -1,12 +1,13 @@
 # Implementacao de Docker, CI/CD e Controle de Releases
 
-> **Estado geral:** S01 a S29 e S31 a S33 aceitas; S30 dividida; S30a em correção causal; S34 aberta
+> **Estado geral:** S01–S29 e S31–S34 aceitas; S30 dividida; S30a com candidato publicado e endurecimento terminal pendente; S35 ultrapassada
 
 Esta pasta registra os contratos e as evidencias das slices usadas para implementar a arquitetura definida em [proposta-docker-ci-cd-producao-emporio.md](../proposta-docker-ci-cd-producao-emporio.md).
 
-Para transferir a condução a outro CLI sem perder autoridade, estado ou
-critérios de encerramento, consulte o
-[handoff do orquestrador](./HANDOFF_ORQUESTRADOR.md).
+Para transferir a condução a outro CLI a partir do estado remoto atual,
+consulte o [handoff de fechamento](./HANDOFF_ORQUESTRADOR_FECHAMENTO.md). O
+[handoff histórico](./HANDOFF_ORQUESTRADOR.md) permanece como contexto das
+decisões anteriores ao primeiro commit.
 
 ## Regras
 
@@ -80,9 +81,9 @@ O arquivo `.task.md` e o contrato imutavel da delegacao. O arquivo `.report.md` 
 | S28 | [Empacotamento operacional isolado do release control](./slices/S28-empacotamento-operacional-release-control.task.md) | [Relatório](./slices/S28-empacotamento-operacional-release-control.report.md) | `ACCEPTED` — 31/07/2026 |
 | S29 | [Gate do primeiro commit e ativação remota](./slices/S29-gate-primeiro-commit-ativacao-remota.task.md) | [Relatório](./slices/S29-gate-primeiro-commit-ativacao-remota.report.md) | `ACCEPTED` — 31/07/2026 |
 | S30 | [Ensaio remoto de candidato, publisher e release](./slices/S30-ensaio-remoto-candidato-publisher-release.task.md) | [Relatório](./slices/S30-ensaio-remoto-candidato-publisher-release.report.md) | `SPLIT` — 01/08/2026; contrato-pai histórico, dividido em S30a e S30b |
-| S30a | [Paridade local e fechamento da CI e do candidato](./slices/S30a-paridade-local-fechamento-ci-candidato.task.md) ([authorization-01](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-01.md), [authorization-02](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-02.md), [authorization-03](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-03.md)) | [Relatório](./slices/S30a-paridade-local-fechamento-ci-candidato.report.md) ([authorization-02](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-02.report.md), [authorization-03](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-03.report.md)) | `IN_PROGRESS` — CI verde e seis imagens publicadas; integração bloqueada por banco vazio; correção S35 aberta |
+| S30a | [Paridade local e fechamento da CI e do candidato](./slices/S30a-paridade-local-fechamento-ci-candidato.task.md) ([authorization-01](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-01.md), [authorization-02](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-02.md), [authorization-03](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-03.md)) | [Relatório](./slices/S30a-paridade-local-fechamento-ci-candidato.report.md) ([authorization-02](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-02.report.md), [authorization-03](./slices/S30a-paridade-local-fechamento-ci-candidato.authorization-03.report.md)) | `IN_PROGRESS` — CI e candidato publicados; falta mascarar credenciais efêmeras e migrar o banco website no ensaio integrado |
 | S31 | [Remoção dos gerenciadores de pacotes do runtime do whatsapp_service](./slices/S31-remocao-npm-runtime-whatsapp.task.md) ([correction-01](./slices/S31-remocao-npm-runtime-whatsapp.correction-01.md), [correction-02](./slices/S31-remocao-npm-runtime-whatsapp.correction-02.md)) | [Relatório](./slices/S31-remocao-npm-runtime-whatsapp.report.md) | `ACCEPTED` — 02/08/2026; grupo B fechado, Trivy HIGH/CRITICAL 1 → 0, sem push |
 | S32 | [Migração da linha Spring para Boot 3.5](./slices/S32-migracao-spring-boot-3-5.task.md) ([correction-01](./slices/S32-migracao-spring-boot-3-5.correction-01.md)) | [Relatório](./slices/S32-migracao-spring-boot-3-5.report.md) | `ACCEPTED` — 02/08/2026; grupo A fechado, OkHttp preservado em 4.12.0, sem push |
 | S33 | [Remoção da cadeia JasperReports não utilizada](./slices/S33-remocao-java-danfe-jasperreports.task.md) | [Relatório](./slices/S33-remocao-java-danfe-jasperreports.report.md) | `ACCEPTED` — 02/08/2026; grupo C fechado, inventário Trivy HIGH/CRITICAL em zero, sem push |
 | S34 | [Remoção da atestação nativa indisponível](./slices/S34-remocao-atestacao-nativa-candidato.task.md) ([correction-01](./slices/S34-remocao-atestacao-nativa-candidato.correction-01.md)) | [Relatório](./slices/S34-remocao-atestacao-nativa-candidato.report.md) | `ACCEPTED` — 02/08/2026; contrato nativo de atestação removido, integridade por digest preservada, sem push |
-| S35 | [Migrações prévias da stack candidata](./slices/S35-migracoes-previas-stack-candidata.task.md) | — | `PLANNED` — aplicar as migrations dos dois bancos antes do startup integrado, sem push |
+| S35 | [Migrações prévias da stack candidata](./slices/S35-migracoes-previas-stack-candidata.task.md) | — | `SUPERSEDED` — contrato local ultrapassado pela correção exploratória remota; não foi executado como task |

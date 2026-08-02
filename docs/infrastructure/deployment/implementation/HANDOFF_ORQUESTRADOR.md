@@ -1,5 +1,10 @@
 # Handoff do orquestrador — Docker, CI/CD e controle de releases
 
+> **ATENÇÃO:** este é o handoff histórico iniciado antes do primeiro commit.
+> Para assumir o estado atual a partir do candidato publicado em 02/08/2026,
+> use [HANDOFF_ORQUESTRADOR_FECHAMENTO.md](./HANDOFF_ORQUESTRADOR_FECHAMENTO.md).
+> As seções abaixo permanecem somente como histórico arquitetural.
+
 > **Projeto:** Empório A Baronesa
 > **Workspace:** `/home/gregorio/git/baronesa/emporio`
 > **Repositório remoto:** `git@github.com:greggorio/abaronesa-emporio.git`
