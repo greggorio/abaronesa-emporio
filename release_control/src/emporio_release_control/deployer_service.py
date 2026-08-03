@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import uuid
 from collections.abc import Callable
 from datetime import timedelta
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .constants import (
     DEPLOYER_MODE,
     DEPLOYMENT_TERMINAL_STATES,
+    REPOSITORY,
     ROLLBACK_TERMINAL_STATES,
     ROLLBACK_TRANSITIONS,
 )
@@ -53,6 +55,10 @@ from .security import CursorCodec, Principal
 
 DEPLOYMENT_ROUTE = "POST:/api/deployment-control/v1/deployments"
 ROLLBACK_ROUTE = "POST:/api/deployment-control/v1/rollbacks"
+RUN_URL_RE = re.compile(
+    rf"^https://github\.com/{re.escape(REPOSITORY)}/actions/runs/[1-9][0-9]*$"
+)
+CONTROL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 COMPONENTS = (
     "backend",
     "website_back",
@@ -895,16 +901,51 @@ class DeployerService:
             )
 
     @staticmethod
+    def _require_workflow_binding(operation: DeploymentOperation, transport: str) -> None:
+        """Refuse a CONFIRMED outcome that is not bound to a discovered run.
+
+        Only the reconciler applies outcomes today, and it binds the run before
+        calling. This keeps the invariant owned by the service as well, so a
+        CONFIRMED outcome can never mutate an operation, the current
+        installation, the journal or the audit trail while the binding is
+        missing or partial. INDETERMINATE keeps the existing UNCERTAIN path,
+        which legitimately has no run yet.
+        """
+        if transport != "CONFIRMED":
+            return
+        run_id = operation.workflow_run_id
+        attempt = operation.workflow_attempt
+        run_url = operation.workflow_run_url
+        control_sha = operation.control_sha
+        if (
+            not isinstance(run_id, int)
+            or isinstance(run_id, bool)
+            or run_id < 1
+            or not isinstance(attempt, int)
+            or isinstance(attempt, bool)
+            or attempt < 1
+            or not isinstance(run_url, str)
+            or RUN_URL_RE.fullmatch(run_url) is None
+            or not isinstance(control_sha, str)
+            or CONTROL_SHA_RE.fullmatch(control_sha) is None
+        ):
+            raise RuntimeFailure("WORKFLOW_RUN_BINDING_INVALID")
+
+    @staticmethod
     def _append_journal(operation: DeploymentOperation, state: str, now: Any) -> None:
-        journal = operation.journal_json if isinstance(operation.journal_json, dict) else {}
-        events = journal.get("events")
-        if not isinstance(events, list):
-            events = []
+        current = operation.journal_json if isinstance(operation.journal_json, dict) else {}
+        events = current.get("events")
+        events = list(events) if isinstance(events, list) else []
         events.append({"state": state, "at": now.isoformat()})
-        journal["schemaVersion"] = 1
-        journal["operationType"] = "rollback"
-        journal["events"] = events
-        operation.journal_json = journal
+        # journal_json is a plain JSONB column, so mutating the stored dict in
+        # place and assigning the same object back is not seen as a change and
+        # never reaches the database. Always assign a fresh object.
+        operation.journal_json = {
+            **current,
+            "schemaVersion": 1,
+            "operationType": "rollback",
+            "events": events,
+        }
 
     def apply_rollback_outcome(
         self,
@@ -922,6 +963,7 @@ class DeployerService:
             transport = str(outcome["transportStatus"])
             restore_required = bool(outcome["databaseRestoreRequired"])
             error_code = outcome.get("errorCode")
+            self._require_workflow_binding(operation, transport)
             if operation.state in ROLLBACK_TERMINAL_STATES:
                 if (
                     operation.outcome_sha256 == outcome_digest
@@ -1058,6 +1100,7 @@ class DeployerService:
             state = outcome["deploymentState"]
             restore_required = outcome["databaseRestoreRequired"]
             error_code = outcome["errorCode"]
+            self._require_workflow_binding(operation, str(transport))
             if operation.state in DEPLOYMENT_TERMINAL_STATES:
                 if (
                     operation.outcome_sha256 == outcome_digest

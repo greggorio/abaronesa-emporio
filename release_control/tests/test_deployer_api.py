@@ -15,6 +15,7 @@ from emporio_release_control.errors import (
     PreDispatchFailure,
     RemoteHttpFailure,
     RemoteTransportFailure,
+    RuntimeFailure,
 )
 from emporio_release_control.github import GitHubClient
 from emporio_release_control.persistence import (
@@ -126,10 +127,16 @@ def add_release(
     return row
 
 
-@pytest.fixture()
-def deployer(
-    factory: sessionmaker[Session], settings: Settings
+def build_deployer(
+    factory: sessionmaker[Session],
+    settings: Settings,
+    **overrides: Any,
 ) -> tuple[TestClient, DeployerService, FakeGitHub, sessionmaker[Session]]:
+    """Build a deployer client, optionally overriding settings for one scenario.
+
+    Overrides exist so a scenario can observe a contract that the conservative
+    production default would otherwise intercept. They never change the default.
+    """
     github = FakeGitHub()
     service = DeployerService(
         factory,
@@ -139,11 +146,32 @@ def deployer(
         revalidate_release=lambda _release: None,
     )
     app = create_deployer_app(
-        settings.model_copy(update={"mode": "deployer"}),
+        settings.model_copy(update={"mode": "deployer", **overrides}),
         service,
         cast(Any, FakeVerifier()),
     )
     return TestClient(app, raise_server_exceptions=False), service, github, factory
+
+
+@pytest.fixture()
+def deployer(
+    factory: sessionmaker[Session], settings: Settings
+) -> tuple[TestClient, DeployerService, FakeGitHub, sessionmaker[Session]]:
+    return build_deployer(factory, settings)
+
+
+@pytest.fixture()
+def deployer_unthrottled_rollback(
+    factory: sessionmaker[Session], settings: Settings
+) -> tuple[TestClient, DeployerService, FakeGitHub, sessionmaker[Session]]:
+    """Deployer whose rollback bucket does not hide the idempotency contract.
+
+    `rollback_actor` enforces the rate limit while resolving the dependency, so
+    with the production default of 2/min a third rollback POST answers 429
+    before the handler can answer 409. Raising the bucket only here keeps the
+    default untouched; test_rollback_third_mutation_is_rate_limited pins it.
+    """
+    return build_deployer(factory, settings, rollback_rate_per_minute=10)
 
 
 def headers(scope: str = "deployment:read") -> dict[str, str]:
@@ -504,9 +532,9 @@ def test_rollback_rejects_without_reconciled_current(deployer: tuple[Any, ...]) 
 
 
 def test_rollback_persists_dispatches_replays_and_supports_get(
-    deployer: tuple[Any, ...],
+    deployer_unthrottled_rollback: tuple[Any, ...],
 ) -> None:
-    client, _, github, factory = deployer
+    client, _, github, factory = deployer_unthrottled_rollback
     current_snapshot = add_release(factory, "v1.1.0", "v1.0.0", migrations=("1", "2"))
     add_release(factory, "v1.0.0", None, migrations=("1",))
     state_sha = "sha256:" + "a" * 64
@@ -579,6 +607,79 @@ def test_rollback_persists_dispatches_replays_and_supports_get(
     )
     assert conflict.status_code == 409
     assert conflict.json()["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_rollback_third_mutation_is_rate_limited(deployer: tuple[Any, ...]) -> None:
+    """The production default of 2/min stops the third rollback of the window.
+
+    Uses the default fixture on purpose: this pins the real policy that
+    test_rollback_persists_dispatches_replays_and_supports_get deliberately
+    steps around, and proves a 429 leaves no trace behind.
+    """
+    client, _, github, factory = deployer
+    current_snapshot = add_release(factory, "v1.1.0", "v1.0.0", migrations=("1", "2"))
+    add_release(factory, "v1.0.0", None, migrations=("1",))
+    state_sha = "sha256:" + "a" * 64
+    with factory.begin() as session:
+        session.add(
+            CurrentInstallation(
+                singleton_id=1,
+                release=current_snapshot.release,
+                source_commit=current_snapshot.source_commit,
+                state_sha256=state_sha,
+                installed_at=NOW,
+                reconciled=True,
+                last_operation_id="dep_" + "1" * 32,
+                updated_at=NOW,
+            )
+        )
+        session.add(
+            RollbackBackup(
+                backup_id="backup-v1.1.0-20260731",
+                source_release="v1.1.0",
+                source_state_sha256=state_sha,
+                databases=["erp", "website"],
+                artifact_sha256="sha256:" + "b" * 64,
+                created_at=NOW,
+                expires_at=NOW + timedelta(days=365),
+                verified=True,
+                evidence_json={
+                    "backupId": "backup-v1.1.0-20260731",
+                    "sourceRelease": "v1.1.0",
+                    "sourceStateSha256": state_sha,
+                    "artifactSha256": "sha256:" + "b" * 64,
+                    "databases": ["erp", "website"],
+                },
+            )
+        )
+
+    def post(key: str) -> Any:
+        return client.post(
+            "/api/deployment-control/v1/rollbacks",
+            headers={
+                **headers("deployment:rollback"),
+                "Idempotency-Key": f"deployer-rollback-{key}",
+            },
+            json={"release": "v1.0.0", "reason": "operator requested rollback"},
+        )
+
+    accepted = post("11111111-1111-4111-8111-111111111111")
+    assert accepted.status_code == 202
+    replayed = post("11111111-1111-4111-8111-111111111111")
+    assert replayed.status_code == 202
+    assert replayed.headers["Idempotency-Replayed"] == "true"
+
+    with factory() as session:
+        operations_before = len(session.scalars(select(DeploymentOperation)).all())
+    dispatches_before = len(github.rollback_dispatches)
+
+    throttled = post("22222222-2222-4222-8222-222222222222")
+    assert throttled.status_code == 429
+
+    # a throttled mutation creates no operation, journal or dispatch
+    with factory() as session:
+        assert len(session.scalars(select(DeploymentOperation)).all()) == operations_before
+    assert len(github.rollback_dispatches) == dispatches_before
 
 
 @pytest.mark.parametrize(
@@ -733,6 +834,14 @@ def test_rollback_state_machine_restore_recovery_and_terminal_replay(
                 request_json={"release": "v1.0.0", "reason": "operator requested rollback"},
                 request_hash="a" * 64,
                 idempotency_hash="b" * 64,
+                # CONFIRMED requires the full run binding, exactly as the
+                # reconciler writes it in _bind_run before applying an outcome.
+                workflow_run_id=100,
+                workflow_attempt=1,
+                workflow_run_url=(
+                    "https://github.com/greggorio/abaronesa-emporio/actions/runs/100"
+                ),
+                control_sha="c" * 40,
                 dispatch_state="CONFIRMED",
                 database_restore_required=True,
                 journal_json={"schemaVersion": 1, "operationType": "rollback", "events": []},
@@ -811,6 +920,115 @@ def test_uncertain_outcome_does_not_regress_confirmed_dispatch(
         assert operation.state == "QUEUED"
         assert operation.dispatch_state == "CONFIRMED"
         assert operation.transport_status == "INDETERMINATE"
+
+
+@pytest.mark.parametrize("operation_type", ["deployment", "rollback"])
+def test_confirmed_outcome_before_run_binding_is_refused_without_mutation(
+    deployer: tuple[Any, ...], operation_type: str
+) -> None:
+    """A CONFIRMED outcome arriving before the run is bound must change nothing.
+
+    Production only reaches these methods through the reconciler, which binds
+    the run first, so this ordering is not currently reachable. The service
+    holds the invariant anyway: the operation stays in SENT with no binding,
+    which the constraint allows, and the refusal happens before the operation,
+    the journal, active_slot, outcome_sha256, CurrentInstallation or the audit
+    trail gain any evidence.
+    """
+    _, service, _, factory = deployer
+    operation_id = ("rbk_" if operation_type == "rollback" else "dep_") + "d" * 32
+    create_operation(
+        factory,
+        operation_id=operation_id,
+        operation_type=operation_type,
+        source_release="v1.1.0" if operation_type == "rollback" else None,
+    )
+    with factory() as session:
+        stored = session.get(DeploymentOperation, operation_id)
+        assert stored is not None
+        assert stored.dispatch_state == "SENT"
+        assert stored.workflow_run_id is None
+        before = (
+            stored.state,
+            stored.transport_status,
+            stored.outcome_sha256,
+            stored.active_slot,
+            stored.journal_json,
+        )
+
+    if operation_type == "rollback":
+        applier: Any = service.apply_rollback_outcome
+        payload: dict[str, Any] = {
+            "rollbackState": "SUCCEEDED",
+            "transportStatus": "CONFIRMED",
+            "databaseRestoreRequired": False,
+            "errorCode": None,
+            "evidence": {},
+        }
+    else:
+        applier = service.apply_outcome
+        payload = outcome("SUCCEEDED", transport="CONFIRMED", restore=False)
+
+    with pytest.raises(RuntimeFailure) as raised:
+        applier(operation_id, payload, "sha256:" + "9" * 64, "trace")
+    assert raised.value.code == "WORKFLOW_RUN_BINDING_INVALID"
+
+    with factory() as session:
+        stored = session.get(DeploymentOperation, operation_id)
+        assert stored is not None
+        assert (
+            stored.state,
+            stored.transport_status,
+            stored.outcome_sha256,
+            stored.active_slot,
+            stored.journal_json,
+        ) == before
+        assert session.get(CurrentInstallation, 1) is None
+        assert session.scalar(select(AuditEvent)) is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("workflow_run_id", None),
+        ("workflow_run_id", 0),
+        ("workflow_attempt", None),
+        ("workflow_attempt", 0),
+        ("workflow_run_url", None),
+        ("workflow_run_url", "https://github.com/other/repo/actions/runs/100"),
+        ("control_sha", None),
+        ("control_sha", "z" * 40),
+    ],
+)
+def test_each_binding_field_alone_invalidates_a_confirmed_outcome(
+    field: str, value: Any
+) -> None:
+    """Every binding field is load-bearing, individually, for CONFIRMED.
+
+    Partial bindings cannot be persisted because ck_rc_deployment_workflow_binding
+    forbids them, so the per-field proof is done directly against the invariant.
+    """
+    def build() -> DeploymentOperation:
+        operation = DeploymentOperation(operation_id="dep_" + "d" * 32)
+        operation.workflow_run_id = 100
+        operation.workflow_attempt = 1
+        operation.workflow_run_url = (
+            "https://github.com/greggorio/abaronesa-emporio/actions/runs/100"
+        )
+        operation.control_sha = "c" * 40
+        return operation
+
+    complete = build()
+    DeployerService._require_workflow_binding(complete, "CONFIRMED")
+
+    partial = build()
+    setattr(partial, field, value)
+    with pytest.raises(RuntimeFailure) as raised:
+        DeployerService._require_workflow_binding(partial, "CONFIRMED")
+    assert raised.value.code == "WORKFLOW_RUN_BINDING_INVALID"
+
+    # INDETERMINATE keeps the existing UNCERTAIN path and requires no binding
+    DeployerService._require_workflow_binding(partial, "INDETERMINATE")
 
 
 def test_success_outcome_updates_current_and_replay_is_noop(
