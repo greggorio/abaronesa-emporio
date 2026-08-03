@@ -9,6 +9,12 @@
 > **Finalidade:** permitir que outro orquestrador conduza o trabalho restante
 > até o encerramento técnico, operacional e documental.
 
+> **Atualização pós-snapshot — 03/08/2026:** S30a e S30b foram aceitas; a
+> release global `v0.1.0` foi publicada pelo run `30804834574`; o remoto está
+> em `67abde48fd4a74de5bcff22bf592bd9005094210`; S37 é o contrato vigente para
+> inventário read-only da VPS e plano de preparação, ainda sem autorizar
+> mutação de produção.
+
 ## 1. Mandato e modo de condução
 
 Assuma como orquestrador, não como mero revisor de documentos. O objetivo é
