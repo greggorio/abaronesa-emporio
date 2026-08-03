@@ -1356,7 +1356,8 @@ def _cli_trust(args: argparse.Namespace) -> int:
     transport = GhTransport()
     current = transport.current_run(os.environ["GITHUB_RUN_ID"])
     validate_identity(dict(os.environ), event, current, operation)
-    _run_git(["fetch", "--no-tags", "origin", "main"])
+    # The workflow checks out with fetch-depth 0 and persist-credentials false,
+    # so origin/main is already present and no authenticated fetch is possible.
     _run_git(["merge-base", "--is-ancestor", os.environ["GITHUB_SHA"], "origin/main"])
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=False)
