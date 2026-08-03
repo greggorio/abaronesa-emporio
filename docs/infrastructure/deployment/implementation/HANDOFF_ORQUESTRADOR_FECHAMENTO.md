@@ -27,6 +27,14 @@
 > implementar o workflow independente da imagem do `release_control`, publicá-lo
 > por push fast-forward e validar CI/candidato. S39 não executa esse workflow,
 > não publica imagem GHCR e não acessa a VPS.
+>
+> **Atualização S39/S40 — 03/08/2026:** S39 aceita no SHA remoto
+> `daaa7061ab9f7a722b17e37c0f060f45141225e7`, com base Alpine em zero
+> `HIGH/CRITICAL`, CI `30838546384` e candidato `30839217752` verdes. O workflow
+> `Publish Release Control Image` está ativo e nunca executado. S40 é o contrato
+> vigente para configurar sua allowlist exclusiva e realizar uma única
+> publicação inaugural por digest no GHCR. S40 não acessa a VPS e não executa
+> deploy ou rollback.
 
 ## 1. Mandato e modo de condução
 

@@ -1,6 +1,6 @@
 # Implementacao de Docker, CI/CD e Controle de Releases
 
-> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36–S38 aceitas; S35 ultrapassada; S39 aberta no ciclo independente da imagem do release control
+> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36–S39 aceitas; S35 ultrapassada; S40 aberta para a publicação inaugural da imagem do release control
 
 Esta pasta registra os contratos e as evidencias das slices usadas para implementar a arquitetura definida em [proposta-docker-ci-cd-producao-emporio.md](../proposta-docker-ci-cd-producao-emporio.md).
 
@@ -91,4 +91,5 @@ O arquivo `.task.md` e o contrato imutavel da delegacao. O arquivo `.report.md` 
 | S36 | [Fechamento terminal da S30a](./slices/S36-fechamento-terminal-s30a-seguranca-migracoes-candidato.task.md) ([authorization-01](./slices/S36-fechamento-terminal-s30a-seguranca-migracoes-candidato.authorization-01.md)) | [Relatório](./slices/S36-fechamento-terminal-s30a-seguranca-migracoes-candidato.report.md) | `ACCEPTED` — 02/08/2026; CI `30757174785`, candidato `30757430990`, sete máscaras e três artifacts válidos |
 | S37 | [Inventário read-only da VPS e plano de preparação de produção](./slices/S37-inventario-read-only-vps-plano-preparacao-producao.task.md) | [Relatório](./slices/S37-inventario-read-only-vps-plano-preparacao-producao.report.md) | `ACCEPTED` — 03/08/2026; host multi-inquilino inventariado sem mutação, Empório greenfield e plano Gate A–E fechado |
 | S38 | [Fechamento do Gate A e invariantes do deployer](./slices/S38-fechamento-gate-a-invariantes-deployer.task.md) | [Relatório](./slices/S38-fechamento-gate-a-invariantes-deployer.report.md) | `ACCEPTED` — 03/08/2026; 331 testes verdes, journal JSONB reparado, CI `30812658858` e candidato `30813218997` verdes |
-| S39 | [Workflow independente da imagem do release control](./slices/S39-workflow-imagem-release-control.task.md) ([correction-01](./slices/S39-workflow-imagem-release-control.correction-01.md)) | [Relatório](./slices/S39-workflow-imagem-release-control.report.md) | `IN_PROGRESS` — implementação local pronta; correção Alpine autorizada após bloqueio Trivy da base Debian, sem execução nem imagem GHCR |
+| S39 | [Workflow independente da imagem do release control](./slices/S39-workflow-imagem-release-control.task.md) ([correction-01](./slices/S39-workflow-imagem-release-control.correction-01.md)) | [Relatório](./slices/S39-workflow-imagem-release-control.report.md) | `ACCEPTED` — 03/08/2026; Alpine em zero HIGH/CRITICAL, CI `30838546384`, candidato `30839217752`, workflow ativo e nunca executado |
+| S40 | [Publicação inaugural da imagem do release control](./slices/S40-publicacao-inaugural-imagem-release-control.task.md) | — | `PLANNED` — um dispatch autorizado, publicação GHCR por digest e validação dos artifacts; sem VPS, deploy ou rollback |
