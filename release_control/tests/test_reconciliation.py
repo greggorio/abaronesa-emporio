@@ -201,8 +201,9 @@ def run(
     return {
         "id": 400,
         "run_attempt": 1,
-        "name": "Publish Release",
-        "path": ".github/workflows/publish-release.yml@main",
+        # matches the live REST shape: run-name becomes `name`, `path` has no @ref
+        "name": f"publish-release-{operation}",
+        "path": ".github/workflows/publish-release.yml",
         "event": "workflow_dispatch",
         "status": status,
         "conclusion": conclusion,

@@ -264,9 +264,11 @@ class Reconciler:
     def _bind_run(self, operation_id: str, run: dict[str, Any]) -> tuple[int, int]:
         run_id = positive_id(run.get("id"), "WORKFLOW_RUN_INVALID")
         attempt = positive_id(run.get("run_attempt"), "WORKFLOW_RUN_INVALID")
+        # publish-release.yml declares run-name, so REST `name` carries the
+        # display title, and `path` never carries an @ref.
         if (
-            run.get("name") != "Publish Release"
-            or run.get("path") != ".github/workflows/publish-release.yml@main"
+            run.get("name") != f"publish-release-{operation_id}"
+            or run.get("path") != ".github/workflows/publish-release.yml"
             or run.get("event") != "workflow_dispatch"
             or run.get("head_branch") != "main"
             or run.get("display_title") != f"publish-release-{operation_id}"

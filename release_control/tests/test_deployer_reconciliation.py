@@ -136,8 +136,8 @@ def run(
     return {
         "id": run_id,
         "run_attempt": attempt,
-        "name": "Deploy Production",
-        "path": ".github/workflows/deploy-production.yml@main",
+        "name": f"deploy-production-{operation_id}",
+        "path": ".github/workflows/deploy-production.yml",
         "event": "workflow_dispatch",
         "status": status,
         "conclusion": conclusion,
@@ -163,8 +163,9 @@ def rollback_run(
     return {
         "id": run_id,
         "run_attempt": attempt,
+        # rollback-production.yml declares no run-name, so `name` stays the workflow name
         "name": "Rollback Production",
-        "path": ".github/workflows/rollback-production.yml@main",
+        "path": ".github/workflows/rollback-production.yml",
         "event": "workflow_dispatch",
         "status": status,
         "conclusion": conclusion,
