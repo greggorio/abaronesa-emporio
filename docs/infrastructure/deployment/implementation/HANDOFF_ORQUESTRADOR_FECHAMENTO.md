@@ -35,6 +35,13 @@
 > vigente para configurar sua allowlist exclusiva e realizar uma única
 > publicação inaugural por digest no GHCR. S40 não acessa a VPS e não executa
 > deploy ou rollback.
+>
+> **Atualização S40/S41 — 03/08/2026:** S40 aceita com o run `30855327740` e a
+> imagem operacional privada
+> `ghcr.io/greggorio/abaronesa-emporio-release-control@sha256:64b6f2be31b8532b870656d401656df2184599921c73ad667c65c36d65022380`.
+> S41 é o contrato vigente para fechar somente o bootstrap do transporte:
+> usuário não-root, filesystem canônico, chave SSH dedicada e environment
+> GitHub. Não instala helper, não inicia serviço e não executa deploy/rollback.
 
 ## 1. Mandato e modo de condução
 
