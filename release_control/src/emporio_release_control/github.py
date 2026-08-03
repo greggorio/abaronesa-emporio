@@ -208,6 +208,22 @@ class GitHubClient:
                 return result
         raise RuntimeFailure("GITHUB_PAGINATION_EXHAUSTED")
 
+    def _accept_dispatch(self, response: httpx.Response) -> None:
+        """Accept both workflow-dispatch success shapes.
+
+        Older API versions answer 204 with no content. Version 2026-03-10
+        answers 200 with the created run, so a plain 204 check reads a
+        successful dispatch as a rejection.
+        """
+        if response.status_code == 204:
+            return
+        if response.status_code != 200:
+            raise RemoteHttpFailure(response.status_code)
+        value = self._json(response)
+        run_id = value.get("workflow_run_id") if isinstance(value, dict) else None
+        if not isinstance(run_id, int) or isinstance(run_id, bool) or run_id < 1:
+            raise RuntimeFailure("GITHUB_RESPONSE_INVALID")
+
     def dispatch_publication(self, operation_id: str, request: dict[str, str]) -> None:
         endpoint = (
             f"{self.api_base}/repos/{OWNER}/{REPO}/actions/workflows/"
@@ -231,8 +247,7 @@ class GitHubClient:
             response = self.client.post(endpoint, headers=headers, json=payload)
         except httpx.HTTPError as exc:
             raise RemoteTransportFailure(uncertain=True) from exc
-        if response.status_code != 204:
-            raise RemoteHttpFailure(response.status_code)
+        self._accept_dispatch(response)
 
     def dispatch_deployment(self, operation_id: str, release: str) -> None:
         if re.fullmatch(r"dep_[0-9a-f]{32}", operation_id) is None or re.fullmatch(
@@ -256,8 +271,7 @@ class GitHubClient:
             response = self.client.post(endpoint, headers=headers, json=payload)
         except httpx.HTTPError as exc:
             raise RemoteTransportFailure(uncertain=True) from exc
-        if response.status_code != 204:
-            raise RemoteHttpFailure(response.status_code)
+        self._accept_dispatch(response)
 
     def dispatch_rollback(self, operation_id: str, release: str) -> None:
         if re.fullmatch(r"rbk_[0-9a-f]{32}", operation_id) is None or re.fullmatch(
@@ -281,5 +295,4 @@ class GitHubClient:
             response = self.client.post(endpoint, headers=headers, json=payload)
         except httpx.HTTPError as exc:
             raise RemoteTransportFailure(uncertain=True) from exc
-        if response.status_code != 204:
-            raise RemoteHttpFailure(response.status_code)
+        self._accept_dispatch(response)

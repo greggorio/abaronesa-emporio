@@ -113,7 +113,7 @@ class ReleasePublicationTests(unittest.TestCase):
     def candidate_run(self):
         return {
             "id": 200, "run_attempt": 1, "name": "Publish Candidate",
-            "workflow_id": 12, "path": ".github/workflows/publish-candidate.yml@main",
+            "workflow_id": 12, "path": ".github/workflows/publish-candidate.yml",
             "event": "workflow_run", "status": "completed", "conclusion": "success",
             "head_branch": "main", "head_sha": "1"*40,
             "repository": self.repository(), "head_repository": self.repository(),

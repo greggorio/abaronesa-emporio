@@ -184,7 +184,7 @@ def validate_workflow_run(
         },
         "candidate": {
             "name": "Publish Candidate",
-            "path": ".github/workflows/publish-candidate.yml@main",
+            "path": ".github/workflows/publish-candidate.yml",
             "event": "workflow_run",
             "status": "completed",
         },

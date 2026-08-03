@@ -349,6 +349,83 @@ def test_github_response_mutants(
             )
 
 
+DISPATCHERS = {
+    "publication": lambda client: client.dispatch_publication(
+        "pub_" + "a" * 32,
+        {
+            "candidateId": CANDIDATE,
+            "versionBump": "PATCH",
+            "description": "d",
+            "changelog": "c",
+        },
+    ),
+    "deployment": lambda client: client.dispatch_deployment(
+        "dep_" + "a" * 32, "v1.0.0"
+    ),
+    "rollback": lambda client: client.dispatch_rollback("rbk_" + "a" * 32, "v1.0.0"),
+}
+
+
+@pytest.mark.parametrize("dispatcher", sorted(DISPATCHERS))
+@pytest.mark.parametrize(
+    ("response", "expected"),
+    [
+        # 2026-03-10 answers 200 with the created run; older versions answer 204.
+        (httpx.Response(200, json={"workflow_run_id": 30793918240}), None),
+        (
+            httpx.Response(
+                200,
+                json={
+                    "workflow_run_id": 30793918240,
+                    "run_url": f"https://api.github.com/repos/{REPOSITORY}/actions/runs/30793918240",
+                    "html_url": f"https://github.com/{REPOSITORY}/actions/runs/30793918240",
+                },
+            ),
+            None,
+        ),
+        (httpx.Response(204), None),
+        (httpx.Response(200, json={}), RuntimeFailure),
+        (httpx.Response(200, json={"workflow_run_id": "30793918240"}), RuntimeFailure),
+        (httpx.Response(200, json={"workflow_run_id": 0}), RuntimeFailure),
+        (httpx.Response(200, json={"workflow_run_id": -1}), RuntimeFailure),
+        (httpx.Response(200, json={"workflow_run_id": True}), RuntimeFailure),
+        (httpx.Response(200, json=[]), RuntimeFailure),
+        (httpx.Response(200, content=b"{"), RuntimeFailure),
+        (httpx.Response(201, json={"workflow_run_id": 30793918240}), RemoteHttpFailure),
+        (httpx.Response(202), RemoteHttpFailure),
+        (httpx.Response(403), RemoteHttpFailure),
+        (httpx.Response(422), RemoteHttpFailure),
+    ],
+)
+def test_dispatch_accepts_both_success_shapes_and_rejects_the_rest(
+    rsa_material: tuple[Path, object, object],
+    dispatcher: str,
+    response: httpx.Response,
+    expected: type[BaseException] | None,
+) -> None:
+    """Every dispatch endpoint must accept 204 and 200-with-run-id alike."""
+    _, private, _ = rsa_material
+    dispatches: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/app/"):
+            return httpx.Response(
+                201, json={"token": "opaque", "expires_at": "2099-01-01T00:00:00Z"}
+            )
+        dispatches.append(request.url.path)
+        return response
+
+    client = github_client(private, handler)
+    call = DISPATCHERS[dispatcher]
+    if expected is None:
+        assert call(client) is None
+    else:
+        with pytest.raises(expected):
+            call(client)
+    # a dispatch is never retried, whatever the answer was
+    assert len(dispatches) == 1
+
+
 @pytest.mark.parametrize(
     ("phase", "expected"),
     [
