@@ -21,6 +21,12 @@
 > falhas do deployer e validar CI/candidato. Nenhum acesso ou ato de produção é
 > autorizado pela S38; capacidade, reinício e preparação da VPS permanecem para
 > autorização posterior e específica.
+>
+> **Atualização S38/S39 — 03/08/2026:** Gate A aceito no SHA remoto
+> `bd1f51f96866665a3d5f0e43e15d27dab4e94e74`. S39 é o contrato vigente para
+> implementar o workflow independente da imagem do `release_control`, publicá-lo
+> por push fast-forward e validar CI/candidato. S39 não executa esse workflow,
+> não publica imagem GHCR e não acessa a VPS.
 
 ## 1. Mandato e modo de condução
 
