@@ -335,8 +335,10 @@ export const useUserStore = defineStore("user", () => {
     return hasSystemRole.value ? null : currentUser.value?.grupoId;
   });
 
+  // A autoridade real é o papel SYSTEM, exigido pelo backend em
+  // /api/release-control/identity/token; email não identifica autoridade.
   const isRootUser = computed(() => {
-    return currentUser.value?.email === "root@localhost";
+    return hasSystemRole.value;
   });
 
   /* ------------------------------------------------------------------ */

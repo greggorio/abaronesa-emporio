@@ -31,6 +31,7 @@ from .errors import (
 
 MAX_JSON_BYTES = 4 * 1024 * 1024
 MAX_BINARY_BYTES = 16 * 1024 * 1024
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 @dataclass(slots=True)
@@ -157,26 +158,42 @@ class GitHubClient:
     def get_bytes(self, path: str, limit: int = MAX_BINARY_BYTES) -> bytes:
         if not path.startswith(f"/repos/{REPOSITORY}/"):
             raise RuntimeFailure("GITHUB_ENDPOINT_INVALID")
+        # Actions artifact download rejects application/octet-stream with 415;
+        # release asset download requires it. Both answer with a signed redirect.
+        accept = (
+            "application/vnd.github+json"
+            if path.endswith("/zip")
+            else "application/octet-stream"
+        )
         for attempt in range(2):
             try:
                 response = self.client.get(
                     f"{self.api_base}{path}",
-                    headers={
-                        **self._headers(force=attempt == 1),
-                        "Accept": "application/octet-stream",
-                    },
+                    headers={**self._headers(force=attempt == 1), "Accept": accept},
                 )
             except httpx.HTTPError as exc:
                 raise RemoteTransportFailure() from exc
             if response.status_code == 401 and attempt == 0:
                 self._token = None
                 continue
+            if response.status_code in REDIRECT_STATUSES:
+                response = self._follow_signed_download(response)
             if response.status_code != 200:
                 raise RemoteHttpFailure(response.status_code)
             if len(response.content) > limit:
                 raise RuntimeFailure("GITHUB_RESPONSE_INVALID")
             return response.content
         raise RemoteHttpFailure(401)
+
+    def _follow_signed_download(self, response: httpx.Response) -> httpx.Response:
+        location = response.headers.get("location", "")
+        # The target is pre-signed storage outside GitHub: never forward credentials.
+        if not location.startswith("https://"):
+            raise RuntimeFailure("GITHUB_RESPONSE_INVALID")
+        try:
+            return self.client.get(location, headers={"User-Agent": USER_AGENT})
+        except httpx.HTTPError as exc:
+            raise RemoteTransportFailure() from exc
 
     def list_pages(self, path: str, key: str | None) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []

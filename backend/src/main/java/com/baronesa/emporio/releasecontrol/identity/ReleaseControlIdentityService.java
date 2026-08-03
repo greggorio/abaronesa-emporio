@@ -1,6 +1,7 @@
 package com.baronesa.emporio.releasecontrol.identity;
 
 import io.jsonwebtoken.Jwts;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +24,7 @@ public class ReleaseControlIdentityService {
     private final ReleaseControlIdentityKeyMaterial keyMaterial;
     private final Clock clock;
 
+    @Autowired
     public ReleaseControlIdentityService(ReleaseControlIdentityKeyMaterial keyMaterial) {
         this(keyMaterial, Clock.systemUTC());
     }

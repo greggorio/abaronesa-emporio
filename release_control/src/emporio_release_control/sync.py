@@ -205,7 +205,7 @@ class Synchronizer:
         try:
             runs = self.github.list_pages(
                 f"/repos/{REPOSITORY}/actions/workflows/publish-candidate.yml/runs"
-                "?branch=main&status=completed",
+                "?branch=main&status=success",
                 "workflow_runs",
             )
             evidence = [self._candidate_from_run(run) for run in runs]

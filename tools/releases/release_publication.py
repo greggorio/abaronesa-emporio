@@ -167,15 +167,18 @@ def validate_workflow_run(
     attempt: int,
     sha: str,
     actor: tuple[str, int] | None = None,
+    expected_name: str | None = None,
 ) -> int:
     """Validate the real top-level workflow-run REST shape."""
     if not isinstance(run, dict):
         raise PublicationError(f"{kind.upper()}_RUN_INVALID")
     code = f"{kind.upper()}_RUN_INVALID"
     expected = {
+        # publish-release.yml declares run-name, so the REST `name` of the current
+        # run is the display title, not the workflow name; `path` carries no @ref.
         "current": {
-            "name": "Publish Release",
-            "path": ".github/workflows/publish-release.yml@main",
+            "name": expected_name,
+            "path": ".github/workflows/publish-release.yml",
             "event": "workflow_dispatch",
             "status": "in_progress",
         },
@@ -432,7 +435,12 @@ def request_from_event(event: dict[str, Any]) -> tuple[str, dict[str, str]]:
     return operation, request
 
 
-def validate_identity(env: dict[str, str], event: dict[str, Any], current_run: dict[str, Any]) -> None:
+def validate_identity(
+    env: dict[str, str],
+    event: dict[str, Any],
+    current_run: dict[str, Any],
+    operation: str,
+) -> None:
     required = {
         "GITHUB_REPOSITORY": REPOSITORY, "GITHUB_REPOSITORY_OWNER": "greggorio",
         "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
@@ -451,6 +459,7 @@ def validate_identity(env: dict[str, str], event: dict[str, Any], current_run: d
     validate_workflow_run(
         current_run, kind="current", run_id=run_id, attempt=attempt,
         sha=env.get("GITHUB_SHA", ""), actor=(env.get("GITHUB_ACTOR", ""), actor_id_int),
+        expected_name=f"publish-release-{operation}",
     )
 
 
@@ -1177,7 +1186,7 @@ def revalidate_remote_context(
     ):
         raise PublicationError("PLAN_REQUEST_BINDING_INVALID")
     current = transport.current_run(os.environ["GITHUB_RUN_ID"])
-    validate_identity(dict(os.environ), event, current)
+    validate_identity(dict(os.environ), event, current, operation)
     with tempfile.TemporaryDirectory() as raw:
         _, binding = resolve_candidate(
             transport, request["candidateId"], Path(raw) / "candidate"
@@ -1346,7 +1355,7 @@ def _cli_trust(args: argparse.Namespace) -> int:
     operation, request = request_from_event(event)
     transport = GhTransport()
     current = transport.current_run(os.environ["GITHUB_RUN_ID"])
-    validate_identity(dict(os.environ), event, current)
+    validate_identity(dict(os.environ), event, current, operation)
     _run_git(["fetch", "--no-tags", "origin", "main"])
     _run_git(["merge-base", "--is-ancestor", os.environ["GITHUB_SHA"], "origin/main"])
     output = Path(args.output)

@@ -98,8 +98,11 @@ class ReleasePublicationTests(unittest.TestCase):
 
     def current_run(self):
         return {
-            "id": 400, "run_attempt": 1, "name": "Publish Release",
-            "workflow_id": 14, "path": ".github/workflows/publish-release.yml@main",
+            # publish-release.yml declares run-name, so REST `name` is the display
+            # title; `path` never carries an @ref. Matches the live GitHub shape.
+            "id": 400, "run_attempt": 1,
+            "name": "publish-release-release_operation_0001",
+            "workflow_id": 14, "path": ".github/workflows/publish-release.yml",
             "event": "workflow_dispatch", "status": "in_progress",
             "conclusion": None, "head_branch": "main", "head_sha": "1"*40,
             "repository": self.repository(), "head_repository": self.repository(),
@@ -304,7 +307,7 @@ class ReleasePublicationTests(unittest.TestCase):
              "GITHUB_ACTOR":"actor","GITHUB_RUN_ID":"400","GITHUB_RUN_ATTEMPT":"1","GITHUB_SHA":"1"*40}
         event={"sender":{"id":1,"login":"actor"}}
         run=self.current_run()
-        rp.validate_identity(env,event,run)
+        rp.validate_identity(env,event,run,"release_operation_0001")
     def test_15_identity_repository_ref_event_sender_run_mutants(self):
         base={"GITHUB_REPOSITORY":rp.REPOSITORY,"GITHUB_REPOSITORY_OWNER":"greggorio","GITHUB_EVENT_NAME":"workflow_dispatch",
               "GITHUB_REF":"refs/heads/main","GITHUB_ACTOR_ID":"1","RELEASE_PUBLISHER_ACTOR_IDS":"1",
@@ -313,7 +316,7 @@ class ReleasePublicationTests(unittest.TestCase):
         run=self.current_run()
         for key,value in (("GITHUB_REPOSITORY","x/y"),("GITHUB_REF","refs/heads/x"),("GITHUB_EVENT_NAME","push"),("GITHUB_ACTOR","other")):
             env=dict(base); env[key]=value
-            with self.subTest(key=key), self.assertRaises(rp.PublicationError): rp.validate_identity(env,event,run)
+            with self.subTest(key=key), self.assertRaises(rp.PublicationError): rp.validate_identity(env,event,run,"release_operation_0001")
     def test_16_empty_history(self): self.assertEqual([], rp.validate_history([], {}))
     def test_17_three_release_chain(self):
         records=[self.record("v0.0.1",None,201,401),self.record("v0.1.0","v0.0.1",202,402),self.record("v1.0.0","v0.1.0",203,403)]
@@ -485,6 +488,7 @@ class ReleasePublicationTests(unittest.TestCase):
             rp.validate_workflow_run(
                 self.current_run(), kind="current", run_id=400, attempt=1,
                 sha="1"*40, actor=("actor", 1),
+                expected_name="publish-release-release_operation_0001",
             ),
         )
 
@@ -510,6 +514,7 @@ class ReleasePublicationTests(unittest.TestCase):
             rp.validate_workflow_run(
                 legacy, kind="current", run_id=400, attempt=1,
                 sha="1"*40, actor=("actor", 1),
+                expected_name="publish-release-release_operation_0001",
             )
 
     def test_c01_04_current_run_each_top_level_binding_is_fail_closed(self):
@@ -526,6 +531,7 @@ class ReleasePublicationTests(unittest.TestCase):
                 rp.validate_workflow_run(
                     run, kind="current", run_id=400, attempt=1,
                     sha="1"*40, actor=("actor", 1),
+                    expected_name="publish-release-release_operation_0001",
                 )
 
     def test_c01_05_candidate_run_divergence_precedes_artifact_listing(self):
