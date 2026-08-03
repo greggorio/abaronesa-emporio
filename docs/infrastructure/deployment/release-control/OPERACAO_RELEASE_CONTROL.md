@@ -89,6 +89,50 @@ O unit file exige usuário e grupo dedicados, `EnvironmentFile` protegido,
 disponível. Ele é um exemplo para adaptação controlada, não uma instalação
 pronta.
 
+## Ciclo independente da imagem
+
+A imagem do `release_control` tem ciclo próprio, separado do produto comercial.
+Ela é publicada exclusivamente pelo workflow manual
+`.github/workflows/publish-release-control.yml`, em
+`ghcr.io/greggorio/abaronesa-emporio-release-control`, e **nunca** entra no
+candidato, na ordem canônica, no BOM da release global ou no
+`publish-release.yml`. O `components.yml` mantém `release_control` como único
+`excluded_operational_components`.
+
+O workflow aceita apenas `workflow_dispatch` sobre `main` e não recebe nenhum
+input: SHA, tag, imagem, Dockerfile e comando vêm do próprio contexto confiável,
+de modo que o operador não pode escolhê-los. O disparo exige que o ator esteja
+na allowlist decimal `vars.RELEASE_CONTROL_IMAGE_PUBLISHER_ACTOR_IDS`, que é
+exclusiva desta finalidade e não reaproveita `RELEASE_PUBLISHER_ACTOR_IDS` nem
+`DEPLOYER_ACTOR_IDS`.
+
+Ordem obrigatória dentro do job de publicação:
+
+```text
+build único (load, sem push)
+  -> prova de usuário 10001:10001, healthcheck e labels OCI
+  -> scan Trivy HIGH,CRITICAL com ignore-unfixed=false
+  -> login no ghcr.io somente depois do scan
+  -> um único docker push da tag de transporte
+  -> digest lido do registry
+  -> manifesto canônico e sidecar
+```
+
+A tag de transporte é derivada apenas de source SHA, run ID e attempt. Ela move
+bytes e **não** é identidade: `latest`, SemVer comercial e tags escolhidas pelo
+operador são proibidas, e a tag não aparece no manifesto. A identidade final é
+sempre `repository@sha256:<digest>`.
+
+Para atualizar a instalação, troque no `EnvironmentFile` protegido a variável
+`RELEASE_CONTROL_IMAGE` para o `immutableRef` publicado, reinicie o serviço pelo
+systemd e observe `/health/ready`. As migrations Alembic são aplicadas pelo
+próprio entrypoint antes do Uvicorn. Não recrie o PostgreSQL do control plane
+como parte de uma atualização da aplicação.
+
+O contrato estático do workflow é verificado por
+`tools/deploy/validate_release_control_workflow.py`, e o manifesto por
+`tools/deploy/release_control_image.py validate`.
+
 ## Verificação local permitida pela S28
 
 As verificações offline do pacote são feitas pelo validador

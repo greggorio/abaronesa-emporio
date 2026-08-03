@@ -19,6 +19,9 @@ EXPECTED_WORKFLOWS = frozenset(
         "publish-release.yml",
         "deploy-production.yml",
         "rollback-production.yml",
+        # Operational-only: publishes the release-control image, never a
+        # commercial component and never part of the global release BOM.
+        "publish-release-control.yml",
     }
 )
 CHECKOUT_SHA = "de0fac2e4500dabe0009e67214ff5f5447ce83dd"
@@ -81,19 +84,21 @@ def _validate_readme(root: Path, errors: list[str]) -> None:
         errors.append("readme-unreadable")
         return
     required = (
-        "Existem exatamente cinco workflows ativos",
+        "Existem exatamente seis workflows ativos",
         "`ci.yml`",
         "`publish-candidate.yml`",
         "`publish-release.yml`",
         "`deploy-production.yml`",
         "`rollback-production.yml`",
+        "`publish-release-control.yml`",
         "`rollback-production.yml` é exclusivamente manual",
         "ainda não foram executados no GitHub",
         "não foi executado remotamente",
     )
     errors.extend(f"readme:{marker}" for marker in required if marker not in text)
-    if "Existem exatamente quatro workflows" in text:
-        errors.append("readme-four-workflows")
+    for stale in ("Existem exatamente quatro workflows", "Existem exatamente cinco workflows"):
+        if stale in text:
+            errors.append("readme-stale-workflow-count")
 
 
 def _validate_rollback(workflow: dict[str, Any], source: str, errors: list[str]) -> None:

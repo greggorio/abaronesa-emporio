@@ -1,7 +1,11 @@
 # Workflows GitHub Actions
 
-Existem exatamente cinco workflows ativos: `ci.yml`, `publish-candidate.yml`,
-`publish-release.yml`, `deploy-production.yml` e `rollback-production.yml`. A CI executa em pull requests e pushes para `main`;
+Existem exatamente seis workflows ativos: `ci.yml`, `publish-candidate.yml`,
+`publish-release.yml`, `deploy-production.yml`, `rollback-production.yml` e
+`publish-release-control.yml`. Os cinco primeiros formam o caminho comercial; o
+`publish-release-control.yml` é exclusivamente manual e publica somente a imagem
+operacional do `release_control`, que nunca entra no candidato nem no BOM da
+release global. A CI executa em pull requests e pushes para `main`;
 somente o push em `main` produz o artifact machine-readable `candidate-plan`.
 
 A CI possui gates separados para contratos/infraestrutura, backend ERP,

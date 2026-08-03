@@ -1,0 +1,163 @@
+name: Publish Release Control Image
+run-name: publish-release-control-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emporio-release-control-image
+  cancel-in-progress: false
+
+jobs:
+  trust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.trust.outputs.sha }}
+      tag: ${{ steps.trust.outputs.tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate trusted dispatch identity
+        id: trust
+        env:
+          RELEASE_CONTROL_IMAGE_PUBLISHER_ACTOR_IDS: ${{ vars.RELEASE_CONTROL_IMAGE_PUBLISHER_ACTOR_IDS }}
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
+          TRUSTED_EVENT: ${{ github.event_name }}
+          TRUSTED_REF: ${{ github.ref }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_ACTOR: ${{ github.actor }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+        run: python3 tools/deploy/release_control_image.py trust --output "$GITHUB_OUTPUT" --check-head
+
+  verify:
+    needs: trust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.trust.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install exactly the lock without changing it
+        run: |
+          python3 -m pip install --no-cache-dir --disable-pip-version-check "uv==0.9.17"
+          cd release_control
+          uv sync --locked
+          git diff --exit-code -- uv.lock pyproject.toml
+      - name: Run the release control suite
+        run: |
+          cd release_control
+          PYTHONDONTWRITEBYTECODE=1 uv run pytest -q tests
+      - name: Validate operational contracts and commercial separation
+        run: |
+          python3 tools/releases/validate_publisher_runtime.py
+          python3 tools/deploy/validate_deployer_runtime.py
+          python3 tools/deploy/validate_rollback_runtime.py
+          python3 tools/deploy/validate_release_control_package.py
+          python3 tools/deploy/validate_release_control_workflow.py
+          python3 tools/releases/catalog.py validate
+
+  publish:
+    needs: [trust, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.trust.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Build once and load the exact local tag
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: release_control
+          file: release_control/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ needs.trust.outputs.tag }}
+          build-args: |
+            VCS_REF=${{ needs.trust.outputs.sha }}
+            IMAGE_VERSION=release-control-${{ needs.trust.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/greggorio/abaronesa-emporio
+            org.opencontainers.image.revision=${{ needs.trust.outputs.sha }}
+            org.opencontainers.image.version=release-control-${{ needs.trust.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Prove runtime user healthcheck and labels on the built image
+        run: python3 tools/deploy/release_control_image.py probe --reference "${{ needs.trust.outputs.tag }}" --sha "${{ needs.trust.outputs.sha }}"
+      - name: Scan the exact local image before any authentication
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with: {image-ref: "${{ needs.trust.outputs.tag }}", severity: "HIGH,CRITICAL", ignore-unfixed: false, exit-code: "1", trivy-version: v0.70.0, cache: false}
+      - name: Authenticate only after the scan
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with: {registry: ghcr.io, username: "${{ github.actor }}", password: "${{ github.token }}"}
+      - name: Push once and record the remote digest
+        run: |
+          docker push "${{ needs.trust.outputs.tag }}"
+          python3 tools/deploy/release_control_image.py manifest --source-sha "${{ needs.trust.outputs.sha }}" --reference "${{ needs.trust.outputs.tag }}" --run-id "${{ github.run_id }}" --attempt "${{ github.run_attempt }}" --actor "${{ github.actor }}" --actor-id "${{ github.actor_id }}" --output manifest
+          python3 tools/deploy/release_control_image.py validate --manifest manifest
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-control-image-manifest
+          path: manifest/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+      - name: Logout and remove only the exact local tag
+        if: always()
+        run: |
+          docker logout ghcr.io || true
+          docker image rm -f "${{ needs.trust.outputs.tag }}" || true
+
+  outcome:
+    if: always()
+    needs: [trust, verify, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        if: needs.publish.result == 'success'
+        with:
+          name: release-control-image-manifest
+          path: manifest
+      - name: Record the terminal outcome without inventing success
+        env:
+          TRUST_RESULT: ${{ needs.trust.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: python3 tools/deploy/release_control_image.py outcome --manifest manifest --output outcome
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: release-control-image-outcome
+          path: outcome/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false

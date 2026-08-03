@@ -79,9 +79,19 @@ def _service_block(compose: str, service: str) -> str:
 
 
 def _validate_dockerfile(text: str, errors: list[str]) -> None:
+    # Both stages must pin the same base by digest so a publication is
+    # reproducible; the readable tag may stay in front of the digest.
+    for stage, code in (("builder", "docker-base-builder"), ("runtime", "docker-base-runtime")):
+        if not re.search(
+            rf"^FROM python:3\.13-alpine3\.23@sha256:[0-9a-f]{{64}} AS {stage}$",
+            text,
+            re.MULTILINE,
+        ):
+            errors.append(code)
+    digests = re.findall(r"^FROM \S+@(sha256:[0-9a-f]{64})", text, re.MULTILINE)
+    if len(set(digests)) != 1:
+        errors.append("docker-base-digest-mismatch")
     for marker, code in (
-        ("FROM python:3.13-slim AS builder", "docker-base-builder"),
-        ("FROM python:3.13-slim AS runtime", "docker-base-runtime"),
         ("ARG UV_VERSION=", "docker-uv-pinned"),
         ("WORKDIR /build", "docker-build-workdir"),
         ("WORKDIR /app", "docker-runtime-workdir"),
@@ -91,8 +101,9 @@ def _validate_dockerfile(text: str, errors: list[str]) -> None:
         ("COPY src ./src", "docker-src"),
         ("COPY migrations ./migrations", "docker-migrations"),
         ("COPY alembic.ini ./", "docker-alembic"),
-        ("groupadd --gid 10001", "docker-group"),
-        ("useradd --uid 10001 --gid 10001", "docker-user"),
+        # Alpine base: BusyBox adduser/addgroup instead of shadow utilities.
+        ("addgroup --gid 10001 release-control", "docker-group"),
+        ("adduser --uid 10001 --ingroup release-control", "docker-user"),
         ("USER 10001:10001", "docker-final-user"),
         ("HEALTHCHECK", "docker-healthcheck"),
         ("http://127.0.0.1:8080/health/live", "docker-health-live"),

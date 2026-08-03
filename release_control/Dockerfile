@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM python:3.13-slim AS builder
+FROM python:3.13-alpine3.23@sha256:9fdbf2e3e82628351513560b121e2ee6ce31cac212be9e070c5a5e2769fb5e76 AS builder
 
 ARG UV_VERSION=0.9.17
 ENV UV_COMPILE_BYTECODE=1 \
@@ -20,7 +20,13 @@ COPY alembic.ini ./
 COPY README.md ./
 RUN uv sync --locked --no-dev
 
-FROM python:3.13-slim AS runtime
+FROM python:3.13-alpine3.23@sha256:9fdbf2e3e82628351513560b121e2ee6ce31cac212be9e070c5a5e2769fb5e76 AS runtime
+
+ARG VCS_REF=unknown
+ARG IMAGE_VERSION=local
+LABEL org.opencontainers.image.source="https://github.com/greggorio/abaronesa-emporio" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${IMAGE_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -29,9 +35,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN groupadd --gid 10001 release-control \
-    && useradd --uid 10001 --gid 10001 --create-home \
-        --home-dir /home/release-control --shell /usr/sbin/nologin release-control
+RUN addgroup --gid 10001 release-control \
+    && adduser --uid 10001 --ingroup release-control --disabled-password \
+        --home /home/release-control --shell /sbin/nologin release-control
 
 COPY --from=builder --chown=10001:10001 /build/.venv /app/.venv
 COPY --chown=10001:10001 src ./src
@@ -46,4 +52,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=2).read()"
 
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn emporio_release_control.main:app --host 0.0.0.0 --port 8080"]
+# The venv is built at /build/.venv and copied to /app/.venv, so the console
+# scripts keep a shebang pointing at an interpreter that does not exist in the
+# runtime stage. Invoking through the interpreter is immune to that.
+CMD ["sh", "-c", "python -m alembic upgrade head && exec python -m uvicorn emporio_release_control.main:app --host 0.0.0.0 --port 8080"]

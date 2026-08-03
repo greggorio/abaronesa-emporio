@@ -14,6 +14,8 @@ EXPECTED = {
     "publish-release.yml",
     "deploy-production.yml",
     "rollback-production.yml",
+    # Operational-only workflow for the release-control image.
+    "publish-release-control.yml",
 }
 ACTIONS = {
     "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",

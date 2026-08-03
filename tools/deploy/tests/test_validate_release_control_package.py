@@ -44,8 +44,11 @@ class ReleaseControlPackageContractTest(unittest.TestCase):
 
     def test_mutant_04_migration_after_server_is_rejected(self) -> None:
         def swap(text: str) -> str:
-            migration = 'alembic upgrade head && exec uvicorn'
-            return text.replace(migration, 'uvicorn emporio_release_control.main:app && exec alembic upgrade head')
+            migration = "python -m alembic upgrade head && exec python -m uvicorn"
+            return text.replace(
+                migration,
+                "python -m uvicorn emporio_release_control.main:app && exec python -m alembic upgrade head",
+            )
 
         self.assert_mutant_rejected("release_control/Dockerfile", swap)
 

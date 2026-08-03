@@ -436,6 +436,9 @@ class ReleasePublicationTests(unittest.TestCase):
             "publish-release.yml",
             "deploy-production.yml",
             "rollback-production.yml",
+            # Operational-only workflow for the release-control image; it never
+            # participates in the candidate or the global release BOM.
+            "publish-release-control.yml",
         }
         self.assertEqual(expected, validate_release_workflow.EXPECTED)
         validate_release_workflow.validate()
