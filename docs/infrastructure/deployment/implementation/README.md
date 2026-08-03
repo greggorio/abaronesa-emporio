@@ -1,6 +1,6 @@
 # Implementacao de Docker, CI/CD e Controle de Releases
 
-> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36 aceitas; S35 ultrapassada; S37 aberta em inventário read-only da VPS
+> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36–S37 aceitas; S35 ultrapassada; S38 aberta no fechamento local do Gate A
 
 Esta pasta registra os contratos e as evidencias das slices usadas para implementar a arquitetura definida em [proposta-docker-ci-cd-producao-emporio.md](../proposta-docker-ci-cd-producao-emporio.md).
 
@@ -89,4 +89,5 @@ O arquivo `.task.md` e o contrato imutavel da delegacao. O arquivo `.report.md` 
 | S34 | [Remoção da atestação nativa indisponível](./slices/S34-remocao-atestacao-nativa-candidato.task.md) ([correction-01](./slices/S34-remocao-atestacao-nativa-candidato.correction-01.md)) | [Relatório](./slices/S34-remocao-atestacao-nativa-candidato.report.md) | `ACCEPTED` — 02/08/2026; contrato nativo de atestação removido, integridade por digest preservada, sem push |
 | S35 | [Migrações prévias da stack candidata](./slices/S35-migracoes-previas-stack-candidata.task.md) | — | `SUPERSEDED` — contrato local ultrapassado pela correção exploratória remota; não foi executado como task |
 | S36 | [Fechamento terminal da S30a](./slices/S36-fechamento-terminal-s30a-seguranca-migracoes-candidato.task.md) ([authorization-01](./slices/S36-fechamento-terminal-s30a-seguranca-migracoes-candidato.authorization-01.md)) | [Relatório](./slices/S36-fechamento-terminal-s30a-seguranca-migracoes-candidato.report.md) | `ACCEPTED` — 02/08/2026; CI `30757174785`, candidato `30757430990`, sete máscaras e três artifacts válidos |
-| S37 | [Inventário read-only da VPS e plano de preparação de produção](./slices/S37-inventario-read-only-vps-plano-preparacao-producao.task.md) | — | `PLANNED` — inspeção sem mutação da VPS `31.97.251.16` e plano Gate A–E antes do primeiro deploy |
+| S37 | [Inventário read-only da VPS e plano de preparação de produção](./slices/S37-inventario-read-only-vps-plano-preparacao-producao.task.md) | [Relatório](./slices/S37-inventario-read-only-vps-plano-preparacao-producao.report.md) | `ACCEPTED` — 03/08/2026; host multi-inquilino inventariado sem mutação, Empório greenfield e plano Gate A–E fechado |
+| S38 | [Fechamento do Gate A e invariantes do deployer](./slices/S38-fechamento-gate-a-invariantes-deployer.task.md) | — | `PLANNED` — correção causal das duas falhas do deployer, raiz canônica preservada e validação CI/candidato sem produção |

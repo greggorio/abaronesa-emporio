@@ -14,6 +14,13 @@
 > em `67abde48fd4a74de5bcff22bf592bd9005094210`; S37 é o contrato vigente para
 > inventário read-only da VPS e plano de preparação, ainda sem autorizar
 > mutação de produção.
+>
+> **Atualização S37/S38 — 03/08/2026:** o inventário read-only da VPS foi aceito.
+> O Empório é greenfield no host multi-inquilino; `/opt/sistemas/emporio` segue
+> como root canônico. S38 é o contrato vigente para fechar localmente as duas
+> falhas do deployer e validar CI/candidato. Nenhum acesso ou ato de produção é
+> autorizado pela S38; capacidade, reinício e preparação da VPS permanecem para
+> autorização posterior e específica.
 
 ## 1. Mandato e modo de condução
 
