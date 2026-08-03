@@ -964,6 +964,30 @@ class ReleasePublicationTests(unittest.TestCase):
             )
         self.assertFalse(any(event[0] == "delete-tag" for event in divergent.events))
 
+    def test_c02_11b_asset_upload_targets_the_real_uploads_host(self):
+        seen = {}
+
+        def capture(command, **kwargs):
+            seen["command"] = command
+            return subprocess.CompletedProcess(command, 0, b"", b"")
+
+        with mock.patch.object(rp.subprocess, "run", side_effect=capture):
+            rp.GhTransport().upload(
+                7, "release.json", "application/json", b"{}"
+            )
+        command = seen["command"]
+        # `gh api --hostname X` calls api.X, which for uploads.github.com is a
+        # host that does not exist; the endpoint must be an absolute URL.
+        self.assertNotIn("--hostname", command)
+        endpoint = next(part for part in command if part.startswith("https://"))
+        self.assertEqual(
+            endpoint,
+            f"https://uploads.github.com/repos/{rp.REPOSITORY}"
+            f"/releases/7/assets?name=release.json",
+        )
+        self.assertIn("--input", command)
+        self.assertIn("Content-Type: application/json", command)
+
     def test_c02_12_subprocess_failures_are_stable_and_sanitized(self):
         completed = subprocess.CompletedProcess(["gh"], 1, b"", b"raw-secret")
         with mock.patch.object(rp.subprocess, "run", return_value=completed):
@@ -1139,7 +1163,7 @@ class ReleasePublicationTests(unittest.TestCase):
             name for name in dir(self)
             if name.startswith("test_") and not name.startswith("test_c02a_")
         ]
-        self.assertEqual(81, len(previous))
+        self.assertEqual(82, len(previous))
 
 
 if __name__ == "__main__":

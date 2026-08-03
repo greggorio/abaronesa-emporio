@@ -916,9 +916,13 @@ class GhTransport:
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / name
             path.write_bytes(data)
+            # `gh api --hostname X` treats X as a GitHub Enterprise host and calls
+            # api.X, so it reached api.uploads.github.com and never uploaded.
+            # An absolute URL is used verbatim and still carries the token.
             command = [
-                "gh", "api", "--hostname", "uploads.github.com", "--method", "POST",
-                f"/repos/{REPOSITORY}/releases/{release_id}/assets?name={name}",
+                "gh", "api", "--method", "POST",
+                f"https://uploads.github.com/repos/{REPOSITORY}"
+                f"/releases/{release_id}/assets?name={name}",
                 "-H", f"Content-Type: {content_type}", "--input", str(path),
             ]
             try:
