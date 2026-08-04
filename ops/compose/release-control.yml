@@ -2,7 +2,8 @@ name: emporio-release-control
 
 services:
   release_control_postgresql:
-    image: ${RELEASE_CONTROL_POSTGRES_IMAGE:-postgres:16.6-alpine}
+    image: ${RELEASE_CONTROL_POSTGRES_IMAGE:-postgres:image-placeholder}
+    pull_policy: never
     environment:
       POSTGRES_DB: ${RELEASE_CONTROL_DB_NAME:-emporio_release_control}
       POSTGRES_USER: ${RELEASE_CONTROL_DB_USER:-release_control_runtime}
@@ -22,6 +23,7 @@ services:
 
   release_control:
     image: ${RELEASE_CONTROL_IMAGE:-emporio-release-control:package-placeholder}
+    pull_policy: never
     user: "10001:10001"
     read_only: true
     tmpfs:
@@ -60,7 +62,9 @@ services:
     secrets:
       - source: release_control_github_app_private_key
         target: github-app-private-key
-        mode: 0440
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
     depends_on:
       release_control_postgresql:
         condition: service_healthy
@@ -79,8 +83,7 @@ services:
 
 secrets:
   release_control_github_app_private_key:
-    external: true
-    name: ${RELEASE_CONTROL_GITHUB_SECRET_NAME:-emporio_release_control_github_app_private_key}
+    file: ${RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH}
 
 volumes:
   release_control_postgresql_data:

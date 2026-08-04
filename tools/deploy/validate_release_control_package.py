@@ -36,10 +36,14 @@ REQUIRED_ENV = {
     "RELEASE_CONTROL_CORS_ORIGINS",
     "RELEASE_CONTROL_GITHUB_APP_ID",
     "RELEASE_CONTROL_GITHUB_INSTALLATION_ID",
+    "RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH",
     "RELEASE_CONTROL_GITHUB_PRIVATE_KEY_PATH",
     "RELEASE_CONTROL_HASH_PEPPER",
     "RELEASE_CONTROL_GITHUB_API_BASE",
 }
+
+CANONICAL_ROOT = "/opt/sistemas/emporio-control"
+LEGACY_ROOT = "/opt/emporio-release-control"
 
 PLACEHOLDER_MARKERS = (
     "<",
@@ -158,8 +162,10 @@ def _validate_compose(text: str, errors: list[str]) -> None:
         ("read_only: true", "compose-read-only"),
         ("no-new-privileges:true", "compose-no-new-privileges"),
         ("cap_drop:", "compose-cap-drop"),
-        ("external: true", "compose-external-secret"),
         ("target: github-app-private-key", "compose-secret-target"),
+        ("file: ${RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH}", "compose-secret-file-backed"),
+        ('uid: "10001"', "compose-secret-uid"),
+        ('gid: "10001"', "compose-secret-gid"),
     ):
         _require(text, marker, code, errors)
 
@@ -174,9 +180,17 @@ def _validate_compose(text: str, errors: list[str]) -> None:
         ("cap_add:", "compose-cap-add"),
         ("/var/run/docker.sock", "compose-docker-socket"),
         ("0.0.0.0:", "compose-public-port"),
+        ("external: true", "compose-external-secret"),
+        ("docker secret", "compose-swarm-secret"),
+        ("swarm", "compose-swarm"),
+        ("postgres:16.6-alpine", "compose-floating-postgres-default"),
+        (LEGACY_ROOT, "compose-legacy-path"),
     ):
-        if forbidden in text:
+        if forbidden.lower() in text.lower():
             errors.append(code)
+
+    if text.count("pull_policy: never") != 2:
+        errors.append("compose-pull-policy-never")
 
     app = _service_block(text, "release_control")
     if not app:
@@ -226,12 +240,25 @@ def _validate_env(text: str, errors: list[str]) -> None:
         errors.append("env-audience")
     if values.get("RELEASE_CONTROL_GITHUB_PRIVATE_KEY_PATH") != "/run/secrets/github-app-private-key":
         errors.append("env-private-key-path")
+    pem_host_path = values.get("RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH", "")
+    if not pem_host_path.startswith("/etc/emporio/"):
+        errors.append("env-pem-host-path-scope")
     if values.get("RELEASE_CONTROL_LOOPBACK_PORT") != "8180":
         errors.append("env-loopback-port")
-    if values.get("RELEASE_CONTROL_DB_SSLMODE") != "require":
+    # The internal PostgreSQL host is the only one ever allowed sslmode=disable;
+    # the shipped example documents exactly that pairing.
+    if values.get("RELEASE_CONTROL_DB_HOST") != "release_control_postgresql":
+        errors.append("env-db-host")
+    if values.get("RELEASE_CONTROL_DB_SSLMODE") != "disable":
         errors.append("env-db-tls")
     if "latest" in values.get("RELEASE_CONTROL_IMAGE", "").lower():
         errors.append("env-floating-image")
+    for key, code in (
+        ("RELEASE_CONTROL_IMAGE", "env-image-not-digest"),
+        ("RELEASE_CONTROL_POSTGRES_IMAGE", "env-postgres-image-not-digest"),
+    ):
+        if "@sha256:" not in values.get(key, ""):
+            errors.append(code)
 
     for match in SECRET_ASSIGNMENT.finditer(text):
         value = match.group(1).strip().strip('"\'')
@@ -245,16 +272,22 @@ def _validate_systemd(text: str, errors: list[str]) -> None:
         ("After=network-online.target docker.service", "systemd-order"),
         ("User=emporio-release-control", "systemd-user"),
         ("Group=emporio-release-control", "systemd-group"),
-        ("WorkingDirectory=", "systemd-workdir"),
+        (f"WorkingDirectory={CANONICAL_ROOT}", "systemd-workdir"),
         ("EnvironmentFile=/etc/emporio/release-control.env", "systemd-env-file"),
         ("ExecStart=", "systemd-start"),
-        ("--no-build --wait", "systemd-start-safe"),
+        ("--no-build --pull never --wait", "systemd-start-safe"),
         ("ExecStop=", "systemd-stop"),
         ("stop --timeout 30", "systemd-stop-safe"),
         ("TimeoutStopSec=", "systemd-stop-timeout"),
     ):
         _require(text, marker, code, errors)
-    for forbidden, code in (("--reload", "systemd-reload"), ("docker.sock", "systemd-socket")):
+    for forbidden, code in (
+        ("--reload", "systemd-reload"),
+        ("docker.sock", "systemd-socket"),
+        ("User=root", "systemd-root-user"),
+        ("User=deploy-emporio", "systemd-commercial-user"),
+        (LEGACY_ROOT, "systemd-legacy-path"),
+    ):
         if forbidden in text:
             errors.append(code)
 
@@ -281,6 +314,7 @@ def _validate_no_literal_secrets(contents: list[str], errors: list[str]) -> None
         ("-----BEGIN", "literal-private-key"),
         ("ghp_", "literal-github-token"),
         ("github_pat_", "literal-github-token"),
+        (LEGACY_ROOT, "package-legacy-path"),
     ):
         if marker.lower() in combined.lower():
             errors.append(code)

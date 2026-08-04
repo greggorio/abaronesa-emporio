@@ -11,6 +11,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .constants import GITHUB_API
 
+RUNTIME_INTERNAL_DB_HOST = "release_control_postgresql"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -72,7 +74,15 @@ class Settings(BaseSettings):
         if self.mode == "deployer" and self.jwt_audience != "emporio-release-control-deployer":
             raise ValueError("deployer mode requires deployer audience")
         if self.profile == "runtime":
-            if self.db_sslmode != "require" or self.github_api_base != GITHUB_API:
+            if self.github_api_base != GITHUB_API:
+                raise ValueError("runtime transport configuration invalid")
+            if self.db_host == RUNTIME_INTERNAL_DB_HOST:
+                # The Compose-internal PostgreSQL sits alone on its own bridge
+                # network with no published port and no TLS support; any other
+                # host — including loopback or an IP — still requires TLS.
+                if self.db_sslmode != "disable":
+                    raise ValueError("runtime internal database requires sslmode=disable")
+            elif self.db_sslmode != "require":
                 raise ValueError("runtime transport configuration invalid")
             self._require_url(self.jwt_issuer, "https", loopback=False)
             self._require_url(self.jwt_jwks_url, "https", loopback=False)

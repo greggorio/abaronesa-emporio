@@ -9,10 +9,10 @@ Type=oneshot
 RemainAfterExit=yes
 User=emporio-release-control
 Group=emporio-release-control
-WorkingDirectory=/opt/emporio-release-control
+WorkingDirectory=/opt/sistemas/emporio-control
 EnvironmentFile=/etc/emporio/release-control.env
-ExecStart=/usr/bin/docker compose --env-file /etc/emporio/release-control.env -f /opt/emporio-release-control/ops/compose/release-control.yml up --detach --no-build --wait
-ExecStop=/usr/bin/docker compose --env-file /etc/emporio/release-control.env -f /opt/emporio-release-control/ops/compose/release-control.yml stop --timeout 30
+ExecStart=/usr/bin/docker compose --env-file /etc/emporio/release-control.env -f /opt/sistemas/emporio-control/ops/compose/release-control.yml up --detach --no-build --pull never --wait
+ExecStop=/usr/bin/docker compose --env-file /etc/emporio/release-control.env -f /opt/sistemas/emporio-control/ops/compose/release-control.yml stop --timeout 30
 TimeoutStartSec=120
 TimeoutStopSec=45
 

@@ -23,18 +23,19 @@ que precisa para persistência.
 
 O exemplo de ambiente em `ops/env/release-control.env.example` contém
 placeholders. Os valores reais devem ser injetados por um arquivo protegido
-fora do repositório. A chave privada do GitHub App deve existir como segredo
-externo do Compose, conforme o nome configurado em
-`RELEASE_CONTROL_GITHUB_SECRET_NAME`, e é montada como
-`/run/secrets/github-app-private-key` em modo somente leitura. Nenhuma chave,
+fora do repositório. O host não usa Docker Swarm, então a chave privada do
+GitHub App é um segredo Compose baseado em arquivo: o path protegido no host
+é declarado por `RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH` e montado
+somente leitura, owned por `10001:10001`, como
+`/run/secrets/github-app-private-key` dentro do contêiner. Nenhuma chave,
 senha, pepper ou token é fornecido por este pacote.
 
 ## Preparação e inicialização declarativa
 
 Antes de qualquer operação autorizada, o operador deve revisar o arquivo de
-ambiente, confirmar a imagem por referência imutável e provisionar o segredo
-externo sem registrar o conteúdo em shell history ou logs. O pacote não cria
-credenciais e não acessa rede por conta própria.
+ambiente, confirmar a imagem por referência imutável e provisionar o arquivo
+protegido do segredo sem registrar o conteúdo em shell history ou logs. O
+pacote não cria credenciais e não acessa rede por conta própria.
 
 O `Dockerfile` copia o `pyproject.toml` e o `uv.lock`, resolve somente o grupo
 de produção durante a construção futura, e copia apenas o código, migrations,
@@ -64,7 +65,7 @@ em ambiente autorizado:
 
 ```sh
 docker compose --env-file /etc/emporio/release-control.env \
-  -f /opt/emporio-release-control/ops/compose/release-control.yml \
+  -f /opt/sistemas/emporio-control/ops/compose/release-control.yml \
   exec -T release_control_postgresql \
   pg_dump --format=custom --file=/tmp/release-control.dump "$POSTGRES_DB"
 ```
@@ -80,7 +81,7 @@ execução. Não sobrescreva o volume original sem uma cópia verificável.
 Uma atualização deve trocar somente a referência da imagem do serviço
 `release_control`, revisar migrations pendentes e observar `/health/ready`.
 O PostgreSQL não deve ser recriado como parte de uma atualização da aplicação.
-O exemplo systemd usa `up --detach --no-build --wait` para iniciar o pacote e
+O exemplo systemd usa `up --detach --no-build --pull never --wait` para iniciar o pacote e
 `stop --timeout 30` para uma parada ordenada; não usa `down`, remoção de volume
 ou comandos de publicação.
 

@@ -70,6 +70,33 @@ def test_runtime_profile_fixes_github_and_ssl(settings: Settings) -> None:
             Settings.model_validate(mutant)
 
 
+def test_runtime_allows_disable_only_for_the_internal_service_host(
+    settings: Settings,
+) -> None:
+    values = kwargs(settings)
+    values.update(
+        profile="runtime",
+        db_host="release_control_postgresql",
+        db_sslmode="disable",
+        github_api_base="https://api.github.com",
+        jwt_issuer="https://issuer.invalid",
+        jwt_jwks_url="https://issuer.invalid/jwks",
+        cors_origins="https://console.invalid",
+    )
+    runtime = Settings.model_validate(values)
+    assert "sslmode=disable" in runtime.database_url
+    # The exact internal hostname is the only one ever allowed to disable TLS.
+    mutant = dict(values)
+    mutant["db_sslmode"] = "require"
+    with pytest.raises(ValidationError):
+        Settings.model_validate(mutant)
+    for other_host in ("127.0.0.1", "localhost", "release-control-postgresql", "database.invalid"):
+        mutant = dict(values)
+        mutant["db_host"] = other_host
+        with pytest.raises(ValidationError):
+            Settings.model_validate(mutant)
+
+
 def test_settings_accept_exactly_publisher_or_deployer(settings: Settings) -> None:
     values = kwargs(settings)
     assert Settings.model_validate(values).mode == "publisher"

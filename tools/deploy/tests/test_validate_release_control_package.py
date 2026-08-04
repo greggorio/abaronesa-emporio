@@ -76,6 +76,54 @@ class ReleaseControlPackageContractTest(unittest.TestCase):
     def test_mutant_12_installation_claim_is_rejected(self) -> None:
         self.assert_mutant_rejected("docs/infrastructure/deployment/release-control/OPERACAO_RELEASE_CONTROL.md", lambda text: text.replace("não afirma que o serviço foi", "afirma que o serviço foi"))
 
+    def test_mutant_13_external_swarm_secret_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "ops/compose/release-control.yml",
+            lambda text: text.replace(
+                "  release_control_github_app_private_key:\n    file: ${RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH}",
+                "  release_control_github_app_private_key:\n    external: true",
+            ),
+        )
+
+    def test_mutant_14_missing_pull_policy_never_is_rejected(self) -> None:
+        self.assert_mutant_rejected("ops/compose/release-control.yml", lambda text: text.replace("    pull_policy: never\n", "", 1))
+
+    def test_mutant_15_pem_host_path_inside_repository_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "ops/env/release-control.env.example",
+            lambda text: text.replace(
+                "RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH=/etc/emporio/release-control-deployer-app.pem",
+                "RELEASE_CONTROL_GITHUB_APP_PRIVATE_KEY_PATH=release_control/deployer-app.pem",
+            ),
+        )
+
+    def test_mutant_16_image_without_digest_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "ops/env/release-control.env.example",
+            lambda text: text.replace(
+                "RELEASE_CONTROL_POSTGRES_IMAGE=postgres@sha256:<immutable-postgres-digest>",
+                "RELEASE_CONTROL_POSTGRES_IMAGE=postgres:16.6-alpine",
+            ),
+        )
+
+    def test_mutant_17_legacy_path_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "ops/systemd/emporio-release-control.service.example",
+            lambda text: text.replace("/opt/sistemas/emporio-control", "/opt/emporio-release-control"),
+        )
+
+    def test_mutant_18_systemd_root_user_is_rejected(self) -> None:
+        self.assert_mutant_rejected("ops/systemd/emporio-release-control.service.example", lambda text: text.replace("User=emporio-release-control", "User=root"))
+
+    def test_mutant_19_runtime_sslmode_disable_for_external_host_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "ops/env/release-control.env.example",
+            lambda text: text.replace(
+                "RELEASE_CONTROL_DB_HOST=release_control_postgresql",
+                "RELEASE_CONTROL_DB_HOST=database.invalid",
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
