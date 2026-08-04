@@ -67,6 +67,16 @@
 > standalone, criar a GitHub App deployer separada e implantar
 > `release_control`/PostgreSQL em `127.0.0.1:8180`. Stack comercial, deploy,
 > rollback, Nginx/TLS, backup/restore e capacidade permanecem fora da S44.
+>
+> **Atualização S44 correction-01 — 04/08/2026:** o pacote standalone foi
+> corrigido no SHA remoto `9699214582c8e74ed6c005eb2ad1e04ec950f5aa`; CI
+> `30929281890`, candidato `30930060013` e imagem `30930719302` estão verdes,
+> com immutable ref `sha256:2a214f0c…aff37`. A primeira execução parou antes
+> de App/VPS porque combinou a tag multiarch `postgres:16.6-alpine` com o
+> digest do filho amd64. O digest permanece ativo e resolve nas duas pontas
+> como `postgres@sha256:589f3b24…eb0f`. A correction-01 autoriza essa forma
+> canônica e a retomada da mesma S44; não há upgrade de PostgreSQL nem nova
+> slice.
 
 ## 1. Mandato e modo de condução
 
