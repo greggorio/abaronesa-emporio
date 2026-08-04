@@ -42,6 +42,13 @@
 > S41 é o contrato vigente para fechar somente o bootstrap do transporte:
 > usuário não-root, filesystem canônico, chave SSH dedicada e environment
 > GitHub. Não instala helper, não inicia serviço e não executa deploy/rollback.
+>
+> **Atualização S41/S42 — 03/08/2026:** S41 aceita com `deploy-emporio`, árvore
+> `/opt/sistemas/emporio` `0700`, SSH dedicado e environment `production`
+> configurados. A VPS usa Python `3.10.12` com `jsonschema 3.2.0`, que foi
+> comprovado aceitando mutante inválido de `prefixItems`. S42 é o contrato
+> vigente para produzir um control root autocontido, determinístico e vinculado
+> ao `controlSha`, antes de instalar qualquer helper na VPS.
 
 ## 1. Mandato e modo de condução
 

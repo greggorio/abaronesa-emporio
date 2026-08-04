@@ -1,6 +1,6 @@
 # Implementacao de Docker, CI/CD e Controle de Releases
 
-> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36–S40 aceitas; S35 ultrapassada; S41 aberta no bootstrap do transporte de produção
+> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36–S41 aceitas; S35 ultrapassada; S42 aberta no pacote instalável do control root
 
 Esta pasta registra os contratos e as evidencias das slices usadas para implementar a arquitetura definida em [proposta-docker-ci-cd-producao-emporio.md](../proposta-docker-ci-cd-producao-emporio.md).
 
@@ -93,4 +93,5 @@ O arquivo `.task.md` e o contrato imutavel da delegacao. O arquivo `.report.md` 
 | S38 | [Fechamento do Gate A e invariantes do deployer](./slices/S38-fechamento-gate-a-invariantes-deployer.task.md) | [Relatório](./slices/S38-fechamento-gate-a-invariantes-deployer.report.md) | `ACCEPTED` — 03/08/2026; 331 testes verdes, journal JSONB reparado, CI `30812658858` e candidato `30813218997` verdes |
 | S39 | [Workflow independente da imagem do release control](./slices/S39-workflow-imagem-release-control.task.md) ([correction-01](./slices/S39-workflow-imagem-release-control.correction-01.md)) | [Relatório](./slices/S39-workflow-imagem-release-control.report.md) | `ACCEPTED` — 03/08/2026; Alpine em zero HIGH/CRITICAL, CI `30838546384`, candidato `30839217752`, workflow ativo e nunca executado |
 | S40 | [Publicação inaugural da imagem do release control](./slices/S40-publicacao-inaugural-imagem-release-control.task.md) | [Relatório](./slices/S40-publicacao-inaugural-imagem-release-control.report.md) | `ACCEPTED` — 03/08/2026; run `30855327740`, quatro jobs verdes e imagem privada por digest `sha256:64b6f2be…22380` |
-| S41 | [Bootstrap do transporte de produção](./slices/S41-bootstrap-transporte-producao-identidade-ssh.task.md) | — | `PLANNED` — usuário, filesystem, chave dedicada e environment GitHub; sem serviços, helper, deploy ou rollback |
+| S41 | [Bootstrap do transporte de produção](./slices/S41-bootstrap-transporte-producao-identidade-ssh.task.md) | [Relatório](./slices/S41-bootstrap-transporte-producao-identidade-ssh.report.md) | `ACCEPTED` — 03/08/2026; usuário dedicado, árvore `0700`, SSH estrito, Docker sem sudo e environment `production` configurado |
+| S42 | [Pacote instalável do control root](./slices/S42-pacote-instalavel-control-root-dependencias-binding.task.md) | — | `PLANNED` — vendor Python 3.10, pacote determinístico, instalador e binding do helper ao `controlSha`; sem VPS |
