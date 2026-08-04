@@ -1,7 +1,7 @@
 import copy,sys,unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from validate_compose import validate,resolved,ROOT
+from validate_compose import fixture_env,validate,resolved,ROOT
 class ComposeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -51,6 +51,7 @@ class ComposeTests(unittest.TestCase):
           ("deployer kid missing",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_KEY_ID="")),
           ("deployer secret exposed",lambda d:d["services"]["website_back"].update(secrets=copy.deepcopy(d["services"]["backend"]["secrets"]))),
           ("deployer secret external",lambda d:d["secrets"]["release-control-deployer-identity-private-key"].update(external=True)),
+          ("deployer enabled without key source",lambda d:d["secrets"]["release-control-deployer-identity-private-key"].update(file="/dev/null")),
           ("frontend publisher",lambda d:d["services"]["frontend"]["environment"].update(RELEASE_CONTROL_MODE="publisher")),
           ("frontend unknown",lambda d:d["services"]["frontend"]["environment"].update(RELEASE_CONTROL_MODE="unknown")),
           ("website Flyway enabled",lambda d:d["services"]["website_back"]["environment"].update(FLYWAY_ENABLED="true")),
@@ -73,7 +74,15 @@ class ComposeTests(unittest.TestCase):
         compose=(ROOT/"ops/compose/compose.prod.yml").read_text()
         for old,new in (
           ('RELEASE_CONTROL_MODE: "${RELEASE_CONTROL_MODE:-disabled}"','RELEASE_CONTROL_MODE: "${RELEASE_CONTROL_MODE:-deployer}"'),
-          ('file: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE:?RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE is required}','file: -----BEGIN')):
+          ('file: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE:-/dev/null}','file: -----BEGIN')):
             with self.subTest(old=old),self.assertRaises(ValueError):
                 validate(copy.deepcopy(self.valid),self.script,self.override,compose.replace(old,new,1))
+    def test_disabled_mode_needs_no_private_key_fixture(self):
+        env=fixture_env()
+        for name in ("RELEASE_CONTROL_DEPLOYER_IDENTITY_ENABLED","RELEASE_CONTROL_DEPLOYER_IDENTITY_ISSUER","RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE","RELEASE_CONTROL_DEPLOYER_IDENTITY_KEY_ID","RELEASE_CONTROL_MODE"):
+            env.pop(name)
+        model=resolved(env)
+        self.assertEqual("false",model["services"]["backend"]["environment"]["RELEASE_CONTROL_DEPLOYER_IDENTITY_ENABLED"])
+        self.assertEqual("disabled",model["services"]["frontend"]["environment"]["RELEASE_CONTROL_MODE"])
+        self.assertEqual("/dev/null",model["secrets"]["release-control-deployer-identity-private-key"]["file"])
 if __name__=="__main__": unittest.main()

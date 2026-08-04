@@ -68,6 +68,8 @@ aplicados aos hosts comerciais.
   paths fiscais/uploads, bootstrap root opt-in e as quatro propriedades da
   identidade deployer. A chave PKCS#8 e um secret file-backed montado somente
   nesse servico em `/run/secrets/release-control-deployer-identity-private-key`.
+  Com a ponte desabilitada, o source seguro e vazio e `/dev/null`; habilita-la
+  exige que a configuracao real aponte para o arquivo protegido no host.
 - Website backend recebe datasource website, token compartilhado, ERP interno,
   CORS/WebSocket, Firebase opcional, Uber/sync e paths de uploads.
 - O frontend ERP recebe sua URL publica e `RELEASE_CONTROL_MODE`, cujo default

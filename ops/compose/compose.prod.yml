@@ -204,4 +204,4 @@ volumes:
   whatsapp-session: {name: "${WHATSAPP_SESSION_VOLUME_NAME:-emporio-whatsapp-session}"}
 secrets:
   release-control-deployer-identity-private-key:
-    file: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE:?RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE is required}
+    file: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE:-/dev/null}
