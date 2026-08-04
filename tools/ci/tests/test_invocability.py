@@ -27,13 +27,13 @@ class InvocabilityTest(unittest.TestCase):
         cls.ci = invocability.CI.read_text()
         cls.publish = invocability.PUBLISH.read_text()
 
-    def test_01_all_26_commands_stop_at_the_cli_boundary(self):
+    def test_01_all_27_commands_stop_at_the_cli_boundary(self):
         commands, inventory_errors = invocability.inventory(self.ci, self.publish)
         self.assertEqual([], inventory_errors)
-        self.assertEqual(26, len(commands))
+        self.assertEqual(27, len(commands))
         self.assertEqual([], invocability.validate(self.ci, self.publish))
         self.assertEqual(
-            {"tools/ci/migrations_contract.py", "tools/compose/validate_compose.py", "tools/gateway/validate_gateway.py"},
+            {"tools/ci/migrations_contract.py", "tools/compose/validate_compose.py", "tools/gateway/validate_gateway.py", "tools/gateway/validate_host_nginx.py"},
             {command.script for command in commands if invocability._argument_free(ROOT / command.script, command.argv)},
         )
 

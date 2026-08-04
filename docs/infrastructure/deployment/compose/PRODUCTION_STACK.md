@@ -4,8 +4,8 @@
 
 `ops/compose/compose.prod.yml` e a unica definicao comercial. Ela consome sete
 imagens imutaveis por digest e nunca constroi artefatos. O gateway e o unico
-servico publicado no host, em `127.0.0.1:8120`; TLS e Nginx do host pertencem a
-uma etapa futura.
+servico comercial publicado no host, em `127.0.0.1:8120`; o Nginx do host e a
+terminacao TLS usam a configuracao versionada `ops/nginx/emporio.production.conf`.
 
 | Servico | Rede app | Rede DB interna | Health | Persistencia |
 |---|---:|---:|---|---|
@@ -65,10 +65,14 @@ aplicados aos hosts comerciais.
 - PostgreSQL recebe somente admin, dois nomes, dois usuarios e suas passwords.
 - Backend ERP recebe datasource ERP, token compartilhado, OAuth, URL interna
   WhatsApp, URLs publicas, CORS, SMTP opcional, Uber opcional, sync com website,
-  paths fiscais/uploads e bootstrap root opt-in.
+  paths fiscais/uploads, bootstrap root opt-in e as quatro propriedades da
+  identidade deployer. A chave PKCS#8 e um secret file-backed montado somente
+  nesse servico em `/run/secrets/release-control-deployer-identity-private-key`.
 - Website backend recebe datasource website, token compartilhado, ERP interno,
   CORS/WebSocket, Firebase opcional, Uber/sync e paths de uploads.
-- Frontends recebem exclusivamente suas URLs publicas de runtime.
+- O frontend ERP recebe sua URL publica e `RELEASE_CONTROL_MODE`, cujo default
+  seguro e `disabled`; somente a configuracao real de producao usa `deployer`.
+- O frontend do website recebe exclusivamente suas URLs publicas de runtime.
 - WhatsApp recebe porta, session dir e codigo de pais.
 - Gateway nao recebe environment de aplicacao.
 
@@ -87,6 +91,7 @@ Validacao sem segredo:
 
 ```bash
 python3 tools/gateway/validate_gateway.py
+python3 tools/gateway/validate_host_nginx.py
 python3 tools/compose/validate_compose.py
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/gateway/tests -p 'test_*.py' -v
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/compose/tests -p 'test_*.py' -v
@@ -101,10 +106,9 @@ Em producao, valide a configuracao resolvida antes de `up`; não use override
 local. A manutencao de uma base exige resolver o digest `linux/amd64`, repetir
 build, inspect, health e testes mutantes, e atualizar documentacao/evidencias.
 
-## Fronteiras futuras
-
-Ainda nao existem CI canonico, manifesto candidato, publicacao, deploy,
-backup, rollback, TLS ou configuracao do Nginx do host. Readiness do catalogo
-atesta somente estes contratos tecnicos. Os gates da S10 fecham apenas quando
-gateway, health/bind loopback, teste do gateway e persistencia do website forem
-comprovados pela integracao efemera.
+O host publica os dois dominios somente por HTTPS. HTTP serve o challenge ACME
+e redireciona o restante. Apenas o ERP encaminha
+`/api/release-control/v1/` diretamente ao control plane em
+`127.0.0.1:8180`; a identidade deployer continua same-origin pelo gateway. O
+website recusa a rota do control plane. O JWKS real so pode ser confrontado
+depois do backend comercial healthy.

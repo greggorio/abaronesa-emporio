@@ -42,6 +42,17 @@ class ComposeTests(unittest.TestCase):
           ("missing website backend sync alias",lambda d:d["services"]["website_back"]["environment"].pop("WEBSITE_ERP_SYNC_KEY")),
           ("backend Flyway enabled",lambda d:d["services"]["backend"]["environment"].update(SPRING_FLYWAY_ENABLED="true")),
           ("backend Flyway missing",lambda d:d["services"]["backend"]["environment"].pop("SPRING_FLYWAY_ENABLED")),
+          ("deployer disabled",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_ENABLED="false")),
+          ("deployer issuer missing",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_ISSUER="")),
+          ("deployer issuer http",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_ISSUER="http://erp-emporio.abaronesa.net.br")),
+          ("deployer issuer wrong host",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_ISSUER="https://other.invalid")),
+          ("deployer key relative",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_PATH="key.pem")),
+          ("deployer key image path",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_PATH="/app/key.pem")),
+          ("deployer kid missing",lambda d:d["services"]["backend"]["environment"].update(RELEASE_CONTROL_DEPLOYER_IDENTITY_KEY_ID="")),
+          ("deployer secret exposed",lambda d:d["services"]["website_back"].update(secrets=copy.deepcopy(d["services"]["backend"]["secrets"]))),
+          ("deployer secret external",lambda d:d["secrets"]["release-control-deployer-identity-private-key"].update(external=True)),
+          ("frontend publisher",lambda d:d["services"]["frontend"]["environment"].update(RELEASE_CONTROL_MODE="publisher")),
+          ("frontend unknown",lambda d:d["services"]["frontend"]["environment"].update(RELEASE_CONTROL_MODE="unknown")),
           ("website Flyway enabled",lambda d:d["services"]["website_back"]["environment"].update(FLYWAY_ENABLED="true")),
           ("website Flyway missing",lambda d:d["services"]["website_back"]["environment"].pop("FLYWAY_ENABLED")),
           ("whatsapp published",lambda d:d["services"]["whatsapp_service"].update(ports=[{"published":"3001","target":3001}])),
@@ -58,4 +69,11 @@ class ComposeTests(unittest.TestCase):
           ("WHATSAPP_INITIALIZATION_DISABLED","REMOVED_DISABLED")):
             with self.subTest(old=old),self.assertRaises(ValueError):
                 validate(copy.deepcopy(self.valid),self.script,self.override.replace(old,new))
+    def test_safe_default_and_literal_pem_mutants(self):
+        compose=(ROOT/"ops/compose/compose.prod.yml").read_text()
+        for old,new in (
+          ('RELEASE_CONTROL_MODE: "${RELEASE_CONTROL_MODE:-disabled}"','RELEASE_CONTROL_MODE: "${RELEASE_CONTROL_MODE:-deployer}"'),
+          ('file: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE:?RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE is required}','file: -----BEGIN')):
+            with self.subTest(old=old),self.assertRaises(ValueError):
+                validate(copy.deepcopy(self.valid),self.script,self.override,compose.replace(old,new,1))
 if __name__=="__main__": unittest.main()

@@ -411,7 +411,7 @@ class DefinitiveContractTest(unittest.TestCase):
  def test_37_invocability_gate_covers_both_workflows(self):
   jobs=self._jobs();self.assertTrue(jobs)
   commands,errors=workflow.invocability.inventory()
-  self.assertEqual([],errors);self.assertEqual(26,len(commands))
+  self.assertEqual([],errors);self.assertEqual(27,len(commands))
   ci=workflow.CI.read_text();self.assertIn("python3 tools/ci/invocability.py",ci)
   removed=ci.replace("          python3 tools/ci/invocability.py\n","",1)
   self.assertIn("INVOCABILITY_GATE",workflow.validate_workflows(ci=removed))

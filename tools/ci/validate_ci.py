@@ -24,6 +24,7 @@ REQUIRED_COMMANDS = (
     "python3 tools/compose/validate_compose.py",
     "python3 -m unittest discover -s tools/compose/tests -v",
     "python3 tools/gateway/validate_gateway.py",
+    "python3 tools/gateway/validate_host_nginx.py",
     "python3 -m unittest discover -s tools/gateway/tests -v",
     "python3 tools/ci/migrations_contract.py",
     "python3 tools/ci/secret_scan.py --tracked",

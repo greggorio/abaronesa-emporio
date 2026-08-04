@@ -19,7 +19,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 CI = ROOT / ".github/workflows/ci.yml"
 PUBLISH = ROOT / ".github/workflows/publish-candidate.yml"
-EXPECTED_COMMANDS = 26
+EXPECTED_COMMANDS = 27
 SELF_COMMANDS = {
     "tools/ci/validate_ci.py",
     "tools/ci/invocability.py",

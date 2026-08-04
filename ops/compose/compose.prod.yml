@@ -93,7 +93,17 @@ services:
       ROOT_BOOTSTRAP_NAME: ${ROOT_BOOTSTRAP_NAME:-}
       ROOT_BOOTSTRAP_EMAIL: ${ROOT_BOOTSTRAP_EMAIL:-}
       ROOT_BOOTSTRAP_PASSWORD: ${ROOT_BOOTSTRAP_PASSWORD:-}
+      RELEASE_CONTROL_DEPLOYER_IDENTITY_ENABLED: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_ENABLED:-false}
+      RELEASE_CONTROL_DEPLOYER_IDENTITY_ISSUER: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_ISSUER:-}
+      RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_PATH: /run/secrets/release-control-deployer-identity-private-key
+      RELEASE_CONTROL_DEPLOYER_IDENTITY_KEY_ID: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_KEY_ID:-}
     volumes: [backend-uploads:/app/uploads]
+    secrets:
+      - source: release-control-deployer-identity-private-key
+        target: release-control-deployer-identity-private-key
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
     networks: [emporio-app, emporio-db]
     healthcheck: {test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"], interval: 15s, timeout: 5s, retries: 20, start_period: 60s}
     mem_limit: ${BACKEND_MEM_LIMIT:-1g}
@@ -143,7 +153,7 @@ services:
   frontend:
     <<: *common
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
-    environment: {TZ: America/Sao_Paulo, VITE_BASE_API_URL: "${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}"}
+    environment: {TZ: America/Sao_Paulo, VITE_BASE_API_URL: "${ERP_PUBLIC_URL:-https://erp-emporio.abaronesa.net.br}", RELEASE_CONTROL_MODE: "${RELEASE_CONTROL_MODE:-disabled}"}
     networks: [emporio-app]
     healthcheck: {test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/healthz"], interval: 15s, timeout: 5s, retries: 10}
     mem_limit: ${FRONTEND_MEM_LIMIT:-256m}
@@ -192,3 +202,6 @@ volumes:
   backend-uploads: {name: "${BACKEND_UPLOADS_VOLUME_NAME:-emporio-backend-uploads}"}
   website-uploads: {name: "${WEBSITE_UPLOADS_VOLUME_NAME:-emporio-website-uploads}"}
   whatsapp-session: {name: "${WHATSAPP_SESSION_VOLUME_NAME:-emporio-whatsapp-session}"}
+secrets:
+  release-control-deployer-identity-private-key:
+    file: ${RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE:?RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE is required}
