@@ -86,6 +86,16 @@
 > correction-02 autoriza o commit causal adicional, exige prova com a imagem e
 > os assets reais de `v0.1.0` e remove o teto artificial de correções cobertas,
 > sem ampliar autoridade para deploy, rollback ou stack comercial.
+>
+> **Atualização S44/S45 — 04/08/2026:** S44 aceita no SHA remoto
+> `7e84fb95974c77a2a710d73f812a4d6bed1e4eb1`. CI `30943179121`, candidato
+> `30943915132` e imagem `30944695626` fecharam verdes; a imagem operacional
+> final é `sha256:d0d0cb16…e7040`. A App deployer permanece exclusiva, o control
+> plane está `enabled/active`, com dois containers healthy, live/ready 200 em
+> `127.0.0.1:8180`, sync sem drift e zero operação/deploy/rollback. S45 é o
+> contrato vigente para fechar o Gate C: wiring RS256/deployer, configuração
+> comercial protegida, capacidade/swap, Nginx/TLS e ensaio isolado de
+> backup/restore. O primeiro deploy de `v0.1.0` continua reservado à S46.
 
 ## 1. Mandato e modo de condução
 
