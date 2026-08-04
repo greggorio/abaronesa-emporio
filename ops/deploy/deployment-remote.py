@@ -27,6 +27,11 @@ from typing import Any, Iterator, NoReturn
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# The vendored runtime must win over the global interpreter's site-packages,
+# which on the production host is Ubuntu 22.04's jsonschema 3.2.0 — proven to
+# silently accept invalid Draft 2020-12 prefixItems. Inserted first so it
+# shadows anything Python already put on sys.path at startup.
+sys.path.insert(0, str(ROOT / "vendor"))
 sys.path.insert(0, str(ROOT / "tools" / "deploy"))
 import deployment_plan  # noqa: E402
 
@@ -278,10 +283,62 @@ def _write_exclusive(path: Path, data: bytes, code: str) -> None:
             os.close(descriptor)
 
 
+def _installed_control_sha() -> str:
+    """Prove that the bytes running here are the commit they claim to be.
+
+    Without this the workflow would transport a controlSha it can never check
+    against the helper actually answering, so a tampered or stale control root
+    would look identical to a healthy one.
+    """
+    manifest_path = CONTROL_ROOT / "control-root.manifest.json"
+    sidecar_path = CONTROL_ROOT / "control-root.manifest.json.sha256"
+    try:
+        payload = manifest_path.read_bytes()
+        sidecar = sidecar_path.read_bytes()
+    except OSError as exc:
+        raise RemoteError("REMOTE_CONTROL_MANIFEST_MISSING", 4) from exc
+    if sidecar != hashlib.sha256(payload).hexdigest().encode() + b"\n":
+        _fail("REMOTE_CONTROL_MANIFEST_INVALID", 4)
+    try:
+        manifest = json.loads(payload)
+    except ValueError as exc:
+        raise RemoteError("REMOTE_CONTROL_MANIFEST_INVALID", 4) from exc
+    if not isinstance(manifest, dict):
+        _fail("REMOTE_CONTROL_MANIFEST_INVALID", 4)
+    source_sha = manifest.get("sourceSha")
+    files = manifest.get("files")
+    if (
+        not isinstance(source_sha, str)
+        or re.fullmatch(r"[0-9a-f]{40}", source_sha) is None
+        or not isinstance(files, list)
+        or not files
+    ):
+        _fail("REMOTE_CONTROL_MANIFEST_INVALID", 4)
+    for entry in files:
+        if not isinstance(entry, dict):
+            _fail("REMOTE_CONTROL_MANIFEST_INVALID", 4)
+        relative, digest = entry.get("path"), entry.get("sha256")
+        if not isinstance(relative, str) or not isinstance(digest, str):
+            _fail("REMOTE_CONTROL_MANIFEST_INVALID", 4)
+        if relative.startswith("/") or ".." in relative.split("/"):
+            _fail("REMOTE_CONTROL_MANIFEST_INVALID", 4)
+        target = CONTROL_ROOT / relative
+        try:
+            details = target.lstat()
+            if stat.S_ISLNK(details.st_mode) or not stat.S_ISREG(details.st_mode):
+                _fail("REMOTE_CONTROL_TAMPERED", 4)
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                _fail("REMOTE_CONTROL_TAMPERED", 4)
+        except OSError as exc:
+            raise RemoteError("REMOTE_CONTROL_TAMPERED", 4) from exc
+    return source_sha
+
+
 def capabilities() -> dict[str, Any]:
     _validate_identity()
     _validate_root()
     return {
+        "controlSha": _installed_control_sha(),
         "deployRoot": "/opt/sistemas/emporio",
         "protocol": "emporio-deployment-transport",
         "schemaVersion": 1,

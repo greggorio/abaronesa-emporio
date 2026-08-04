@@ -68,7 +68,7 @@ class FakeRemote:
         if self.failure == name:
             raise transport.DeploymentTransportError("SSH_UNAVAILABLE")
 
-    def capabilities(self): self._call("capabilities")
+    def capabilities(self, control_sha): self._call("capabilities")
     def upload(self, archive, operation): self._call("upload")
     def install(self, operation, release, archive_sha256): self._call("install")
     def execute(self, operation, release): self._call("execute"); return self.result
@@ -331,12 +331,13 @@ class DeploymentTransportTest(unittest.TestCase):
 
     def test_11_openssh_argv_has_fixed_user_helper_path_and_no_shell(self):
         capability = {
+            "controlSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "deployRoot": transport.DEPLOY_ROOT, "protocol": transport.PROTOCOL,
             "schemaVersion": 1, "user": transport.REMOTE_USER,
         }
         runner = FakeRunner([transport.ProcessResult(0, transport.canonical(capability))])
         client = transport.OpenSshTransport(self.config(), runner)
-        client.capabilities()
+        client.capabilities("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         argv, timeout = runner.calls[0]
         self.assertEqual(("/usr/bin/ssh", "-F", str(self.root / "config"), "deploy-emporio@host.invalid", transport.REMOTE_HELPER, "capabilities"), tuple(map(str, argv)))
         self.assertEqual(60, timeout)
@@ -603,7 +604,7 @@ class DeploymentTransportTest(unittest.TestCase):
     def _deploy_client(self):
         class Client:
             def __init__(inner): inner.calls = []
-            def capabilities(inner): inner.calls.append("capabilities")
+            def capabilities(inner, control_sha): inner.calls.append("capabilities")
             def snapshot(inner, operation, release):
                 inner.calls.append("snapshot")
                 inner.last_operation = operation
@@ -836,9 +837,11 @@ class DeploymentTransportTest(unittest.TestCase):
             wrong = type("Account", (), {"pw_name": "another-user"})()
             with mock.patch.object(remote.os, "geteuid", return_value=1234), mock.patch.object(remote.pwd, "getpwuid", return_value=wrong):
                 self.assert_remote_code("REMOTE_CAPABILITY_MISMATCH", remote.capabilities)
-        with mock.patch.object(remote, "_validate_identity"), mock.patch.object(remote, "_validate_root"):
+        with mock.patch.object(remote, "_validate_identity"), mock.patch.object(remote, "_validate_root"), \
+                mock.patch.object(remote, "_installed_control_sha", return_value="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"):
             self.assertEqual(
-                {"deployRoot": "/opt/sistemas/emporio", "protocol": "emporio-deployment-transport",
+                {"controlSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                 "deployRoot": "/opt/sistemas/emporio", "protocol": "emporio-deployment-transport",
                  "schemaVersion": 1, "user": "deploy-emporio"},
                 remote.capabilities(),
             )

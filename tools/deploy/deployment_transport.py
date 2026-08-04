@@ -829,10 +829,20 @@ class OpenSshTransport:
         )
         return self.runner.run(argv, timeout_seconds=timeout)
 
-    def capabilities(self) -> None:
+    def capabilities(self, control_sha: str) -> None:
+        """Refuse to proceed unless the installed control root is that commit.
+
+        This runs before snapshot, upload and every other remote mutation, so a
+        control root that is missing its manifest, tampered with, or simply a
+        different commit stops the deployment while nothing has changed yet. The
+        expected sha comes from the trusted request, never from the VPS.
+        """
+        if not isinstance(control_sha, str) or re.fullmatch(r"[0-9a-f]{40}", control_sha) is None:
+            raise DeploymentTransportError("REMOTE_CAPABILITY_MISMATCH")
         result = self._remote(("capabilities",))
         value = _parse_single_json(result, "REMOTE_CAPABILITY_MISMATCH")
         if value != {
+            "controlSha": control_sha,
             "deployRoot": DEPLOY_ROOT, "protocol": PROTOCOL,
             "schemaVersion": 1, "user": REMOTE_USER,
         }:
@@ -966,7 +976,7 @@ def execute_remote(
     error: str | None = None
     outcome_status = "CONFIRMED"
     try:
-        transport.capabilities()
+        transport.capabilities(request["controlSha"])
         transport.upload(archive, operation)
         mutation_possible = True
         transport.install(operation, release, archive_sha256)
@@ -1015,7 +1025,7 @@ def deploy_handoff(
     with tempfile.TemporaryDirectory(prefix=".deployment-work-", dir=output.parent) as temporary:
         work = Path(temporary)
         try:
-            client.capabilities()
+            client.capabilities(request["controlSha"])
             snapshot_summary = client.snapshot(operation, target)
             snapshot_dir = work / "snapshot"
             client.download_snapshot(operation, snapshot_summary.get("mode"), snapshot_dir)

@@ -17,6 +17,13 @@ from typing import Any, NoReturn
 
 DEPLOY_TOOLS = Path(__file__).resolve().parent
 ROOT = DEPLOY_TOOLS.parents[1]
+# The vendored runtime must win over the global interpreter's site-packages,
+# which on the production host is Ubuntu 22.04's jsonschema 3.2.0 — proven to
+# silently accept invalid Draft 2020-12 prefixItems. Inserted first so it
+# shadows anything Python already put on sys.path at startup. This module is
+# exec'd directly by deploy-release.sh as its own interpreter process, so it
+# cannot rely on a parent process having already adjusted sys.path.
+sys.path.insert(0, str(ROOT / "vendor"))
 sys.path.insert(0, str(DEPLOY_TOOLS))
 
 import deployment_executor  # noqa: E402
