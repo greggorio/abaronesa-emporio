@@ -62,9 +62,12 @@ class DeployerPublisherIsolationTest {
             "Deployer scope deve conter deployment:, não release:");
         assertTrue(deployerScope.contains("deployment:"));
 
-        // Ninguém contém rollback
+        // Somente o deployer contém rollback; publisher permanece isolado
         assertFalse(publisherScope.contains("rollback"));
-        assertFalse(deployerScope.contains("rollback"));
+        assertEquals(
+            "deployment:read deployment:execute deployment:rollback",
+            deployerScope
+        );
     }
 
     @Test

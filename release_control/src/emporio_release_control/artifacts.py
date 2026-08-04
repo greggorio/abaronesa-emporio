@@ -150,7 +150,7 @@ def validate_candidate_bundle(
         or manifest.get("commitSha") != commit_sha
         or manifest.get("workflow", {}).get("runId") != str(run_id)
         or manifest.get("workflow", {}).get("attempt") != attempt
-        or manifest.get("deployable") is not False
+        or manifest.get("deployable") is not True
         or len(manifest.get("components", [])) != 6
     ):
         raise RuntimeFailure("CANDIDATE_BINDING_INVALID")

@@ -84,7 +84,7 @@ Audience, scope, TTL e algoritmo não são propriedades configuráveis:
 
 ```text
 audience = emporio-release-control-deployer
-scope    = deployment:read deployment:execute
+scope    = deployment:read deployment:execute deployment:rollback
 ttl      = 300 segundos
 alg      = RS256
 ```
@@ -97,14 +97,14 @@ O header contém exatamente `alg=RS256`, `kid` configurado e `typ=JWT`. As claim
 iss   issuer configurado do deployer
 aud   emporio-release-control-deployer
 sub   erp-user:<id numérico positivo>
-scope deployment:read deployment:execute
+scope deployment:read deployment:execute deployment:rollback
 iat   instante de emissão
 nbf   mesmo instante de iat
 exp   iat + 300 segundos
 jti   UUID v4 novo
 ```
 
-Email, nome, roles, grupos, segredo, chave, scopes publisher, `deployment:rollback` e refresh token não são incluídos.
+Email, nome, roles, grupos, segredo, chave, scopes publisher e refresh token não são incluídos.
 
 ## JWKS
 

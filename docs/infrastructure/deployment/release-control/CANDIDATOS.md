@@ -1,8 +1,12 @@
 # Candidatos e proveniência
 
-Um candidato é o BOM completo dos seis componentes comerciais, sempre com
-`deployable: false`. Ele não é release global e não pode ser consumido pelo
-deployer.
+Um candidato é o BOM completo dos seis componentes comerciais. Novos
+candidatos integrados são emitidos com `deployable: true`, indicando que o BOM
+passou pelos gates necessários para promoção. O runtime ainda aceita
+`deployable: false` somente para validar a lineage histórica já publicada.
+Nenhum candidato é release global ou pode ser consumido pelo deployer: esse
+limite permanece definido por `kind: ci-candidate`, e somente o publisher pode
+promovê-lo a `kind: global-release`.
 
 ## Cadeia confiável
 

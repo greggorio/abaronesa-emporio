@@ -44,13 +44,14 @@ versoes implantaveis.
 O contrato do candidato combina o resultado do resolvedor com imagens
 construídas ou herdadas. Seu schema estrito, exemplo fictício e CLI
 offline estao em `ops/releases/candidate-manifest.schema.json`,
-`ops/releases/examples/` e `tools/releases/candidate_manifest.py`. O candidato
-e explicitamente `deployable: false`: nao e uma release global e nao pode ser
-consumido pelo deployer.
+`ops/releases/examples/` e `tools/releases/candidate_manifest.py`. Novos
+candidatos integrados registram `deployable: true`, mas continuam não
+implantáveis porque `kind: ci-candidate` nunca é consumido pelo deployer. O
+schema aceita `false` apenas para revalidar lineage histórica.
 
 `ci.yml` valida e constrói sem push; em push verde para `main`, emite somente o
 plano autoritativo. `publish-candidate.yml` está configurado para consumir esse
-plano, publicar imagens afetadas e montar o manifesto não implantável com
+plano, publicar imagens afetadas e montar o manifesto candidato com
 digests e referências imutáveis verificadas. Candidatos incrementais e documentais são
 revalidados contra o candidato anterior selecionado e vinculado ao run,
 artifact e SHA. Nenhum workflow foi executado remotamente.
@@ -83,10 +84,10 @@ fronteira autenticada entre GitHub Actions e o CLI S20, ainda sem execução
 remota. Bootstrap da VPS, credenciais reais e primeiro deploy continuam
 futuros.
 
-A S25 fecha exclusivamente o contrato offline futuro de rollback comercial.
-Os quatro artefatos são referências machine-readable reservadas para S26 e
-não são consumidos pelo runtime atual; `deployment:rollback` permanece ausente
-da capability anunciada e a operação de rollback continua indisponível.
+A S25 originou o contrato offline de rollback comercial. S26 e S27 ativaram
+esse contrato no runtime: a identidade deployer anuncia
+`deployment:rollback`, e a capability permanece protegida pelos mesmos gates
+de autenticação, elegibilidade, operação e auditoria.
 
 A ponte de identidade local permite que um usuário ERP `ROLE_SYSTEM` troque a
 sessão HS512 por um token RS256 curto e específico ao publisher. Ela é opt-in,

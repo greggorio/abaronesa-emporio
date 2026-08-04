@@ -88,16 +88,16 @@ somente outcome terminal canonico.
 Estados terminais nao possuem transicao de saida. Somente o reconciliador
 interno avanca por evidencia do workflow. O cliente nao envia estado desejado.
 
-O rollback comercial nao e anunciado em `capabilities` nesta versao. A rota
-reservada responde `409 RELEASE_NOT_ELIGIBLE` sem operacao ou dispatch.
+O rollback comercial é anunciado em `capabilities` após a ativação S26/S27.
+Sem instalação e cadeia elegíveis, a rota responde
+`409 RELEASE_NOT_ELIGIBLE` sem operação ou dispatch.
 
-A S25 fecha o contrato futuro offline em
+A S25 fechou o contrato offline em
 [ROLLBACK_COMERCIAL.md](./ROLLBACK_COMERCIAL.md),
 [rollback.openapi.yml](./api/rollback.openapi.yml),
 [rollback-state-machine.yml](./contracts/rollback-state-machine.yml) e
-[rollback-security.yml](./contracts/rollback-security.yml). Esses artefatos
-não são consumidos pelo runtime atual, não alteram a capability nem habilitam
-rollback comercial; sua ativação é uma decisão futura de S26.
+[rollback-security.yml](./contracts/rollback-security.yml). S26/S27 ativaram o
+runtime e a UI sem enfraquecer esses artefatos.
 
 ## Reconciliacao
 
@@ -138,7 +138,7 @@ O ERP implementa duas pontes opt-in anteriores à UI:
   `release:read release:publish`. O JWKS público expõe apenas uma chave RSA pública.
 - **Deployer:** somente `ROLE_SYSTEM` pode trocar sua sessão HS512 por um token
   RS256 de 300 segundos, audience `emporio-release-control-deployer` (fixa) e scopes
-  `deployment:read deployment:execute`. O JWKS público expõe apenas uma chave RSA pública.
+  `deployment:read deployment:execute deployment:rollback`. O JWKS público expõe apenas uma chave RSA pública.
 
 As pontes não alteram o token ERP nem relaxam o perfil de produção;
 ambas os perfis `development` são estritamente loopback. As chaves privadas e audiences

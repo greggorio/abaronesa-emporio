@@ -83,7 +83,7 @@ class GlobalReleaseTest(unittest.TestCase):
         with self.assertRaisesRegex(global_release.GlobalReleaseError,"REQUEST_CANDIDATE"):self.build(request=request)
 
     def test_10_invalid_candidate_rejected_by_canonical_validator(self):
-        candidate=self.candidate();candidate["deployable"]=True
+        candidate=self.candidate();candidate["deployable"]="true"
         with self.assertRaisesRegex(global_release.GlobalReleaseError,"candidate invalid"):self.build(candidate=candidate)
 
     def test_11_six_components_are_copied_integrally_and_in_order(self):

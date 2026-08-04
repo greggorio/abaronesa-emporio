@@ -22,12 +22,15 @@ Docker, socket Docker, SSH, `gh` ou filesystem operacional. Somente no profile
 
 ## Elegibilidade e plano
 
-Sem instalacao atual, somente a primeira release da cadeia, com
-`previousRelease=null`, e elegivel. Com instalacao reconciliada, apenas a
-release SemVer imediatamente seguinte cujo `previousRelease` coincide com a
-release atual pode ser implantada. Inventarios Flyway atuais devem ser
-prefixos integrais dos inventarios alvo. Salto, downgrade, release corrente,
-predecessor divergente e migration nao forward falham fechados.
+Sem instalacao atual, somente a release SemVer mais recente é elegível, desde
+que sua cadeia de `previousRelease` seja completa, estritamente crescente e
+preserve os inventários Flyway como prefixos integrais até a raiz
+`previousRelease=null`. Isso permite que uma correção imutável substitua uma
+release histórica nunca instalada sem perder sua lineage. Com instalacao
+reconciliada, apenas a release SemVer imediatamente seguinte cujo
+`previousRelease` coincide com a release atual pode ser implantada. Cadeia
+ausente ou cíclica, salto após uma instalação, downgrade, release corrente,
+predecessor divergente e migration nao `forward-only` falham fechados.
 
 O plano HTTP projeta sempre os seis componentes canonicos. `KEEP` significa
 digest atual igual ao alvo; os demais recebem `UPDATE`. Na primeira instalacao
@@ -83,21 +86,20 @@ de releases continua respondendo `200`, mas apresenta todos os itens como
 inelegiveis; plano e novo deployment respondem `409`. Leituras nunca apagam ou
 reescrevem essa evidencia.
 
-## Rollback indisponivel
+## Rollback comercial
 
-O planner S18 e forward-only. Por isso, `deployment:rollback` nao aparece em
-capabilities. A rota de rollback permanece reservada e protegida; depois de
-validar autenticacao, scope, rate limit, body e idempotency header, responde
-sempre `409 RELEASE_NOT_ELIGIBLE`, grava somente `rollback.rejected` e nao cria
-operacao, idempotencia ou dispatch.
+O runtime anuncia `deployment:rollback` somente depois da ativação S26/S27. A
+rota protegida valida autenticação, scope, rate limit, body e idempotency
+header antes de calcular a elegibilidade contra instalação e cadeia de
+releases reconciliadas. Ausência de instalação elegível continua retornando
+`409 RELEASE_NOT_ELIGIBLE` sem dispatch.
 
-A especificação futura da S25 está em
+O contrato fechado está em
 [ROLLBACK_COMERCIAL.md](./ROLLBACK_COMERCIAL.md),
 [rollback.openapi.yml](./api/rollback.openapi.yml),
 [rollback-state-machine.yml](./contracts/rollback-state-machine.yml) e
-[rollback-security.yml](./contracts/rollback-security.yml). O runtime atual
-não importa esses artefatos, não anuncia `deployment:rollback` e não habilita
-a rota futura; a ativação permanece reservada para S26.
+[rollback-security.yml](./contracts/rollback-security.yml), complementado pela
+ativação e UI de S26/S27.
 
 ## Identidade e seguranca
 
@@ -107,7 +109,7 @@ O deployer valida tokens RS256 emitidos pela ponte de identidade do backend ERP
 - **Rotas distintas:** GET/POST em `/api/release-control/identity/deployer/**`.
 - **Chave privada distinta:** nunca compartilhada com o publisher.
 - **Audience distinta:** `emporio-release-control-deployer` (configurável, fixa em emissão).
-- **Scope distinto:** `deployment:read deployment:execute` (fixa, nunca inclui rollback).
+- **Scope distinto:** `deployment:read deployment:execute deployment:rollback` (ordem fixa).
 - **TTL:** 300 segundos, igual ao publisher.
 
 Para detalhes sobre habilitação, geração de chaves e ciclo local, veja

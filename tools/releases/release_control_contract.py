@@ -753,7 +753,7 @@ def validate_contracts(
         readme = README.read_text(encoding="utf-8") if README.is_file() else ""
         for marker in (
             "CURRENT_INSTALLATION_UNRECONCILED",
-            "rollback comercial nao e anunciado",
+            "rollback comercial é anunciado",
             "workflowRunId",
             "outcome terminal canonico",
         ):

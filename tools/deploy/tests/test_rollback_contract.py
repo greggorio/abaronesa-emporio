@@ -186,8 +186,10 @@ class RollbackContractTest(unittest.TestCase):
         root = self.mutant()
         path = root / validator.RUNTIME
         text = path.read_text(encoding="utf-8")
-        text = text.replace("deployment:rollback nao aparece em", "deployment:rollback aparece em")
-        text = text.replace("não anuncia `deployment:rollback`", "anuncia `deployment:rollback`")
+        text = text.replace(
+            "runtime anuncia `deployment:rollback`",
+            "runtime omite `deployment:rollback`",
+        )
         path.write_text(text, encoding="utf-8")
         self.assert_invalid(root, "active-runtime-capability")
 

@@ -17,7 +17,7 @@ import java.util.UUID;
 public class DeployerReleaseControlIdentityService {
 
     public static final String AUDIENCE = "emporio-release-control-deployer";
-    public static final String SCOPE = "deployment:read deployment:execute";
+    public static final String SCOPE = "deployment:read deployment:execute deployment:rollback";
     public static final long TTL_SECONDS = 300;
 
     private final DeployerReleaseControlIdentityKeyMaterial keyMaterial;

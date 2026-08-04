@@ -336,20 +336,67 @@ def test_release_listing_eligibility_cursor_and_plan(deployer: tuple[Any, ...]) 
     )
     assert response.status_code == 200
     assert response.json()["items"][0]["release"] == "v1.1.0"
-    assert response.json()["items"][0]["eligible"] is False
+    assert response.json()["items"][0]["eligible"] is True
     cursor = response.json()["nextCursor"]
     second = client.get(
         f"/api/deployment-control/v1/releases?limit=1&cursor={cursor}",
         headers=headers(),
     )
-    assert second.json()["items"][0]["eligible"] is True
+    assert second.json()["items"][0]["eligible"] is False
     plan = client.get(
-        "/api/deployment-control/v1/releases/v1.0.0/plan", headers=headers()
+        "/api/deployment-control/v1/releases/v1.1.0/plan", headers=headers()
     )
     assert plan.status_code == 200
     assert [item["action"] for item in plan.json()["components"]] == ["UPDATE"] * 6
     assert plan.json()["migrationRequired"] is True
     assert plan.json()["backupRequired"] is True
+
+
+@pytest.mark.parametrize("fault", ["missing", "cycle", "semver", "migrations"])
+def test_first_install_requires_latest_complete_forward_chain(
+    deployer: tuple[Any, ...], fault: str
+) -> None:
+    client, _, _, factory = deployer
+    add_release(factory, "v1.0.0", None)
+    latest = add_release(
+        factory, "v1.1.0", "v1.0.0", digest_offset=10, migrations=("1", "2")
+    )
+    with factory.begin() as session:
+        row = session.get(ReleaseSnapshot, latest.release)
+        assert row is not None
+        mutated = dict(row.manifest)
+        if fault == "missing":
+            mutated["previousRelease"] = "v0.9.0"
+        elif fault == "cycle":
+            mutated["previousRelease"] = "v1.1.0"
+        elif fault == "semver":
+            mutated["previousRelease"] = "v2.0.0"
+            session.add(
+                ReleaseSnapshot(
+                    release="v2.0.0",
+                    source_commit="2" * 40,
+                    state="PUBLISHED",
+                    published_at=NOW,
+                    candidate_id="candidate-v2.0.0",
+                    manifest=manifest("v2.0.0", None),
+                    synchronized_at=NOW,
+                )
+            )
+        else:
+            mutated["databases"] = manifest(
+                "v1.1.0", "v1.0.0", migrations=("2",)
+            )["databases"]
+        row.manifest = mutated
+
+    response = client.get("/api/deployment-control/v1/releases", headers=headers())
+    assert response.status_code == 200
+    by_release = {item["release"]: item for item in response.json()["items"]}
+    assert by_release["v1.1.0"]["eligible"] is False
+    plan = client.get(
+        "/api/deployment-control/v1/releases/v1.1.0/plan", headers=headers()
+    )
+    assert plan.status_code == 409
+    assert plan.json()["code"] == "RELEASE_NOT_ELIGIBLE"
 
 
 @pytest.mark.parametrize(

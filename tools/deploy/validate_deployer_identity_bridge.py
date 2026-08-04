@@ -71,6 +71,13 @@ KNOWN_MAVEN_DEPENDENCIES = frozenset(
     }
 )
 
+DEPLOYER_CAPABILITIES = (
+    "deployment:read",
+    "deployment:execute",
+    "deployment:rollback",
+)
+DEPLOYER_SCOPE = " ".join(DEPLOYER_CAPABILITIES)
+
 
 def fail(msg: str) -> None:
     print(f"deployer-identity:invalid — {msg}", file=sys.stderr)
@@ -136,7 +143,7 @@ def check_backend_deployer_service() -> None:
 
     if 'AUDIENCE = "emporio-release-control-deployer"' not in content:
         fail("deployer service missing exact audience constant")
-    if 'SCOPE = "deployment:read deployment:execute"' not in content:
+    if f'SCOPE = "{DEPLOYER_SCOPE}"' not in content:
         fail("deployer service missing exact scope constant")
     if "TTL_SECONDS = 300" not in content:
         fail("deployer service missing exact TTL constant")
@@ -251,6 +258,77 @@ def check_documentation() -> None:
             fail(f"IDENTIDADE_DEPLOYER.md missing section: {section}")
 
 
+def check_cross_runtime_scope_contract() -> None:
+    """Compara backend, frontend, runtime Python e contrato S27."""
+    backend = Path(
+        "backend/src/main/java/com/baronesa/emporio/releasecontrol/identity/deployer/"
+        "DeployerReleaseControlIdentityService.java"
+    ).read_text(encoding="utf-8")
+    controller = Path(
+        "backend/src/main/java/com/baronesa/emporio/releasecontrol/identity/deployer/"
+        "DeployerReleaseControlIdentityController.java"
+    ).read_text(encoding="utf-8")
+    frontend = Path("frontend/src/services/releaseDeployerClient.js").read_text(
+        encoding="utf-8"
+    )
+    runtime = Path(
+        "release_control/src/emporio_release_control/deployer_api.py"
+    ).read_text(encoding="utf-8")
+    runtime_schema = Path(
+        "release_control/src/emporio_release_control/deployer_schemas.py"
+    ).read_text(encoding="utf-8")
+    s27 = Path(
+        "docs/infrastructure/deployment/implementation/slices/"
+        "S27-ui-rollback-recuperacao.task.md"
+    ).read_text(encoding="utf-8")
+
+    if f'SCOPE = "{DEPLOYER_SCOPE}"' not in backend:
+        fail("cross contract backend scope drift")
+    if "DeployerReleaseControlIdentityService.SCOPE" not in controller:
+        fail("cross contract backend response does not use service scope")
+
+    frontend_array = re.search(
+        r"DEPLOYER_CAPABILITIES\s*=\s*Object\.freeze\(\[(.*?)\]\)",
+        frontend,
+        re.DOTALL,
+    )
+    if frontend_array is None or tuple(
+        re.findall(r'"([a-z]+:[a-z]+)"', frontend_array.group(1))
+    ) != DEPLOYER_CAPABILITIES:
+        fail("cross contract frontend capabilities drift")
+    if f'export const DEPLOYER_SCOPE = "{DEPLOYER_SCOPE}";' not in frontend:
+        fail("cross contract frontend scope drift")
+
+    capability_body = runtime.partition("def capabilities")[2].partition("@app")[0]
+    if tuple(re.findall(r'"([a-z]+:[a-z]+)"', capability_body)) != DEPLOYER_CAPABILITIES:
+        fail("cross contract runtime capabilities drift")
+    for guard, scope in (
+        ("def reader", "deployment:read"),
+        ("def executor", "deployment:execute"),
+        ("def rollback_actor", "deployment:rollback"),
+    ):
+        body = runtime.partition(guard)[2].partition("def ")[0]
+        if f'authenticated.require("{scope}")' not in body:
+            fail(f"cross contract runtime guard drift: {guard}")
+    schema_block = runtime_schema.partition("class DeployerCapabilitiesResponse")[2].partition(
+        "class "
+    )[0]
+    schema_capabilities = schema_block.partition("capabilities:")[2].partition(
+        "mode:"
+    )[0]
+    if tuple(re.findall(r'"([a-z]+:[a-z]+)"', schema_capabilities)) != DEPLOYER_CAPABILITIES:
+        fail("cross contract runtime schema drift")
+
+    if DEPLOYER_SCOPE not in s27:
+        fail("cross contract S27 scope drift")
+    expected_s27_capabilities = (
+        "capabilities ordenadas `deployment:read`, `deployment:execute`, "
+        "`deployment:rollback`"
+    )
+    if expected_s27_capabilities not in s27:
+        fail("cross contract S27 capabilities drift")
+
+
 def check_no_new_maven_dependency() -> None:
     """Verifica que o conjunto de dependências Maven permanece no snapshot S22."""
     path = Path("backend/pom.xml")
@@ -292,6 +370,7 @@ def main(root: Path | None = None) -> int:
         check_release_control_config()
         check_release_control_env_example()
         check_documentation()
+        check_cross_runtime_scope_contract()
         check_no_new_maven_dependency()
     except SystemExit:
         raise

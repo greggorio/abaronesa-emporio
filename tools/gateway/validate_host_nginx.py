@@ -9,8 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "ops/nginx/emporio.production.conf"
+GATEWAY_CONFIG = ROOT / "ops/gateway/conf.d/emporio.conf"
 ERP = "erp-emporio.abaronesa.net.br"
 WEBSITE = "emporio.abaronesa.net.br"
+CAPABILITIES_PATH = "/api/release-control/v1/"
+OPERATIONS_PATH = "/api/deployment-control/v1/"
 
 
 def _servers(text: str, host: str) -> list[str]:
@@ -21,8 +24,13 @@ def _servers(text: str, host: str) -> list[str]:
     ]
 
 
-def validate(text: str | None = None) -> None:
+def validate(text: str | None = None, gateway_text: str | None = None) -> None:
     text = CONFIG.read_text(encoding="utf-8") if text is None else text
+    gateway_text = (
+        GATEWAY_CONFIG.read_text(encoding="utf-8")
+        if gateway_text is None
+        else gateway_text
+    )
     errors: list[str] = []
     erp = _servers(text, ERP)
     website = _servers(text, WEBSITE)
@@ -41,7 +49,7 @@ def validate(text: str | None = None) -> None:
     require("TLSv1;" not in text and "TLSv1.1" not in text, "tls policy")
     require(text.count("X-Content-Type-Options") == 2 and text.count("X-Frame-Options") == 2 and text.count("Referrer-Policy") == 2, "security headers")
     require("client_max_body_size 10m;" in text and "client_max_body_size 2m;" in text, "body limits")
-    require(text.count("proxy_connect_timeout 5s;") == 4 and text.count("proxy_send_timeout 60s;") == 4, "finite proxy timeouts")
+    require(text.count("proxy_connect_timeout 5s;") == 5 and text.count("proxy_send_timeout 60s;") == 5, "finite proxy timeouts")
     require(text.count("Upgrade $http_upgrade") == 2 and text.count('Connection "upgrade"') == 2, "websocket")
 
     erp_tls = next((x for x in erp if "listen 443 ssl http2;" in x), "")
@@ -50,11 +58,34 @@ def validate(text: str | None = None) -> None:
     web_http = next((x for x in website if "listen 80;" in x), "")
     for block, label in ((erp_http, "erp http"), (web_http, "website http")):
         require("/.well-known/acme-challenge/" in block and "https://$host$request_uri" in block, label)
-    require("location ^~ /api/release-control/v1/" in erp_tls and "proxy_pass http://127.0.0.1:8180;" in erp_tls, "erp control plane")
+    for path, label in (
+        (CAPABILITIES_PATH, "erp capabilities namespace"),
+        (OPERATIONS_PATH, "erp operations namespace"),
+    ):
+        require(
+            f"location ^~ {path}" in erp_tls
+            and re.search(
+                rf"location \^~ {re.escape(path)}\s*\{{.*?proxy_pass http://127\.0\.0\.1:8180;",
+                erp_tls,
+                re.S,
+            )
+            is not None,
+            label,
+        )
     require("location ^~ /api/release-control/identity/deployer/" in erp_tls and "proxy_pass http://emporio_commercial_gateway;" in erp_tls, "identity same origin")
     require("/api/release-control/v1/identity/deployer/" not in erp_tls, "identity route collision")
-    require("proxy_pass http://127.0.0.1:8180;" not in web_tls and "location ^~ /api/release-control/v1/ { return 404; }" in web_tls, "website control closed")
-    require(text.count("proxy_pass http://127.0.0.1:8180;") == 1, "exclusive control proxy")
+    require(
+        "proxy_pass http://127.0.0.1:8180;" not in web_tls
+        and f"location ^~ {CAPABILITIES_PATH} {{ return 404; }}" in web_tls
+        and f"location ^~ {OPERATIONS_PATH} {{ return 404; }}" in web_tls,
+        "website control closed",
+    )
+    require(text.count("proxy_pass http://127.0.0.1:8180;") == 2, "exclusive control proxy")
+    require(
+        gateway_text.count("location ^~ /api/deployment-control/ { return 404; }")
+        == 2,
+        "gateway defensive deployment block",
+    )
     require(all(header in erp_tls for header in ("Host $host", "X-Real-IP $remote_addr", "X-Forwarded-For $proxy_add_x_forwarded_for", "X-Forwarded-Proto https", "X-Forwarded-Host $host")), "closed proxy headers")
     require(text.count("ssl_certificate /etc/letsencrypt/live/") == 2 and text.count("ssl_certificate_key /etc/letsencrypt/live/") == 2, "certificate paths")
     if errors:

@@ -5,11 +5,13 @@
 
 ## Candidato e release global
 
-O candidato S12 é uma avaliação completa dos seis componentes comerciais,
-mas permanece `deployable: false`. A release global S13 é um BOM implantável,
-`deployable: true`, que copia integralmente esse candidato validado e acrescenta
-SemVer, identidade da futura publicação, descrição, changelog e fingerprints
-das migrations.
+O candidato é uma avaliação completa dos seis componentes comerciais e, após
+a integração verde, registra `deployable: true`. Essa propriedade o torna
+elegível à promoção, mas não o transforma em artefato consumível pelo deployer:
+somente a release global `kind: global-release`, também `deployable: true`, é
+implantável. A promoção copia integralmente o candidato validado e acrescenta
+SemVer, identidade da publicação, descrição, changelog e fingerprints das
+migrations.
 
 O usuário escolhe somente um candidato íntegro e o tipo de incremento
 `MAJOR`, `MINOR` ou `PATCH`. Ele não escolhe componentes, imagens, digests,

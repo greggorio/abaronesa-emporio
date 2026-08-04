@@ -213,7 +213,33 @@ class DeployerService:
             return False
         previous = target.manifest.get("previousRelease")
         if current is None:
-            return previous is None
+            releases = list(session.scalars(select(ReleaseSnapshot)))
+            if not releases or target.release != max(
+                (item.release for item in releases), key=_semver
+            ):
+                return False
+            by_release = {item.release: item for item in releases}
+            visited: set[str] = set()
+            cursor = target
+            while True:
+                if cursor.release in visited:
+                    return False
+                visited.add(cursor.release)
+                predecessor_name = cursor.manifest.get("previousRelease")
+                if predecessor_name is None:
+                    return True
+                if not isinstance(predecessor_name, str):
+                    return False
+                predecessor = by_release.get(predecessor_name)
+                if predecessor is None or _semver(predecessor.release) >= _semver(
+                    cursor.release
+                ):
+                    return False
+                if not _migrations_are_prefix(
+                    predecessor.manifest, cursor.manifest
+                ):
+                    return False
+                cursor = predecessor
         if current.release is None or previous != current.release:
             return False
         if _semver(target.release) <= _semver(current.release):

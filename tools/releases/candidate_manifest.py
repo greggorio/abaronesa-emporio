@@ -58,7 +58,7 @@ def _validate_component(item,pending,previous=None):
 def validate_pending(value,effective=None,previous=None):
  errors=[]
  if not isinstance(value,dict) or set(value)!=PENDING_KEYS:return ["pending shape"]
- if value.get("schemaVersion")!=2 or value.get("kind")!="ci-candidate" or value.get("deployable") is not False or value.get("repository")!=REPOSITORY or value.get("ref")!="refs/heads/main":errors.append("pending identity")
+ if value.get("schemaVersion")!=2 or value.get("kind")!="ci-candidate" or not isinstance(value.get("deployable"),bool) or value.get("repository")!=REPOSITORY or value.get("ref")!="refs/heads/main":errors.append("pending identity")
  commit=value.get("commitSha","");workflow=value.get("workflow")
  if not SHA_RE.fullmatch(str(commit)) or not _utc(value.get("createdAt")):errors.append("pending commit time")
  if not isinstance(workflow,dict) or set(workflow)!=WORKFLOW_KEYS:errors.append("pending workflow shape")
@@ -131,9 +131,10 @@ def pending_from(effective,results,previous,created_at,run,attempt):
    if cid not in prior:raise PreviousManifestRequired(cid)
    inherited=dict(prior[cid]);inherited["state"]="inherited";inherited["originCandidateId"]=inherited.get("originCandidateId") or previous["candidateId"];components.append(inherited)
  candidate_id=f"candidate-{effective['commitSha']}-{run}-{attempt}"
- return {"schemaVersion":2,"kind":"ci-candidate","deployable":False,"candidateId":candidate_id,"repository":REPOSITORY,"commitSha":effective["commitSha"],"ref":"refs/heads/main","createdAt":created_at,"workflow":{"runId":str(run),"attempt":int(attempt),"url":f"https://github.com/{REPOSITORY}/actions/runs/{run}"},"sourceCi":effective["sourceCi"],"catalog":effective["catalog"],"predecessor":effective["predecessor"],"resolution":resolution,"components":components}
+ return {"schemaVersion":2,"kind":"ci-candidate","deployable":True,"candidateId":candidate_id,"repository":REPOSITORY,"commitSha":effective["commitSha"],"ref":"refs/heads/main","createdAt":created_at,"workflow":{"runId":str(run),"attempt":int(attempt),"url":f"https://github.com/{REPOSITORY}/actions/runs/{run}"},"sourceCi":effective["sourceCi"],"catalog":effective["catalog"],"predecessor":effective["predecessor"],"resolution":resolution,"components":components}
 def finalize(pending,receipt):
  errors=validate_pending(pending)
+ if pending.get("deployable") is not True:errors.append("pending deployable")
  errors.extend(validate_receipt(receipt,pending))
  if errors:raise ManifestError(";".join(errors))
  final=dict(pending);final["integration"]={"workflowRunId":receipt["workflowRunId"],"workflowAttempt":receipt["workflowAttempt"],"pendingSha256":receipt["pendingSha256"],"receiptSha256":artifact_io.digest(artifact_io.canonical(receipt)),"checkedAt":receipt["checkedAt"],"status":receipt["status"],"services":receipt["services"],"probes":receipt["probes"],"cleanup":receipt["cleanup"]}

@@ -76,9 +76,9 @@ class DeployerReleaseControlIdentityConfigurationTest {
             .getDeclaredField("SCOPE");
         scopeField.setAccessible(true);
         String scope = (String) scopeField.get(null);
-        assertEquals("deployment:read deployment:execute", scope);
+        assertEquals("deployment:read deployment:execute deployment:rollback", scope);
         assertFalse(scope.contains("release:"), "scope must not contain release:");
-        assertFalse(scope.contains("rollback"), "scope must not contain rollback");
+        assertTrue(scope.endsWith("deployment:rollback"), "scope must contain rollback last");
     }
 
     @Test

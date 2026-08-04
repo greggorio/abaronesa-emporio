@@ -81,12 +81,14 @@ fizer push.
 
 ## Candidato versus release
 
-O schema e gerador locais descrevem um candidato intermediario,
-`deployable: false`. O exemplo e fictício. O workflow separado
+O schema e gerador locais descrevem um candidato intermediario. Novos bundles
+integrados registram `deployable: true`; bundles históricos com `false`
+continuam válidos apenas para lineage. O exemplo e fictício. O workflow separado
 `publish-candidate.yml` poderá publicar imagens e o manifesto candidato apenas
 após uma CI confiável: valida o plano, publica por digest e vincula a
 referência imutável, preserva digest e referência herdados e valida os seis componentes
-em Compose efêmero. Ele não promove release, não cria manifesto global
+em Compose efêmero. `kind: ci-candidate` continua não consumível pelo deployer.
+O workflow não promove release, não cria manifesto global
 implantável e não executa deploy.
 
 A validação final recebe o candidato anterior já verificado quando há

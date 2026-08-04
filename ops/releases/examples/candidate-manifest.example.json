@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "kind": "ci-candidate",
-  "deployable": false,
+  "deployable": true,
   "candidateId": "candidate-1111111111111111111111111111111111111111-200-1",
   "repository": "greggorio/abaronesa-emporio",
   "commitSha": "1111111111111111111111111111111111111111",

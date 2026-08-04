@@ -357,16 +357,12 @@ def validate_documentation(root: Path) -> None:
     contract = read_text(root, CONTRACT).casefold()
     runtime = read_text(root, RUNTIME).casefold()
     require(
-        "rollback comercial nao e anunciado" in contract
-        or "rollback comercial não é anunciado" in contract,
-        "active-contract-forward-only",
+        "rollback comercial é anunciado" in contract,
+        "active-contract-capability",
     )
     require(
         "deployment:rollback" in runtime
-        and (
-            "deployment:rollback nao aparece em" in runtime
-            or "não anuncia `deployment:rollback`" in runtime
-        ),
+        and "runtime anuncia `deployment:rollback`" in runtime,
         "active-runtime-capability",
     )
 

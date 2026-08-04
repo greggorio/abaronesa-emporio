@@ -5,7 +5,14 @@ ROOT=Path(__file__).resolve().parents[3];sys.path[:0]=[str(ROOT/"tools/releases"
 import artifact_io,candidate_manifest,finalize_candidate
 class CandidateManifestV2Test(unittest.TestCase):
  def setUp(self):self.example=json.loads(candidate_manifest.EXAMPLE.read_text())
- def test_01_example_v2_valid(self):self.assertEqual([],candidate_manifest.validate_manifest(self.example))
+ def test_01_example_v2_valid(self):self.assertIs(self.example["deployable"],True);self.assertEqual([],candidate_manifest.validate_manifest(self.example))
+ def test_01b_historical_non_deployable_candidate_remains_valid(self):
+  historical=copy.deepcopy(self.example);historical["deployable"]=False
+  self.assertEqual([],candidate_manifest.validate_manifest(historical))
+  pending={k:v for k,v in historical.items() if k!="integration"}
+  integration=historical["integration"]
+  receipt={"schemaVersion":1,"status":"passed","repository":pending["repository"],"commitSha":pending["commitSha"],"workflowRunId":pending["workflow"]["runId"],"workflowAttempt":pending["workflow"]["attempt"],"pendingSha256":artifact_io.digest(artifact_io.canonical(pending)),"checkedAt":integration["checkedAt"],"services":integration["services"],"probes":integration["probes"],"cleanup":integration["cleanup"]}
+  with self.assertRaisesRegex(candidate_manifest.ManifestError,"pending deployable"):candidate_manifest.finalize(pending,receipt)
  def test_02_schema_and_extra_fail(self):
   for mutate in (lambda x:x.update(schemaVersion=1),lambda x:x.update(extra=True),lambda x:x["components"][0]["checks"].update(health="passed"),lambda x:x["components"][0]["labels"].pop("org.opencontainers.image.created")):
    value=copy.deepcopy(self.example);mutate(value);self.assertTrue(candidate_manifest.validate_manifest(value))

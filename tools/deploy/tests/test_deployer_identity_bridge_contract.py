@@ -68,6 +68,9 @@ class DeployerIdentityBridgeContractTest(unittest.TestCase):
             source = ROOT / directory
             if source.exists():
                 shutil.copytree(source, target / directory)
+        frontend_file = Path("frontend/src/services/releaseDeployerClient.js")
+        (target / frontend_file.parent).mkdir(parents=True)
+        shutil.copy2(ROOT / frontend_file, target / frontend_file)
         return target
 
     def replace(self, root: Path, relative: str, old: str, new: str) -> None:
@@ -167,8 +170,70 @@ class DeployerIdentityBridgeContractTest(unittest.TestCase):
             root,
             "backend/src/main/java/com/baronesa/emporio/releasecontrol/identity/deployer/"
             "DeployerReleaseControlIdentityService.java",
-            'SCOPE = "deployment:read deployment:execute"',
+            'SCOPE = "deployment:read deployment:execute deployment:rollback"',
             'SCOPE = "release:read release:publish"',
+        )
+        self.assert_mutant_invalid(root)
+
+    def test_deployer_service_scope_order_drift_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "backend/src/main/java/com/baronesa/emporio/releasecontrol/identity/deployer/"
+            "DeployerReleaseControlIdentityService.java",
+            'deployment:read deployment:execute deployment:rollback',
+            'deployment:rollback deployment:read deployment:execute',
+        )
+        self.assert_mutant_invalid(root)
+
+    def test_frontend_scope_drift_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "frontend/src/services/releaseDeployerClient.js",
+            'export const DEPLOYER_SCOPE = "deployment:read deployment:execute deployment:rollback";',
+            'export const DEPLOYER_SCOPE = "deployment:read deployment:execute";',
+        )
+        self.assert_mutant_invalid(root)
+
+    def test_frontend_capability_order_drift_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "frontend/src/services/releaseDeployerClient.js",
+            '  "deployment:read",\n  "deployment:execute",\n  "deployment:rollback",',
+            '  "deployment:rollback",\n  "deployment:execute",\n  "deployment:read",',
+        )
+        self.assert_mutant_invalid(root)
+
+    def test_runtime_capability_extra_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "release_control/src/emporio_release_control/deployer_api.py",
+            '                "deployment:rollback",\n',
+            '                "deployment:rollback",\n                "release:read",\n',
+        )
+        self.assert_mutant_invalid(root)
+
+    def test_runtime_rollback_guard_drift_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "release_control/src/emporio_release_control/deployer_api.py",
+            'authenticated.require("deployment:rollback")',
+            'authenticated.require("deployment:execute")',
+        )
+        self.assert_mutant_invalid(root)
+
+    def test_s27_scope_drift_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "docs/infrastructure/deployment/implementation/slices/"
+            "S27-ui-rollback-recuperacao.task.md",
+            "deployment:read deployment:execute deployment:rollback",
+            "deployment:read deployment:execute",
         )
         self.assert_mutant_invalid(root)
 
