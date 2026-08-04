@@ -49,6 +49,15 @@
 > comprovado aceitando mutante inválido de `prefixItems`. S42 é o contrato
 > vigente para produzir um control root autocontido, determinístico e vinculado
 > ao `controlSha`, antes de instalar qualquer helper na VPS.
+>
+> **Atualização S42/S43 — 04/08/2026:** S42 aceita no SHA remoto
+> `9731954d474fb68ec1384a525e1075f9a5542e24`, com pacote determinístico
+> `9b5f836289e5cf09a0b8898ff34b1962c077a8cc0193910fb6aab93197e0d8c0`,
+> runtime Python vendorizado e binding do helper ao `controlSha`; CI
+> `30902014368` e candidato `30902729166` estão verdes. S43 é o contrato
+> vigente para reconstruir esse pacote, instalá-lo no control root vazio e
+> validar capabilities no host real. S43 não inicia control plane, serviços,
+> deploy ou rollback.
 
 ## 1. Mandato e modo de condução
 
