@@ -220,7 +220,10 @@ class Synchronizer:
                             candidate_id=candidate_id,
                             source_commit=str(candidate.manifest["commitSha"]),
                             eligibility=(
-                                "NOT_ELIGIBLE" if candidate_id in published else "READY"
+                                "READY"
+                                if candidate_id not in published
+                                and candidate.manifest["deployable"] is True
+                                else "NOT_ELIGIBLE"
                             ),
                             ci_status="PASSED",
                             manifest_status="VALID",

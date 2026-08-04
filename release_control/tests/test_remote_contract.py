@@ -58,10 +58,11 @@ def zip_bytes(
     return output.getvalue()
 
 
-def candidate_bundle() -> tuple[bytes, str, dict[str, Any]]:
+def candidate_bundle(deployable: bool = True) -> tuple[bytes, str, dict[str, Any]]:
     manifest = json.loads(
         (ROOT / "ops/releases/examples/candidate-manifest.example.json").read_text()
     )
+    manifest["deployable"] = deployable
     data = canonical(manifest)
     metadata = canonical(
         {
@@ -729,6 +730,25 @@ def test_candidate_and_release_sync_green_and_drift(
     with factory() as session:
         state = session.get(SyncState, "candidates")
         assert state is not None and state.drift and state.error_code == "WORKFLOW_RUN_INVALID"
+
+
+def test_historical_non_deployable_candidate_syncs_as_not_eligible(
+    factory: sessionmaker[Session],
+) -> None:
+    github = SyncGitHub()
+    github.candidate_zip, github.candidate_digest, _ = candidate_bundle(False)
+    github.outcome_zip, github.outcome_digest = candidate_outcome_bundle(
+        github.candidate_digest
+    )
+
+    sync = Synchronizer(factory, github)  # type: ignore[arg-type]
+    sync.sync_candidates()
+
+    with factory() as session:
+        snapshot = session.get(CandidateSnapshot, CANDIDATE)
+        assert snapshot is not None
+        assert snapshot.manifest["deployable"] is False
+        assert snapshot.eligibility == "NOT_ELIGIBLE"
 
 
 def test_inherited_candidate_artifact_is_bound_to_its_own_run(
