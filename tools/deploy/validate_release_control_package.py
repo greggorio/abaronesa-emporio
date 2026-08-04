@@ -14,6 +14,9 @@ REQUIRED = (
     "release_control/.dockerignore",
     "release_control/README.md",
     "release_control/uv.lock",
+    "release_control/src/emporio_release_control/artifacts.py",
+    "release_control/src/emporio_release_control/deployment_artifacts.py",
+    "release_control/src/emporio_release_control/rollback_artifacts.py",
     "ops/compose/release-control.yml",
     "ops/env/release-control.env.example",
     "ops/systemd/emporio-release-control.service.example",
@@ -116,7 +119,7 @@ def _validate_dockerfile(text: str, errors: list[str]) -> None:
         ("ops/releases/release-publication-outcome.schema.json", "docker-publication-outcome-schema"),
         ("ops/deploy/schemas/deployment-workflow-outcome.schema.json", "docker-deployment-outcome-schema"),
         ("ops/deploy/schemas/rollback-workflow-outcome.schema.json", "docker-rollback-outcome-schema"),
-        ("COPY --from=builder --chown=10001:10001 /build/ops ./ops", "docker-runtime-schemas"),
+        ("COPY --from=builder --chown=10001:10001 /build/ops /ops", "docker-runtime-schemas"),
         # Alpine base: BusyBox adduser/addgroup instead of shadow utilities.
         ("addgroup --gid 10001 release-control", "docker-group"),
         ("adduser --uid 10001 --ingroup release-control", "docker-user"),
@@ -135,6 +138,10 @@ def _validate_dockerfile(text: str, errors: list[str]) -> None:
         errors.append("docker-root-or-floating-image")
     if re.search(r"(?m)^\s*(?:ADD|COPY)\s+\.\s", text):
         errors.append("docker-broad-copy")
+    if re.search(r"(?m)^COPY\s+ops/?\s", text):
+        errors.append("docker-broad-ops-copy")
+    if "/app/ops" in text or "/build/ops ./ops" in text:
+        errors.append("docker-runtime-schema-path")
     if "--dev" in text.replace("--no-dev", ""):
         errors.append("docker-development-dependencies")
 
@@ -159,20 +166,52 @@ def _validate_dockerignore(text: str, errors: list[str]) -> None:
 
 def _validate_root_dockerignore(text: str, errors: list[str]) -> None:
     lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
-    if not lines or lines[0] != "**":
-        errors.append("root-context-deny-by-default")
-    for marker, code in (
-        ("!release_control/pyproject.toml", "root-context-pyproject"),
-        ("!release_control/uv.lock", "root-context-lock"),
-        ("!release_control/src/**", "root-context-src"),
-        ("!release_control/migrations/**", "root-context-migrations"),
-        ("!ops/releases/candidate-manifest.schema.json", "root-context-candidate-schema"),
-        ("!ops/releases/global-release.schema.json", "root-context-release-schema"),
-        ("!ops/releases/release-publication-outcome.schema.json", "root-context-publication-outcome-schema"),
-        ("!ops/deploy/schemas/deployment-workflow-outcome.schema.json", "root-context-deployment-outcome-schema"),
-        ("!ops/deploy/schemas/rollback-workflow-outcome.schema.json", "root-context-rollback-outcome-schema"),
-    ):
-        _require(text, marker, code, errors)
+    expected = [
+        "**",
+        "!release_control/",
+        "!release_control/pyproject.toml",
+        "!release_control/uv.lock",
+        "!release_control/README.md",
+        "!release_control/alembic.ini",
+        "!release_control/src/",
+        "!release_control/src/**",
+        "!release_control/migrations/",
+        "!release_control/migrations/**",
+        "!ops/",
+        "!ops/releases/",
+        "!ops/releases/candidate-manifest.schema.json",
+        "!ops/releases/global-release.schema.json",
+        "!ops/releases/release-publication-outcome.schema.json",
+        "!ops/deploy/",
+        "!ops/deploy/schemas/",
+        "!ops/deploy/schemas/deployment-workflow-outcome.schema.json",
+        "!ops/deploy/schemas/rollback-workflow-outcome.schema.json",
+    ]
+    if lines != expected:
+        errors.append("root-context-exact-allowlist")
+
+
+def _validate_schema_sources(texts: dict[str, str], errors: list[str]) -> None:
+    expected = {
+        "release_control/src/emporio_release_control/artifacts.py": (
+            'CANDIDATE_SCHEMA = ROOT / "ops/releases/candidate-manifest.schema.json"',
+            'RELEASE_SCHEMA = ROOT / "ops/releases/global-release.schema.json"',
+            'OUTCOME_SCHEMA = ROOT / "ops/releases/release-publication-outcome.schema.json"',
+        ),
+        "release_control/src/emporio_release_control/deployment_artifacts.py": (
+            'DEPLOYMENT_OUTCOME_SCHEMA = ROOT / "ops/deploy/schemas/deployment-workflow-outcome.schema.json"',
+        ),
+        "release_control/src/emporio_release_control/rollback_artifacts.py": (
+            'ROLLBACK_OUTCOME_SCHEMA = ROOT / "ops/deploy/schemas/rollback-workflow-outcome.schema.json"',
+        ),
+    }
+    for relative, markers in expected.items():
+        source = texts[relative]
+        _require(source, "ROOT = Path(__file__).resolve().parents[3]", "schema-root-contract", errors)
+        for marker in markers:
+            _require(source, marker, f"schema-path-contract:{relative}", errors)
+        if "/app/ops" in source or "fallback" in source.lower():
+            errors.append(f"schema-path-fallback:{relative}")
 
 
 def _validate_compose(text: str, errors: list[str]) -> None:
@@ -359,6 +398,7 @@ def validate(root: Path = ROOT) -> list[str]:
     _validate_dockerfile(texts["release_control/Dockerfile"], errors)
     _validate_root_dockerignore(texts[".dockerignore"], errors)
     _validate_dockerignore(texts["release_control/.dockerignore"], errors)
+    _validate_schema_sources(texts, errors)
     _validate_compose(texts["ops/compose/release-control.yml"], errors)
     _validate_env(texts["ops/env/release-control.env.example"], errors)
     _validate_systemd(texts["ops/systemd/emporio-release-control.service.example"], errors)

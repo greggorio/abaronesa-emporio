@@ -51,7 +51,7 @@ COPY --from=builder --chown=10001:10001 /build/src ./src
 COPY --from=builder --chown=10001:10001 /build/migrations ./migrations
 COPY --from=builder --chown=10001:10001 /build/alembic.ini ./alembic.ini
 COPY --from=builder --chown=10001:10001 /build/pyproject.toml /build/uv.lock /build/README.md ./
-COPY --from=builder --chown=10001:10001 /build/ops ./ops
+COPY --from=builder --chown=10001:10001 /build/ops /ops
 
 USER 10001:10001
 

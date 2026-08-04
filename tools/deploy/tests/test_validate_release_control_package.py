@@ -128,12 +128,49 @@ class ReleaseControlPackageContractTest(unittest.TestCase):
         self.assert_mutant_rejected(
             "release_control/Dockerfile",
             lambda text: text.replace(
-                "COPY --from=builder --chown=10001:10001 /build/ops ./ops\n", ""
+                "COPY --from=builder --chown=10001:10001 /build/ops /ops\n", ""
             ),
         )
 
     def test_mutant_22_root_context_must_remain_deny_by_default(self) -> None:
         self.assert_mutant_rejected(".dockerignore", lambda text: text.replace("**\n", "", 1))
+
+    def test_mutant_23_app_ops_destination_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "release_control/Dockerfile",
+            lambda text: text.replace("/build/ops /ops", "/build/ops /app/ops"),
+        )
+
+    def test_mutant_24_each_schema_is_required(self) -> None:
+        for schema in (
+            "ops/releases/candidate-manifest.schema.json",
+            "ops/releases/global-release.schema.json",
+            "ops/releases/release-publication-outcome.schema.json",
+            "ops/deploy/schemas/deployment-workflow-outcome.schema.json",
+            "ops/deploy/schemas/rollback-workflow-outcome.schema.json",
+        ):
+            with self.subTest(schema=schema):
+                self.assert_mutant_rejected(
+                    "release_control/Dockerfile", lambda text, value=schema: text.replace(value, "")
+                )
+
+    def test_mutant_25_broad_ops_context_is_rejected(self) -> None:
+        self.assert_mutant_rejected(".dockerignore", lambda text: text + "!ops/**\n")
+
+    def test_mutant_26_relative_runtime_destination_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "release_control/Dockerfile",
+            lambda text: text.replace("/build/ops /ops", "/build/ops ops"),
+        )
+
+    def test_mutant_27_schema_fallback_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "release_control/src/emporio_release_control/artifacts.py",
+            lambda text: text.replace(
+                'RELEASE_SCHEMA = ROOT / "ops/releases/global-release.schema.json"',
+                'RELEASE_SCHEMA = Path("/app/ops/releases/global-release.schema.json")  # fallback',
+            ),
+        )
 
     def test_mutant_19_runtime_sslmode_disable_for_external_host_is_rejected(self) -> None:
         self.assert_mutant_rejected(
