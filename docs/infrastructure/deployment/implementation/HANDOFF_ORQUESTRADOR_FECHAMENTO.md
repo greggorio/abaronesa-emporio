@@ -77,6 +77,15 @@
 > como `postgres@sha256:589f3b24…eb0f`. A correction-01 autoriza essa forma
 > canônica e a retomada da mesma S44; não há upgrade de PostgreSQL nem nova
 > slice.
+>
+> **Atualização S44 correction-02 — 04/08/2026:** a App deployer foi criada e
+> preservada com instalação exclusiva e `DEPLOYER_ACTOR_IDS=313092947`. Duas
+> tentativas chegaram a live/healthy, mas readiness revelou que os schemas
+> foram copiados para `/app/ops` enquanto o código instalado resolve o root
+> como `/` e exige `/ops`. A VPS foi integralmente revertida ao baseline. A
+> correction-02 autoriza o commit causal adicional, exige prova com a imagem e
+> os assets reais de `v0.1.0` e remove o teto artificial de correções cobertas,
+> sem ampliar autoridade para deploy, rollback ou stack comercial.
 
 ## 1. Mandato e modo de condução
 
