@@ -1,6 +1,6 @@
 # Implementacao de Docker, CI/CD e Controle de Releases
 
-> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36–S42 aceitas; S35 ultrapassada; S43 aberta na instalação validada do control root na VPS
+> **Estado geral:** S01–S29, S30a–S30b, S31–S34 e S36–S43 aceitas; S35 ultrapassada; S44 aberta na implantação isolada do control plane deployer
 
 Esta pasta registra os contratos e as evidencias das slices usadas para implementar a arquitetura definida em [proposta-docker-ci-cd-producao-emporio.md](../proposta-docker-ci-cd-producao-emporio.md).
 
@@ -95,4 +95,5 @@ O arquivo `.task.md` e o contrato imutavel da delegacao. O arquivo `.report.md` 
 | S40 | [Publicação inaugural da imagem do release control](./slices/S40-publicacao-inaugural-imagem-release-control.task.md) | [Relatório](./slices/S40-publicacao-inaugural-imagem-release-control.report.md) | `ACCEPTED` — 03/08/2026; run `30855327740`, quatro jobs verdes e imagem privada por digest `sha256:64b6f2be…22380` |
 | S41 | [Bootstrap do transporte de produção](./slices/S41-bootstrap-transporte-producao-identidade-ssh.task.md) | [Relatório](./slices/S41-bootstrap-transporte-producao-identidade-ssh.report.md) | `ACCEPTED` — 03/08/2026; usuário dedicado, árvore `0700`, SSH estrito, Docker sem sudo e environment `production` configurado |
 | S42 | [Pacote instalável do control root](./slices/S42-pacote-instalavel-control-root-dependencias-binding.task.md) | [Relatório](./slices/S42-pacote-instalavel-control-root-dependencias-binding.report.md) | `ACCEPTED` — 04/08/2026; pacote determinístico `9b5f8362…d8c0`, vendor Draft 2020-12, commit `9731954`, CI `30902014368` e candidato `30902729166` verdes |
-| S43 | [Instalação e validação do control root na VPS](./slices/S43-instalacao-validacao-control-root-vps.task.md) | — | `PLANNED` — reconstruir o pacote do SHA remoto, instalar no target vazio e provar vendor/capabilities no host real; sem serviços ou deploy |
+| S43 | [Instalação e validação do control root na VPS](./slices/S43-instalacao-validacao-control-root-vps.task.md) | [Relatório](./slices/S43-instalacao-validacao-control-root-vps.report.md) | `ACCEPTED` — 04/08/2026; pacote `9b5f8362…d8c0` instalado uma vez, 237 entradas íntegras, vendor Draft 2020-12 e capabilities no SHA `9731954` verdes |
+| S44 | [Implantação do control plane deployer na VPS](./slices/S44-implantacao-control-plane-deployer-vps.task.md) | — | `PLANNED` — corrigir pacote standalone, provisionar App deployer e iniciar release control/PostgreSQL isolados em loopback; zero deploy/rollback |

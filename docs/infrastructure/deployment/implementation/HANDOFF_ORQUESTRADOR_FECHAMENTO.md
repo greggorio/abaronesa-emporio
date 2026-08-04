@@ -58,6 +58,15 @@
 > vigente para reconstruir esse pacote, instalá-lo no control root vazio e
 > validar capabilities no host real. S43 não inicia control plane, serviços,
 > deploy ou rollback.
+>
+> **Atualização S43/S44 — 04/08/2026:** S43 aceita com o pacote reproduzido no
+> digest `9b5f8362…d8c0`, instalado uma única vez em
+> `/opt/sistemas/emporio/shared/control`; verify, vendor Draft 2020-12 e
+> capabilities fecharam no host real, com Docker e workflows de produção
+> inalterados. S44 é o contrato vigente para corrigir o pacote operacional
+> standalone, criar a GitHub App deployer separada e implantar
+> `release_control`/PostgreSQL em `127.0.0.1:8180`. Stack comercial, deploy,
+> rollback, Nginx/TLS, backup/restore e capacidade permanecem fora da S44.
 
 ## 1. Mandato e modo de condução
 
