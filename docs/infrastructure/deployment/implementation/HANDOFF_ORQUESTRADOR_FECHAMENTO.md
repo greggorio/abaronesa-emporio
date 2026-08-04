@@ -96,6 +96,17 @@
 > contrato vigente para fechar o Gate C: wiring RS256/deployer, configuração
 > comercial protegida, capacidade/swap, Nginx/TLS e ensaio isolado de
 > backup/restore. O primeiro deploy de `v0.1.0` continua reservado à S46.
+>
+> **Atualização S45 correction-01 — 04/08/2026:** capacidade com swap de 8 GiB,
+> configuração protegida, TLS/Nginx e ensaio isolado de backup/restore fecharam
+> verdes no SHA remoto `de4c4872ee3a6994bb66ecd173c0ffe81fa5fbd4`.
+> O aceite foi retido por dois defeitos causais: o backend ainda emite somente
+> `deployment:read deployment:execute`, enquanto o frontend exige também
+> `deployment:rollback`; e o Nginx encaminha `capabilities`, mas não o namespace
+> operacional `/api/deployment-control/v1/`, que o gateway rejeita. Como
+> `v0.1.0` é imutável, a correction-01 corrige os contratos, publica `v0.1.1`
+> pela UI/runtime e a deixa elegível, ainda com zero deploy/rollback. O primeiro
+> deploy acompanhado passa a usar `v0.1.1`, sem criar slice intermediária.
 
 ## 1. Mandato e modo de condução
 
