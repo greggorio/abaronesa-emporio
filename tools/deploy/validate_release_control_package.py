@@ -12,11 +12,16 @@ REQUIRED = (
     "release_control/Dockerfile",
     "release_control/.dockerignore",
     "release_control/README.md",
+    "release_control/uv.lock",
     "ops/compose/release-control.yml",
     "ops/env/release-control.env.example",
     "ops/systemd/emporio-release-control.service.example",
     "docs/infrastructure/deployment/release-control/OPERACAO_RELEASE_CONTROL.md",
 )
+
+# CVE-2026-69247 (HIGH, fixed in 50.0.0): the pin that shipped before S44
+# caught it. Never let it silently reappear from an unrelated lock refresh.
+KNOWN_VULNERABLE_PINS = ("cryptography-49.0.0",)
 
 REQUIRED_ENV = {
     "RELEASE_CONTROL_PROFILE",
@@ -318,6 +323,9 @@ def _validate_no_literal_secrets(contents: list[str], errors: list[str]) -> None
     ):
         if marker.lower() in combined.lower():
             errors.append(code)
+    for pin in KNOWN_VULNERABLE_PINS:
+        if pin in combined:
+            errors.append(f"known-vulnerable-pin:{pin}")
 
 
 def validate(root: Path = ROOT) -> list[str]:

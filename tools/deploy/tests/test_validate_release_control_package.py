@@ -115,6 +115,15 @@ class ReleaseControlPackageContractTest(unittest.TestCase):
     def test_mutant_18_systemd_root_user_is_rejected(self) -> None:
         self.assert_mutant_rejected("ops/systemd/emporio-release-control.service.example", lambda text: text.replace("User=emporio-release-control", "User=root"))
 
+    def test_mutant_20_known_vulnerable_cryptography_pin_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            "release_control/uv.lock",
+            lambda text: text.replace(
+                'name = "cryptography"\nversion = "50.0.0"',
+                'name = "cryptography"\nversion = "49.0.0"',
+            ).replace("cryptography-50.0.0", "cryptography-49.0.0"),
+        )
+
     def test_mutant_19_runtime_sslmode_disable_for_external_host_is_rejected(self) -> None:
         self.assert_mutant_rejected(
             "ops/env/release-control.env.example",
