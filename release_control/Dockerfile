@@ -11,13 +11,20 @@ WORKDIR /build
 
 RUN pip install --no-cache-dir "uv==${UV_VERSION}"
 
-COPY pyproject.toml uv.lock ./
+COPY release_control/pyproject.toml release_control/uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
-COPY src ./src
-COPY migrations ./migrations
-COPY alembic.ini ./
-COPY README.md ./
+COPY release_control/src ./src
+COPY release_control/migrations ./migrations
+COPY release_control/alembic.ini ./
+COPY release_control/README.md ./
+COPY ops/releases/candidate-manifest.schema.json \
+     ops/releases/global-release.schema.json \
+     ops/releases/release-publication-outcome.schema.json \
+     ./ops/releases/
+COPY ops/deploy/schemas/deployment-workflow-outcome.schema.json \
+     ops/deploy/schemas/rollback-workflow-outcome.schema.json \
+     ./ops/deploy/schemas/
 RUN uv sync --locked --no-dev
 
 FROM python:3.13-alpine3.23@sha256:9fdbf2e3e82628351513560b121e2ee6ce31cac212be9e070c5a5e2769fb5e76 AS runtime
@@ -40,10 +47,11 @@ RUN addgroup --gid 10001 release-control \
         --home /home/release-control --shell /sbin/nologin release-control
 
 COPY --from=builder --chown=10001:10001 /build/.venv /app/.venv
-COPY --chown=10001:10001 src ./src
-COPY --chown=10001:10001 migrations ./migrations
-COPY --chown=10001:10001 alembic.ini ./alembic.ini
-COPY --chown=10001:10001 pyproject.toml uv.lock README.md ./
+COPY --from=builder --chown=10001:10001 /build/src ./src
+COPY --from=builder --chown=10001:10001 /build/migrations ./migrations
+COPY --from=builder --chown=10001:10001 /build/alembic.ini ./alembic.ini
+COPY --from=builder --chown=10001:10001 /build/pyproject.toml /build/uv.lock /build/README.md ./
+COPY --from=builder --chown=10001:10001 /build/ops ./ops
 
 USER 10001:10001
 

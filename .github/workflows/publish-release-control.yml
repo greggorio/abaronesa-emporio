@@ -89,7 +89,7 @@ jobs:
       - name: Build once and load the exact local tag
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
-          context: release_control
+          context: .
           file: release_control/Dockerfile
           platforms: linux/amd64
           load: true

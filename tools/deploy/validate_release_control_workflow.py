@@ -109,6 +109,10 @@ def _validate_publish_order(jobs: dict[str, Any], errors: list[str]) -> None:
                 errors.append("build-must-load-without-push")
             if with_.get("platforms") != "linux/amd64":
                 errors.append("build-platform")
+            if with_.get("context") != ".":
+                errors.append("build-context-must-be-repository-root")
+            if with_.get("file") != "release_control/Dockerfile":
+                errors.append("build-dockerfile")
             tags = str(with_.get("tags") or "")
             if "needs.trust.outputs.tag" not in tags:
                 errors.append("build-tag-must-come-from-trust")

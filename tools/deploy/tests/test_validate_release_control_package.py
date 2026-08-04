@@ -124,6 +124,17 @@ class ReleaseControlPackageContractTest(unittest.TestCase):
             ).replace("cryptography-50.0.0", "cryptography-49.0.0"),
         )
 
+    def test_mutant_21_runtime_schemas_are_required(self) -> None:
+        self.assert_mutant_rejected(
+            "release_control/Dockerfile",
+            lambda text: text.replace(
+                "COPY --from=builder --chown=10001:10001 /build/ops ./ops\n", ""
+            ),
+        )
+
+    def test_mutant_22_root_context_must_remain_deny_by_default(self) -> None:
+        self.assert_mutant_rejected(".dockerignore", lambda text: text.replace("**\n", "", 1))
+
     def test_mutant_19_runtime_sslmode_disable_for_external_host_is_rejected(self) -> None:
         self.assert_mutant_rejected(
             "ops/env/release-control.env.example",

@@ -116,6 +116,13 @@ class ReleaseControlWorkflowContractTests(unittest.TestCase):
                 step["with"]["push"] = True
         self.assertIn("build-must-load-without-push", run_with(mutant))
 
+    def test_10b_build_context_must_include_canonical_schemas(self) -> None:
+        mutant = copy.deepcopy(PARSED)
+        for step in mutant["jobs"]["publish"]["steps"]:
+            if str(step.get("uses", "")).startswith("docker/build-push-action@"):
+                step["with"]["context"] = "release_control"
+        self.assertIn("build-context-must-be-repository-root", run_with(mutant))
+
     def test_11_scan_ignoring_unfixed_or_severity_is_rejected(self) -> None:
         for key, value, expected in (
             ("ignore-unfixed", True, "scan-must-not-ignore-unfixed"),

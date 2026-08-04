@@ -1,0 +1,23 @@
+# The release-control image needs canonical schemas from the repository root.
+# Deny every path first, then admit only its exact build inputs.
+**
+
+!release_control/
+!release_control/pyproject.toml
+!release_control/uv.lock
+!release_control/README.md
+!release_control/alembic.ini
+!release_control/src/
+!release_control/src/**
+!release_control/migrations/
+!release_control/migrations/**
+
+!ops/
+!ops/releases/
+!ops/releases/candidate-manifest.schema.json
+!ops/releases/global-release.schema.json
+!ops/releases/release-publication-outcome.schema.json
+!ops/deploy/
+!ops/deploy/schemas/
+!ops/deploy/schemas/deployment-workflow-outcome.schema.json
+!ops/deploy/schemas/rollback-workflow-outcome.schema.json

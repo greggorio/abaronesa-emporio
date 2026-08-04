@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 REQUIRED = (
+    ".dockerignore",
     "release_control/Dockerfile",
     "release_control/.dockerignore",
     "release_control/README.md",
@@ -104,12 +105,18 @@ def _validate_dockerfile(text: str, errors: list[str]) -> None:
         ("ARG UV_VERSION=", "docker-uv-pinned"),
         ("WORKDIR /build", "docker-build-workdir"),
         ("WORKDIR /app", "docker-runtime-workdir"),
-        ("COPY pyproject.toml uv.lock ./", "docker-lock-input"),
+        ("COPY release_control/pyproject.toml release_control/uv.lock ./", "docker-lock-input"),
         ("RUN uv sync --locked --no-dev --no-install-project", "docker-prod-deps-bootstrap"),
         ("RUN uv sync --locked --no-dev", "docker-prod-deps"),
-        ("COPY src ./src", "docker-src"),
-        ("COPY migrations ./migrations", "docker-migrations"),
-        ("COPY alembic.ini ./", "docker-alembic"),
+        ("COPY release_control/src ./src", "docker-src"),
+        ("COPY release_control/migrations ./migrations", "docker-migrations"),
+        ("COPY release_control/alembic.ini ./", "docker-alembic"),
+        ("ops/releases/candidate-manifest.schema.json", "docker-candidate-schema"),
+        ("ops/releases/global-release.schema.json", "docker-release-schema"),
+        ("ops/releases/release-publication-outcome.schema.json", "docker-publication-outcome-schema"),
+        ("ops/deploy/schemas/deployment-workflow-outcome.schema.json", "docker-deployment-outcome-schema"),
+        ("ops/deploy/schemas/rollback-workflow-outcome.schema.json", "docker-rollback-outcome-schema"),
+        ("COPY --from=builder --chown=10001:10001 /build/ops ./ops", "docker-runtime-schemas"),
         # Alpine base: BusyBox adduser/addgroup instead of shadow utilities.
         ("addgroup --gid 10001 release-control", "docker-group"),
         ("adduser --uid 10001 --ingroup release-control", "docker-user"),
@@ -146,6 +153,24 @@ def _validate_dockerignore(text: str, errors: list[str]) -> None:
         ("tests/", "context-tests"),
         ("node_modules/", "context-node-modules"),
         ("uploads/", "context-uploads"),
+    ):
+        _require(text, marker, code, errors)
+
+
+def _validate_root_dockerignore(text: str, errors: list[str]) -> None:
+    lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
+    if not lines or lines[0] != "**":
+        errors.append("root-context-deny-by-default")
+    for marker, code in (
+        ("!release_control/pyproject.toml", "root-context-pyproject"),
+        ("!release_control/uv.lock", "root-context-lock"),
+        ("!release_control/src/**", "root-context-src"),
+        ("!release_control/migrations/**", "root-context-migrations"),
+        ("!ops/releases/candidate-manifest.schema.json", "root-context-candidate-schema"),
+        ("!ops/releases/global-release.schema.json", "root-context-release-schema"),
+        ("!ops/releases/release-publication-outcome.schema.json", "root-context-publication-outcome-schema"),
+        ("!ops/deploy/schemas/deployment-workflow-outcome.schema.json", "root-context-deployment-outcome-schema"),
+        ("!ops/deploy/schemas/rollback-workflow-outcome.schema.json", "root-context-rollback-outcome-schema"),
     ):
         _require(text, marker, code, errors)
 
@@ -332,6 +357,7 @@ def validate(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     texts = {relative: _read(root, relative, errors) for relative in REQUIRED}
     _validate_dockerfile(texts["release_control/Dockerfile"], errors)
+    _validate_root_dockerignore(texts[".dockerignore"], errors)
     _validate_dockerignore(texts["release_control/.dockerignore"], errors)
     _validate_compose(texts["ops/compose/release-control.yml"], errors)
     _validate_env(texts["ops/env/release-control.env.example"], errors)
