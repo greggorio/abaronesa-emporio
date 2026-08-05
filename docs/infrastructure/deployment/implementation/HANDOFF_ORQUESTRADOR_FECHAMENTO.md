@@ -142,6 +142,19 @@
 > substituta. O total terminal esperado passa a ser dois runs — um pré-deploy
 > falho e um comercial verde — com zero rollback/restore. S46 ainda não foi
 > aceita.
+>
+> **Atualização S46 correction-03 — 05/08/2026:** a correction-02 reconciliou a
+> primeira operação, publicou o plano de controle no SHA `e436190…` e criou a
+> operação substituta. O run `30988243119` passou trust/prepare, mas falhou no
+> primeiro comando do job deploy: o pacote instala `deployment-remote.py` como
+> `0600`, embora o transporte o execute diretamente pelo shebang. Outcome
+> `CONFIRMED/FAILED`, restore false, operações terminais, readiness 200 e zero
+> recurso/backup/migration comercial foram confirmados. A correction-03 corrige
+> o manifesto para helper `0755`, exige prova real como `deploy-emporio` e
+> autoriza a conclusão do primeiro deploy. Para evitar nova microcorreção,
+> permite um único ciclo adicional apenas diante de falha confirmada anterior a
+> upload/install/execute e com zero efeito/resíduo comercial. S46 ainda não foi
+> aceita; rollback/restore permanecem em zero.
 
 ## 1. Mandato e modo de condução
 
