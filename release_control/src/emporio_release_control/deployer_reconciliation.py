@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import io
+import json
 import logging
 import re
+import stat
 import threading
+import zipfile
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from .artifacts import DIGEST_RE, canonical, digest, extract_zip
 from .constants import (
     DEPLOYER_ADVISORY_LOCK_ID,
     DEPLOYMENT_TERMINAL_STATES,
@@ -56,6 +61,16 @@ ROLLBACK_WORKFLOW_RUNS_PATH = (
     "?branch=main&event=workflow_dispatch"
 )
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+TRUST_ARTIFACT_NAME = "deployment-trust"
+TRUST_FILE = "deployment-trust.json"
+MAX_TRUST_ZIP_BYTES = 1024 * 1024
+MAX_TRUST_BYTES = 64 * 1024
+PREDEPLOY_JOB_CONCLUSIONS = {
+    "trust": "success",
+    "prepare": "failure",
+    "deploy": "skipped",
+    "outcome": "failure",
+}
 
 
 class DeployerReconciler:
@@ -215,13 +230,23 @@ class DeployerReconciler:
                 for value in artifacts
                 if value.get("name") == OUTCOME_NAME and value.get("expired") is False
             ]
-            if len(outcomes) != 1:
-                code = (
-                    "DEPLOYMENT_OUTCOME_UNAVAILABLE"
-                    if not outcomes
-                    else "DEPLOYMENT_OUTCOME_AMBIGUOUS"
+            if not outcomes:
+                evidence = self._predeploy_failure_evidence(
+                    operation_id=operation_id,
+                    run=run,
+                    run_id=run_id,
+                    attempt=attempt,
+                    control_sha=control_sha,
+                    artifacts=artifacts,
                 )
-                raise RuntimeFailure(code)
+                self.service.apply_predeploy_failure(
+                    operation_id,
+                    evidence,
+                    "deployer-reconcile",
+                )
+                return True
+            if len(outcomes) != 1:
+                raise RuntimeFailure("DEPLOYMENT_OUTCOME_AMBIGUOUS")
             artifact = validate_deployment_artifact(
                 outcomes[0], run_id=run_id, head_sha=control_sha
             )
@@ -258,6 +283,215 @@ class DeployerReconciler:
             self.service.mark_uncertain(operation_id, "RECONCILE_FAILED", "deployer-reconcile")
             return False
         return True
+
+    def _predeploy_failure_evidence(
+        self,
+        *,
+        operation_id: str,
+        run: dict[str, Any],
+        run_id: int,
+        attempt: int,
+        control_sha: str,
+        artifacts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Prove a closed pre-deploy failure without using textual logs."""
+
+        code = "WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID"
+        if run.get("status") != "completed" or run.get("conclusion") != "failure":
+            raise RuntimeFailure(code)
+        jobs = self.github.list_pages(
+            f"/repos/{REPOSITORY}/actions/runs/{run_id}/attempts/{attempt}/jobs?filter=all",
+            "jobs",
+        )
+        conclusions = self._validate_predeploy_jobs(
+            jobs,
+            operation_id=operation_id,
+            run_id=run_id,
+            attempt=attempt,
+            control_sha=control_sha,
+        )
+        artifact = self._validate_trust_artifact(
+            artifacts,
+            run_id=run_id,
+            control_sha=control_sha,
+        )
+        raw_zip = self.github.get_bytes(
+            f"/repos/{REPOSITORY}/actions/artifacts/{artifact['id']}/zip",
+            limit=MAX_TRUST_ZIP_BYTES,
+        )
+        if len(raw_zip) != artifact["size"] or digest(raw_zip) != artifact["digest"]:
+            raise RuntimeFailure(code)
+        trust = self._validate_trust_zip(
+            raw_zip,
+            artifact_digest=artifact["digest"],
+            operation_id=operation_id,
+            run=run,
+            run_id=run_id,
+            attempt=attempt,
+            control_sha=control_sha,
+        )
+        return {
+            "reason": "deploy_skipped",
+            "runId": run_id,
+            "runAttempt": attempt,
+            "headSha": control_sha,
+            "jobs": conclusions,
+            "artifact": {
+                "id": artifact["id"],
+                "name": TRUST_ARTIFACT_NAME,
+                "digest": artifact["digest"],
+            },
+            "requestedActorId": trust["requestedActorId"],
+            "targetRelease": trust["targetRelease"],
+        }
+
+    @staticmethod
+    def _validate_predeploy_jobs(
+        jobs: list[dict[str, Any]],
+        *,
+        operation_id: str,
+        run_id: int,
+        attempt: int,
+        control_sha: str,
+    ) -> dict[str, str]:
+        code = "WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID"
+        if len(jobs) != len(PREDEPLOY_JOB_CONCLUSIONS):
+            raise RuntimeFailure(code)
+        by_name: dict[str, dict[str, Any]] = {}
+        run_url = f"https://api.github.com/repos/{REPOSITORY}/actions/runs/{run_id}"
+        workflow_name = f"deploy-production-{operation_id}"
+        for job in jobs:
+            name = job.get("name")
+            job_id = positive_id(job.get("id"), code)
+            if not isinstance(name, str) or name in by_name:
+                raise RuntimeFailure(code)
+            by_name[name] = job
+            if (
+                job.get("run_id") != run_id
+                or job.get("run_attempt") != attempt
+                or job.get("workflow_name") != workflow_name
+                or job.get("head_branch") != "main"
+                or job.get("head_sha") != control_sha
+                or job.get("run_url") != run_url
+                or job.get("url")
+                != f"https://api.github.com/repos/{REPOSITORY}/actions/jobs/{job_id}"
+                or job.get("html_url")
+                != f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/job/{job_id}"
+                or job.get("status") != "completed"
+            ):
+                raise RuntimeFailure(code)
+            for field in ("created_at", "started_at", "completed_at"):
+                parse_time(job.get(field), code)
+        if set(by_name) != set(PREDEPLOY_JOB_CONCLUSIONS):
+            raise RuntimeFailure(code)
+        conclusions = {name: str(by_name[name].get("conclusion")) for name in sorted(by_name)}
+        if conclusions != {
+            name: PREDEPLOY_JOB_CONCLUSIONS[name]
+            for name in sorted(PREDEPLOY_JOB_CONCLUSIONS)
+        }:
+            raise RuntimeFailure(code)
+        return conclusions
+
+    @staticmethod
+    def _validate_trust_artifact(
+        artifacts: list[dict[str, Any]], *, run_id: int, control_sha: str
+    ) -> dict[str, Any]:
+        code = "WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID"
+        if len(artifacts) != 1:
+            raise RuntimeFailure(code)
+        value = artifacts[0]
+        artifact_id = positive_id(value.get("id"), code)
+        size = value.get("size_in_bytes")
+        artifact_digest = value.get("digest")
+        workflow_run = value.get("workflow_run")
+        if (
+            value.get("name") != TRUST_ARTIFACT_NAME
+            or value.get("expired") is not False
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 1
+            or size > MAX_TRUST_ZIP_BYTES
+            or not isinstance(artifact_digest, str)
+            or DIGEST_RE.fullmatch(artifact_digest) is None
+            or value.get("url")
+            != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}"
+            or value.get("archive_download_url")
+            != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"
+            or not isinstance(workflow_run, dict)
+            or workflow_run.get("id") != run_id
+            or workflow_run.get("head_branch") != "main"
+            or workflow_run.get("head_sha") != control_sha
+            or positive_id(workflow_run.get("repository_id"), code)
+            != positive_id(workflow_run.get("head_repository_id"), code)
+        ):
+            raise RuntimeFailure(code)
+        for field in ("created_at", "updated_at", "expires_at"):
+            parse_time(value.get(field), code)
+        return {"id": artifact_id, "size": size, "digest": artifact_digest}
+
+    @staticmethod
+    def _validate_trust_zip(
+        raw_zip: bytes,
+        *,
+        artifact_digest: str,
+        operation_id: str,
+        run: dict[str, Any],
+        run_id: int,
+        attempt: int,
+        control_sha: str,
+    ) -> dict[str, Any]:
+        code = "WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID"
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_zip)) as archive:
+                infos = archive.infolist()
+                if len(infos) != 1 or infos[0].filename != TRUST_FILE:
+                    raise RuntimeFailure(code)
+                mode = infos[0].external_attr >> 16
+                if not stat.S_ISREG(mode):
+                    raise RuntimeFailure(code)
+        except (zipfile.BadZipFile, EOFError, OSError) as exc:
+            raise RuntimeFailure(code) from exc
+        files = extract_zip(
+            raw_zip,
+            artifact_digest,
+            {TRUST_FILE: MAX_TRUST_BYTES},
+            code,
+        )
+        try:
+            trust = json.loads(files[TRUST_FILE])
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeFailure(code) from exc
+        actor = run.get("actor")
+        actor_id = positive_id(actor.get("id") if isinstance(actor, dict) else None, code)
+        expected = {
+            "schemaVersion": 1,
+            "kind": "deployment-trust",
+            "repository": REPOSITORY,
+            "operationId": operation_id,
+            "targetRelease": None,
+            "controlSha": control_sha,
+            "workflowRunId": run_id,
+            "workflowRunAttempt": attempt,
+            "requestedActorId": actor_id,
+        }
+        if (
+            not isinstance(trust, dict)
+            or canonical(trust) != files[TRUST_FILE]
+            or set(trust) != set(expected)
+            or any(
+                trust.get(key) != value
+                for key, value in expected.items()
+                if key != "targetRelease"
+            )
+            or not isinstance(trust.get("targetRelease"), str)
+            or re.fullmatch(
+                r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$",
+                trust["targetRelease"],
+            )
+            is None
+        ):
+            raise RuntimeFailure(code)
+        return trust
 
     def _rollback_operation(self, operation_id: str, created_at: Any) -> bool:
         runs = self.github.list_pages(ROLLBACK_WORKFLOW_RUNS_PATH, "workflow_runs")
@@ -355,6 +589,7 @@ class DeployerReconciler:
         head_sha = run.get("head_sha")
         repository = run.get("repository")
         head_repository = run.get("head_repository")
+        actor = run.get("actor")
         if (
             # deploy-production.yml declares run-name, so REST `name` carries
             # the display title, and `path` never carries an @ref.
@@ -370,6 +605,8 @@ class DeployerReconciler:
             or repository.get("full_name") != REPOSITORY
             or not isinstance(head_repository, dict)
             or head_repository.get("full_name") != REPOSITORY
+            or not isinstance(actor, dict)
+            or positive_id(actor.get("id"), code) < 1
             or run.get("status") not in {"queued", "in_progress", "completed"}
         ):
             raise RuntimeFailure(code)

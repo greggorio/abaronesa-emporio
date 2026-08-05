@@ -519,6 +519,7 @@ def prepare_handoff(
     trust = _load_canonical(_trust_file(trust_path), "INVALID_DISPATCH")
     run_id = trust.get("workflowRunId")
     release_name = trust.get("targetRelease")
+    run_title = f"deploy-production-{trust.get('operationId')}"
     try:
         run = remote.api(
             "GET", f"/repos/{REPOSITORY}/actions/runs/{run_id}", expected_status=200
@@ -529,8 +530,11 @@ def prepare_handoff(
             or run.get("event") != "workflow_dispatch"
             or run.get("head_branch") != "main"
             or run.get("head_sha") != trust.get("controlSha")
-            or run.get("name") != "Deploy Production"
-            or run.get("path") != ".github/workflows/deploy-production.yml@main"
+            or run.get("name") != run_title
+            or run.get("display_title") != run_title
+            or run.get("path") != ".github/workflows/deploy-production.yml"
+            or run.get("html_url")
+            != f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"
             or run.get("repository", {}).get("full_name") != REPOSITORY
             or run.get("head_repository", {}).get("full_name") != REPOSITORY
             or run.get("actor", {}).get("id") != trust.get("requestedActorId")

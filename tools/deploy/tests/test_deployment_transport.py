@@ -417,8 +417,10 @@ class DeploymentTransportTest(unittest.TestCase):
                     return {
                         "id": 123, "run_attempt": 1, "event": "workflow_dispatch",
                         "head_branch": "main", "head_sha": SHA,
-                        "name": "Deploy Production",
-                        "path": ".github/workflows/deploy-production.yml@main",
+                        "name": f"deploy-production-{OPERATION}",
+                        "display_title": f"deploy-production-{OPERATION}",
+                        "path": ".github/workflows/deploy-production.yml",
+                        "html_url": f"https://github.com/{transport.REPOSITORY}/actions/runs/123",
                         "repository": {"full_name": transport.REPOSITORY},
                         "head_repository": {"full_name": transport.REPOSITORY},
                         "actor": {"id": 456},
@@ -450,7 +452,134 @@ class DeploymentTransportTest(unittest.TestCase):
         )
         self.assertEqual(manifest["release"], json.loads((self.root / "handoff/release.json").read_text())["release"])
 
-    def test_19_invalid_asset_inventory_fails_before_first_download(self):
+    def test_19_prepare_rejects_every_run_identity_mutant_before_release_access(self):
+        trust_file = self.root / "trust-mutants.json"
+        trust_file.write_bytes(
+            transport.canonical(transport.validate_trust_environment(self.trust_env()))
+        )
+        nominal = {
+            "id": 123,
+            "run_attempt": 1,
+            "event": "workflow_dispatch",
+            "head_branch": "main",
+            "head_sha": SHA,
+            "name": f"deploy-production-{OPERATION}",
+            "display_title": f"deploy-production-{OPERATION}",
+            "path": ".github/workflows/deploy-production.yml",
+            "html_url": f"https://github.com/{transport.REPOSITORY}/actions/runs/123",
+            "repository": {"full_name": transport.REPOSITORY},
+            "head_repository": {"full_name": transport.REPOSITORY},
+            "actor": {"id": 456},
+            "run_started_at": "2026-07-31T18:00:00Z",
+        }
+        mutants = {
+            "name": "Deploy Production",
+            "display_title": "deploy-production-other_operation_123456",
+            "path": ".github/workflows/deploy-production.yml@main",
+            "html_url": f"https://github.com/{transport.REPOSITORY}/actions/runs/124",
+            "id": 124,
+            "run_attempt": 2,
+            "event": "push",
+            "head_branch": "dev",
+            "head_sha": "b" * 40,
+            "repository": {"full_name": "other/repository"},
+            "head_repository": {"full_name": "other/repository"},
+            "actor": {"id": 457},
+        }
+
+        for field, value in mutants.items():
+            with self.subTest(field=field):
+                current = dict(nominal)
+                current[field] = value
+
+                class Github:
+                    release_access = 0
+
+                    def api(inner, method, endpoint, body=None, expected_status=200):
+                        if "/actions/runs/" in endpoint:
+                            return current
+                        inner.release_access += 1
+                        raise AssertionError("release access must not occur")
+
+                    def bytes(inner, *args):
+                        raise AssertionError("download must not occur")
+
+                github = Github()
+                self.assert_code(
+                    "INVALID_DISPATCH",
+                    transport.prepare_handoff,
+                    trust_path=trust_file,
+                    output=self.root / f"handoff-mutant-{field}",
+                    remote=github,
+                )
+                self.assertEqual(0, github.release_access)
+
+    def test_19a_prepare_accepts_literal_historical_rest_run_shape(self):
+        manifest, release, tag, _assets, payloads = self.release_fixture()
+        operation_id = "dep_6bd76dcff84a42ba88705b5448aa5c3c"
+        run_id = 30981846816
+        source_sha = "cf3385f1012b9661ddbc2e83d5241aaa8633f8fd"
+        actor_id = 313092947
+        trust = self.trust_env()
+        trust.update(
+            {
+                "TRUSTED_OPERATION_ID": operation_id,
+                "TRUSTED_RUN_ID": str(run_id),
+                "TRUSTED_SHA": source_sha,
+                "TRUSTED_ACTOR_ID": str(actor_id),
+                "DEPLOYER_ACTOR_IDS": str(actor_id),
+                "TRUSTED_RELEASE": manifest["release"],
+            }
+        )
+        trust_file = self.root / "historical-trust.json"
+        trust_file.write_bytes(
+            transport.canonical(transport.validate_trust_environment(trust))
+        )
+
+        class Github:
+            def api(inner, method, endpoint, body=None, expected_status=200):
+                if "/actions/runs/" in endpoint:
+                    return {
+                        "id": run_id,
+                        "run_attempt": 1,
+                        "event": "workflow_dispatch",
+                        "head_branch": "main",
+                        "head_sha": source_sha,
+                        "name": f"deploy-production-{operation_id}",
+                        "display_title": f"deploy-production-{operation_id}",
+                        "path": ".github/workflows/deploy-production.yml",
+                        "html_url": (
+                            f"https://github.com/{transport.REPOSITORY}/actions/runs/{run_id}"
+                        ),
+                        "repository": {"full_name": transport.REPOSITORY},
+                        "head_repository": {"full_name": transport.REPOSITORY},
+                        "actor": {"id": actor_id},
+                        "run_started_at": "2026-08-05T06:34:49Z",
+                    }
+                if "/releases/tags/" in endpoint:
+                    return release
+                if "/git/ref/tags/" in endpoint:
+                    return tag
+                raise AssertionError(endpoint)
+
+            def bytes(inner, endpoint, limit, *headers):
+                name = next(
+                    asset["name"]
+                    for asset in release["assets"]
+                    if asset["url"].removeprefix("https://api.github.com") == endpoint
+                )
+                return payloads[name]
+
+        request = transport.prepare_handoff(
+            trust_path=trust_file,
+            output=self.root / "historical-handoff",
+            remote=Github(),
+        )
+        self.assertEqual(operation_id, request["operationId"])
+        self.assertEqual(run_id, request["workflowRunId"])
+        self.assertEqual(source_sha, request["controlSha"])
+
+    def test_20_invalid_asset_inventory_fails_before_first_download(self):
         _manifest, release, _tag, _assets, _payloads = self.release_fixture()
         release["assets"][0]["state"] = "new"
         class Github:
@@ -459,8 +588,11 @@ class DeploymentTransportTest(unittest.TestCase):
                 if "/actions/runs/" in endpoint:
                     return {
                         "id": 123, "run_attempt": 1, "event": "workflow_dispatch",
-                        "head_branch": "main", "head_sha": SHA, "name": "Deploy Production",
-                        "path": ".github/workflows/deploy-production.yml@main",
+                        "head_branch": "main", "head_sha": SHA,
+                        "name": f"deploy-production-{OPERATION}",
+                        "display_title": f"deploy-production-{OPERATION}",
+                        "path": ".github/workflows/deploy-production.yml",
+                        "html_url": f"https://github.com/{transport.REPOSITORY}/actions/runs/123",
                         "repository": {"full_name": transport.REPOSITORY},
                         "head_repository": {"full_name": transport.REPOSITORY},
                         "actor": {"id": 456}, "run_started_at": "2026-07-31T18:00:00Z",
@@ -861,8 +993,10 @@ class DeploymentTransportTest(unittest.TestCase):
                     return {
                         "id": 123, "run_attempt": 1, "event": "workflow_dispatch",
                         "head_branch": "main", "head_sha": SHA,
-                        "name": "Deploy Production",
-                        "path": ".github/workflows/deploy-production.yml@main",
+                        "name": f"deploy-production-{OPERATION}",
+                        "display_title": f"deploy-production-{OPERATION}",
+                        "path": ".github/workflows/deploy-production.yml",
+                        "html_url": f"https://github.com/{transport.REPOSITORY}/actions/runs/123",
                         "repository": {"full_name": transport.REPOSITORY},
                         "head_repository": {"full_name": transport.REPOSITORY},
                         "actor": {"id": 456},

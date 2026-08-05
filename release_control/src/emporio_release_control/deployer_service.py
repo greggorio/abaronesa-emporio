@@ -926,6 +926,123 @@ class DeployerService:
                 )
             )
 
+    def apply_predeploy_failure(
+        self,
+        operation_id: str,
+        evidence: dict[str, Any],
+        trace_id: str,
+    ) -> None:
+        """Terminalize only a fully proven workflow failure before deploy."""
+
+        code = "WORKFLOW_PRE_DEPLOY_FAILED"
+        expected_evidence_keys = {
+            "reason",
+            "runId",
+            "runAttempt",
+            "headSha",
+            "jobs",
+            "artifact",
+            "requestedActorId",
+            "targetRelease",
+        }
+        if (
+            set(evidence) != expected_evidence_keys
+            or evidence.get("reason") != "deploy_skipped"
+            or evidence.get("jobs")
+            != {
+                "deploy": "skipped",
+                "outcome": "failure",
+                "prepare": "failure",
+                "trust": "success",
+            }
+            or not isinstance(evidence.get("artifact"), dict)
+            or evidence["artifact"].get("name") != "deployment-trust"
+        ):
+            raise RuntimeFailure("WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID")
+
+        with self.factory.begin() as session:
+            operation = session.get(DeploymentOperation, operation_id, with_for_update=True)
+            if operation is None or operation.operation_type != "deployment":
+                raise RuntimeFailure("WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID")
+            if operation.state in DEPLOYMENT_TERMINAL_STATES:
+                if (
+                    operation.state == "FAILED"
+                    and operation.error_code == code
+                    and operation.transport_status == "CONFIRMED"
+                    and operation.database_restore_required is False
+                    and operation.active_slot is None
+                    and operation.evidence_json == evidence
+                ):
+                    return
+                raise RuntimeFailure("WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID")
+            expected_url = (
+                f"https://github.com/{REPOSITORY}/actions/runs/{evidence.get('runId')}"
+            )
+            if (
+                operation.state != "QUEUED"
+                or operation.dispatch_state != "CONFIRMED"
+                or operation.transport_status != "INDETERMINATE"
+                or operation.remote_state != "completed"
+                or operation.error_code != "DEPLOYMENT_OUTCOME_UNAVAILABLE"
+                or operation.database_restore_required is not None
+                or operation.active_slot != 1
+                or operation.workflow_run_id != evidence.get("runId")
+                or operation.workflow_attempt != evidence.get("runAttempt")
+                or operation.workflow_run_url != expected_url
+                or operation.control_sha != evidence.get("headSha")
+                or operation.target_release != evidence.get("targetRelease")
+                or operation.source_release is not None
+                or operation.rollback_reason is not None
+                or operation.source_state_sha256 is not None
+                or operation.backup_id is not None
+                or operation.outcome_sha256 is not None
+                or operation.journal_json not in ({}, None)
+                or operation.evidence_json not in ({}, None)
+            ):
+                raise RuntimeFailure("WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID")
+            current = session.get(CurrentInstallation, 1, with_for_update=True)
+            if (
+                current is None
+                or current.release is not None
+                or current.source_commit is not None
+                or current.state_sha256 is not None
+                or current.previous_release is not None
+                or current.installed_at is not None
+                or current.reconciled is not False
+                or current.uncertainty_code != "DEPLOYMENT_OUTCOME_UNAVAILABLE"
+                or current.last_operation_id != operation_id
+            ):
+                raise RuntimeFailure("WORKFLOW_PRE_DEPLOY_EVIDENCE_INVALID")
+
+            now = utc_now()
+            operation.state = "FAILED"
+            operation.dispatch_state = "CONFIRMED"
+            operation.transport_status = "CONFIRMED"
+            operation.remote_state = "FAILED"
+            operation.database_restore_required = False
+            operation.error_code = code
+            operation.error_message = "Workflow failed before commercial deploy"
+            operation.evidence_json = evidence
+            operation.active_slot = None
+            operation.updated_at = now
+            operation.finished_at = now
+            session.delete(current)
+            session.add(
+                AuditEvent(
+                    trace_id=trace_id,
+                    actor_sub=None,
+                    action="deployment.predeploy_failed",
+                    result="FAILED",
+                    operation_id=operation_id,
+                    metadata_json={
+                        "code": code,
+                        "reason": "deploy_skipped",
+                        "runId": evidence["runId"],
+                        "runAttempt": evidence["runAttempt"],
+                    },
+                )
+            )
+
     @staticmethod
     def _require_workflow_binding(operation: DeploymentOperation, transport: str) -> None:
         """Refuse a CONFIRMED outcome that is not bound to a discovered run.
@@ -1033,11 +1150,11 @@ class DeployerService:
                 operation.database_restore_required or restore_required
             )
             operation.error_code = error_code
-            operation.evidence_json = (
-                outcome.get("evidence")
-                if isinstance(outcome.get("evidence"), dict)
-                else {}
+            raw_evidence = outcome.get("evidence")
+            outcome_evidence: dict[str, Any] = (
+                raw_evidence if isinstance(raw_evidence, dict) else {}
             )
+            operation.evidence_json = outcome_evidence
             operation.updated_at = now
             self._append_journal(operation, state, now)
             if state in ROLLBACK_TERMINAL_STATES:

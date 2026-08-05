@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import stat
+import zipfile
 from datetime import timedelta
 from typing import Any
 
@@ -24,14 +27,17 @@ from test_deployer_remote_contract import (
 )
 
 from emporio_release_control import deployer_reconciliation as reconciliation_module
-from emporio_release_control.artifacts import digest
+from emporio_release_control.artifacts import canonical, digest
 from emporio_release_control.deployer_reconciliation import (
     DeployerReconcileLoop,
     DeployerReconciler,
 )
+from emporio_release_control.deployer_service import DeployerService
 from emporio_release_control.errors import RuntimeFailure
 from emporio_release_control.persistence import (
     AuditEvent,
+    CurrentInstallation,
+    DeploymentIdempotencyKey,
     DeploymentOperation,
     SyncState,
     utc_now,
@@ -48,6 +54,7 @@ class FakeService:
         self.uncertain: list[tuple[str, str, str]] = []
         self.applied: list[tuple[str, dict[str, Any], str, str]] = []
         self.rollback_applied: list[tuple[str, dict[str, Any], str, str]] = []
+        self.predeploy_applied: list[tuple[str, dict[str, Any], str]] = []
         self.cleanup_calls = 0
         self.cleanup_failure = cleanup_failure
         self.apply_failure = apply_failure
@@ -83,6 +90,13 @@ class FakeService:
             raise self.apply_failure
         self.rollback_applied.append((operation_id, value, outcome_digest, trace_id))
 
+    def apply_predeploy_failure(
+        self, operation_id: str, evidence: dict[str, Any], trace_id: str
+    ) -> None:
+        if self.apply_failure is not None:
+            raise self.apply_failure
+        self.predeploy_applied.append((operation_id, evidence, trace_id))
+
 
 class FakeSynchronizer:
     def __init__(self, fail: bool = False) -> None:
@@ -101,13 +115,17 @@ class FakeGitHub:
         *,
         runs: list[dict[str, Any]] | None = None,
         artifacts: list[dict[str, Any]] | None = None,
+        jobs: list[dict[str, Any]] | None = None,
         raw: bytes | None = None,
         runs_failure: Exception | None = None,
+        jobs_failure: Exception | None = None,
     ) -> None:
         self.runs = runs or []
         self.artifacts = artifacts or []
+        self.jobs = jobs or []
         self.raw = raw or outcome_zip()
         self.runs_failure = runs_failure
+        self.jobs_failure = jobs_failure
         self.paths: list[str] = []
 
     def list_pages(self, path: str, key: str | None) -> list[dict[str, Any]]:
@@ -115,12 +133,18 @@ class FakeGitHub:
         _ = key
         if path.endswith("/artifacts"):
             return self.artifacts
+        if "/jobs?" in path:
+            if self.jobs_failure is not None:
+                raise self.jobs_failure
+            return self.jobs
         if self.runs_failure is not None:
             raise self.runs_failure
         return self.runs
 
-    def get_bytes(self, path: str) -> bytes:
+    def get_bytes(self, path: str, limit: int | None = None) -> bytes:
         self.paths.append(path)
+        if limit is not None and len(self.raw) > limit:
+            raise RuntimeFailure("GITHUB_RESPONSE_INVALID")
         return self.raw
 
 
@@ -148,7 +172,110 @@ def run(
         "created_at": "2099-01-01T00:00:00Z",
         "repository": {"full_name": REPOSITORY},
         "head_repository": {"full_name": REPOSITORY},
+        "actor": {"id": 313092947},
     }
+
+
+def predeploy_job(
+    name: str,
+    conclusion: str,
+    *,
+    operation_id: str = OPERATION,
+    run_id: int = RUN_ID,
+    attempt: int = ATTEMPT,
+    sha: str = SHA,
+    status: str = "completed",
+    job_id: int | None = None,
+) -> dict[str, Any]:
+    resolved_id = job_id or {
+        "trust": 901,
+        "prepare": 902,
+        "deploy": 903,
+        "outcome": 904,
+    }.get(name, 905)
+    return {
+        "id": resolved_id,
+        "run_id": run_id,
+        "run_attempt": attempt,
+        "workflow_name": f"deploy-production-{operation_id}",
+        "head_branch": "main",
+        "head_sha": sha,
+        "run_url": f"https://api.github.com/repos/{REPOSITORY}/actions/runs/{run_id}",
+        "url": f"https://api.github.com/repos/{REPOSITORY}/actions/jobs/{resolved_id}",
+        "html_url": (
+            f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/job/{resolved_id}"
+        ),
+        "status": status,
+        "conclusion": conclusion,
+        "created_at": "2099-01-01T00:00:00Z",
+        "started_at": "2099-01-01T00:00:01Z",
+        "completed_at": "2099-01-01T00:00:02Z",
+        "name": name,
+    }
+
+
+def predeploy_jobs() -> list[dict[str, Any]]:
+    return [
+        predeploy_job("trust", "success"),
+        predeploy_job("prepare", "failure"),
+        predeploy_job("deploy", "skipped"),
+        predeploy_job("outcome", "failure"),
+    ]
+
+
+def trust_zip(
+    *,
+    operation_id: str = OPERATION,
+    run_id: int = RUN_ID,
+    attempt: int = ATTEMPT,
+    sha: str = SHA,
+    actor_id: int = 313092947,
+    target_release: str = RELEASE,
+) -> bytes:
+    value = {
+        "schemaVersion": 1,
+        "kind": "deployment-trust",
+        "repository": REPOSITORY,
+        "operationId": operation_id,
+        "targetRelease": target_release,
+        "controlSha": sha,
+        "workflowRunId": run_id,
+        "workflowRunAttempt": attempt,
+        "requestedActorId": actor_id,
+    }
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        info = zipfile.ZipInfo("deployment-trust.json")
+        info.external_attr = (stat.S_IFREG | 0o644) << 16
+        archive.writestr(info, canonical(value))
+    return stream.getvalue()
+
+
+def trust_artifact(raw: bytes, **overrides: Any) -> dict[str, Any]:
+    artifact_id = overrides.pop("id", 900)
+    value: dict[str, Any] = {
+        "id": artifact_id,
+        "name": "deployment-trust",
+        "size_in_bytes": len(raw),
+        "url": f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}",
+        "archive_download_url": (
+            f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"
+        ),
+        "expired": False,
+        "digest": digest(raw),
+        "created_at": "2099-01-01T00:00:00Z",
+        "updated_at": "2099-01-01T00:00:01Z",
+        "expires_at": "2099-01-02T00:00:00Z",
+        "workflow_run": {
+            "id": RUN_ID,
+            "repository_id": 100,
+            "head_repository_id": 100,
+            "head_branch": "main",
+            "head_sha": SHA,
+        },
+    }
+    value.update(overrides)
+    return value
 
 
 def rollback_run(
@@ -220,6 +347,56 @@ def seed_operation(
                 created_at=timestamp,
                 updated_at=timestamp,
                 finished_at=timestamp if state != "QUEUED" else None,
+            )
+        )
+
+
+def seed_historical_uncertain(factory: sessionmaker[Session]) -> None:
+    seed_operation(factory)
+    now = utc_now()
+    with factory.begin() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None
+        operation.workflow_run_id = RUN_ID
+        operation.workflow_attempt = ATTEMPT
+        operation.workflow_run_url = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
+        operation.control_sha = SHA
+        operation.dispatch_state = "CONFIRMED"
+        operation.remote_state = "completed"
+        operation.transport_status = "INDETERMINATE"
+        operation.error_code = "DEPLOYMENT_OUTCOME_UNAVAILABLE"
+        operation.error_message = "Remote deployment result is uncertain"
+        operation.journal_json = {}
+        operation.evidence_json = {}
+        session.add(
+            CurrentInstallation(
+                singleton_id=1,
+                reconciled=False,
+                uncertainty_code="DEPLOYMENT_OUTCOME_UNAVAILABLE",
+                last_operation_id=OPERATION,
+                updated_at=now,
+            )
+        )
+        session.add(
+            DeploymentIdempotencyKey(
+                mode="deployer",
+                route="POST:/api/deployment-control/v1/deployments",
+                actor_sub="actor",
+                key_hmac="3" * 64,
+                request_hash="1" * 64,
+                operation_id=OPERATION,
+                created_at=now,
+                expires_at=now + timedelta(days=365),
+            )
+        )
+        session.add(
+            AuditEvent(
+                trace_id="historical",
+                actor_sub=None,
+                action="deployment.uncertain",
+                result="INDETERMINATE",
+                operation_id=OPERATION,
+                metadata_json={"code": "DEPLOYMENT_OUTCOME_UNAVAILABLE"},
             )
         )
 
@@ -432,6 +609,263 @@ def test_invalid_or_missing_artifact_never_terminalizes(
     assert service.uncertain
 
 
+def test_real_predeploy_failure_is_atomic_preserves_history_and_is_idempotent(
+    factory: sessionmaker[Session],
+) -> None:
+    seed_historical_uncertain(factory)
+    raw = trust_zip()
+    github = FakeGitHub(
+        runs=[run(conclusion="failure")],
+        jobs=predeploy_jobs(),
+        artifacts=[trust_artifact(raw)],
+        raw=raw,
+    )
+    service = DeployerService(
+        factory,
+        github,  # type: ignore[arg-type]
+        b"p" * 32,
+        365,
+        lambda _release: None,
+    )
+    target = DeployerReconciler(
+        factory,
+        github,  # type: ignore[arg-type]
+        service,
+        FakeSynchronizer(),  # type: ignore[arg-type]
+    )
+
+    assert target._operation(OPERATION) is True
+    with factory() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None
+        assert (
+            operation.state,
+            operation.dispatch_state,
+            operation.transport_status,
+            operation.remote_state,
+            operation.database_restore_required,
+            operation.error_code,
+            operation.active_slot,
+        ) == (
+            "FAILED",
+            "CONFIRMED",
+            "CONFIRMED",
+            "FAILED",
+            False,
+            "WORKFLOW_PRE_DEPLOY_FAILED",
+            None,
+        )
+        assert operation.workflow_run_id == RUN_ID
+        assert operation.workflow_attempt == ATTEMPT
+        assert operation.workflow_run_url == (
+            f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
+        )
+        assert operation.control_sha == SHA
+        assert operation.request_hash == "1" * 64
+        assert operation.idempotency_hash == "2" * 64
+        assert operation.finished_at is not None
+        assert operation.evidence_json["reason"] == "deploy_skipped"
+        assert operation.evidence_json["jobs"] == {
+            "deploy": "skipped",
+            "outcome": "failure",
+            "prepare": "failure",
+            "trust": "success",
+        }
+        assert session.get(CurrentInstallation, 1) is None
+        assert session.query(DeploymentIdempotencyKey).count() == 1
+        audits = session.query(AuditEvent).order_by(AuditEvent.id).all()
+        assert [item.action for item in audits] == [
+            "deployment.uncertain",
+            "deployment.predeploy_failed",
+        ]
+        assert audits[-1].metadata_json == {
+            "code": "WORKFLOW_PRE_DEPLOY_FAILED",
+            "reason": "deploy_skipped",
+            "runId": RUN_ID,
+            "runAttempt": ATTEMPT,
+        }
+
+    paths = list(github.paths)
+    assert target._operation(OPERATION) is True
+    assert github.paths == paths
+    with factory() as session:
+        assert session.query(AuditEvent).count() == 2
+
+
+@pytest.mark.parametrize(
+    ("deploy_status", "deploy_conclusion"),
+    [
+        ("completed", "success"),
+        ("completed", "failure"),
+        ("completed", "cancelled"),
+        ("in_progress", None),
+    ],
+)
+def test_deploy_not_proven_skipped_stays_indeterminate(
+    factory: sessionmaker[Session],
+    deploy_status: str,
+    deploy_conclusion: str | None,
+) -> None:
+    seed_historical_uncertain(factory)
+    raw = trust_zip()
+    jobs = predeploy_jobs()
+    jobs[2] = predeploy_job(
+        "deploy",
+        str(deploy_conclusion) if deploy_conclusion is not None else "",
+        status=deploy_status,
+    )
+    if deploy_conclusion is None:
+        jobs[2]["conclusion"] = None
+    github = FakeGitHub(
+        runs=[run(conclusion="failure")], jobs=jobs,
+        artifacts=[trust_artifact(raw)], raw=raw,
+    )
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+    assert target._operation(OPERATION) is False
+    with factory() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None
+        assert operation.state == "QUEUED"
+        assert operation.transport_status == "INDETERMINATE"
+        assert operation.active_slot == 1
+        assert session.get(CurrentInstallation, 1) is not None
+        assert not session.query(AuditEvent).filter_by(
+            action="deployment.predeploy_failed"
+        ).all()
+
+
+@pytest.mark.parametrize(
+    "artifact_mutation",
+    ["extra", "expired", "handoff", "result", "outcome", "wrong_attempt"],
+)
+def test_nonexclusive_or_invalid_trust_artifact_stays_indeterminate(
+    factory: sessionmaker[Session], artifact_mutation: str
+) -> None:
+    seed_historical_uncertain(factory)
+    raw = trust_zip(attempt=ATTEMPT + 1) if artifact_mutation == "wrong_attempt" else trust_zip()
+    artifacts = [trust_artifact(raw)]
+    if artifact_mutation == "expired":
+        artifacts[0]["expired"] = True
+    elif artifact_mutation in {"handoff", "result", "outcome"}:
+        artifacts.append({"name": f"deployment-{artifact_mutation}"})
+    elif artifact_mutation == "extra":
+        artifacts.append({"name": "unexpected"})
+    github = FakeGitHub(
+        runs=[run(conclusion="failure")], jobs=predeploy_jobs(), artifacts=artifacts, raw=raw
+    )
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+    assert target._operation(OPERATION) is False
+    with factory() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None and operation.active_slot == 1
+        assert operation.transport_status == "INDETERMINATE"
+
+
+@pytest.mark.parametrize("job_mutation", ["extra", "missing", "duplicate", "wrong_attempt"])
+def test_noncanonical_job_inventory_stays_indeterminate(
+    factory: sessionmaker[Session], job_mutation: str
+) -> None:
+    seed_historical_uncertain(factory)
+    raw = trust_zip()
+    jobs = predeploy_jobs()
+    if job_mutation == "extra":
+        jobs.append(predeploy_job("unexpected", "success"))
+    elif job_mutation == "missing":
+        jobs.pop()
+    elif job_mutation == "duplicate":
+        jobs[-1] = predeploy_job("trust", "success", job_id=999)
+    else:
+        jobs[0]["run_attempt"] = ATTEMPT + 1
+    github = FakeGitHub(
+        runs=[run(conclusion="failure")], jobs=jobs,
+        artifacts=[trust_artifact(raw)], raw=raw,
+    )
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+    assert target._operation(OPERATION) is False
+    with factory() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None and operation.active_slot == 1
+        assert operation.transport_status == "INDETERMINATE"
+
+
+@pytest.mark.parametrize("current_mutation", ["release", "uncertainty", "last_operation"])
+def test_partial_or_divergent_current_blocks_predeploy_terminalization(
+    factory: sessionmaker[Session], current_mutation: str
+) -> None:
+    seed_historical_uncertain(factory)
+    with factory.begin() as session:
+        current = session.get(CurrentInstallation, 1)
+        assert current is not None
+        if current_mutation == "release":
+            current.release = RELEASE
+        elif current_mutation == "uncertainty":
+            current.uncertainty_code = "OTHER_UNCERTAINTY"
+        else:
+            current.last_operation_id = "dep_" + "b" * 32
+    raw = trust_zip()
+    github = FakeGitHub(
+        runs=[run(conclusion="failure")], jobs=predeploy_jobs(),
+        artifacts=[trust_artifact(raw)], raw=raw,
+    )
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+    assert target._operation(OPERATION) is False
+    with factory() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None and operation.active_slot == 1
+        assert operation.transport_status == "INDETERMINATE"
+        assert session.get(CurrentInstallation, 1) is not None
+
+
+def test_jobs_transport_failure_preserves_uncertain_operation_and_readiness(
+    factory: sessionmaker[Session],
+) -> None:
+    seed_historical_uncertain(factory)
+    github = FakeGitHub(
+        runs=[run(conclusion="failure")],
+        artifacts=[trust_artifact(trust_zip())],
+        jobs_failure=RuntimeFailure("GITHUB_TRANSPORT_FAILED"),
+    )
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+
+    assert target._operation(OPERATION) is False
+    with factory() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        current = session.get(CurrentInstallation, 1)
+        assert operation is not None and operation.state == "QUEUED"
+        assert operation.active_slot == 1
+        assert operation.transport_status == "INDETERMINATE"
+        assert current is not None and current.reconciled is False
+        assert current.uncertainty_code == "GITHUB_TRANSPORT_FAILED"
+        assert not session.query(AuditEvent).filter_by(
+            action="deployment.predeploy_failed"
+        ).all()
+
+
 def test_terminal_operation_is_not_reprocessed(factory: sessionmaker[Session]) -> None:
     seed_operation(factory, state="SUCCEEDED")
     github = FakeGitHub(runs=[run()])
@@ -601,6 +1035,8 @@ def test_rollback_operation_uses_versioned_workflow_and_applies_outcome(
         (ROLLBACK_OPERATION, rollback_outcome(), digest(raw), "deployer-reconcile")
     ]
     assert target.github.paths[0] == reconciliation_module.ROLLBACK_WORKFLOW_RUNS_PATH
+    assert not any("/jobs?" in path for path in target.github.paths)
+    assert not any("deployment-trust" in path for path in target.github.paths)
 
 
 @pytest.mark.parametrize(
