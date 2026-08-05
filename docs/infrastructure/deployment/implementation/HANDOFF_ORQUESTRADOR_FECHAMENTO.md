@@ -181,6 +181,18 @@
 > POST depois de rehearsal e dois probes verdes. Não há nova tentativa após o
 > POST. S46 ainda não está aceita.
 >
+> **Atualização S46 correction-06 — 05/08/2026:** a correction-05 publicou
+> `8be7c1f…`, deixou CI/candidato verdes, rotacionou o control root e criou o
+> rehearsal isolado. O primeiro run `31011886682` parou antes de qualquer efeito
+> porque o planner S18 ainda confundia `manifest.previousRelease` histórico com
+> `plan.sourceRelease` instalado e, por isso, recusava a primeira instalação
+> direta de `v0.1.1` numa VPS vazia. Semear `v0.1.0` seria um upgrade artificial
+> e não provaria produção. A correction-06 preserva os checkpoints anteriores,
+> corrige somente essa semântica e seus testes, exige prova local com o asset
+> real, novo CI/control root e um novo rehearsal; se verde, retoma diretamente
+> na configuração da fingerprint, probes e único POST ainda pendentes. S46 não
+> está aceita.
+>
 > **Pré-revisão S47 — 05/08/2026:** `v0.1.1 -> v0.1.0` troca os seis digests,
 > mas os inventários de migrations ERP/website são idênticos e não requerem
 > restore. O runtime/API/UI de rollback existe parcialmente, porém o workflow é
