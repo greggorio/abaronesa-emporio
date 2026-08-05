@@ -11,7 +11,9 @@ from unittest import mock
 
 from tools.deploy import deployment_engine_rehearsal as rehearsal
 from tools.deploy import deployment_cli
+from tools.deploy import deployment_executor
 from tools.deploy import deployment_plan
+from tools.deploy import production_adapter
 from tools.deploy.validate_deployment_engine_workflow import validate
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -57,6 +59,8 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
         mutants = (
             ("workflow", "workflow_dispatch:\n", "workflow_dispatch:\n    inputs:\n      command:\n"),
             ("workflow", "packages: read", "packages: write"),
+            ("workflow", "timeout-minutes: 90", "timeout-minutes: 45"),
+            ("workflow", 'chmod 0700 "$HOME/.docker"', "true # directory normalization omitted"),
             ("workflow", "gh release download v0.1.1", "gh release download v0.1.2"),
             ("workflow", "id: rehearsal\n        continue-on-error: true", "id: rehearsal\n        continue-on-error: false"),
             ("runtime", '"down", "-v", "--remove-orphans"', '"down"'),
@@ -64,6 +68,16 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
             ("runtime", "deployment_plan.generate_bundle(", "fake_bundle("),
             ("runtime", "root = _prepare_root(bound[\"runId\"])", 'root = Path(_required("RUNNER_TEMP"))'),
             ("runtime", 'failed_stage = "BUNDLE_GENERATION"', 'failed_stage = "PREPARE_ROOT"'),
+            (
+                "runtime",
+                "postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297",
+                "postgres@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297",
+            ),
+            (
+                "runtime",
+                ', "COMMIT_STATE", "ROLLBACK")',
+                ', "COMMIT_STATE")',
+            ),
             ("runtime", "current_path=None", 'current_path=root / "current"'),
             (
                 "runtime",
@@ -95,12 +109,37 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                 "releaseId": rehearsal.RELEASE_ID,
                 "previousRelease": rehearsal.PREVIOUS_RELEASE,
                 "operationId": rehearsal.OPERATION,
+                "transactionStatus": "SUCCESS",
+                "cleanupStatus": "SUCCESS",
                 "status": "SUCCESS",
                 "errorCode": None,
                 "failedStage": None,
+                "cliExit": 0,
+                "causeCode": None,
+                "journal": {
+                    "state": "SUCCEEDED",
+                    "errorCode": None,
+                    "rollbackErrorCode": None,
+                    "databaseRestoreRequired": True,
+                    "steps": [
+                        {
+                            "name": name,
+                            "status": "PENDING" if name == "ROLLBACK" else "SUCCEEDED",
+                            "errorCode": None,
+                        }
+                        for name in rehearsal.EXPECTED_STEPS
+                    ],
+                },
+                "postgresManifestResolved": True,
                 "journalSha256": "sha256:" + "a" * 64,
                 "installedStateSha256": "sha256:" + "b" * 64,
-                "steps": [{"name": name, "status": "SUCCEEDED"} for name in rehearsal.EXPECTED_STEPS],
+                "steps": [
+                    {
+                        "name": name,
+                        "status": "PENDING" if name == "ROLLBACK" else "SUCCEEDED",
+                    }
+                    for name in rehearsal.EXPECTED_STEPS
+                ],
                 "backup": [{"id": "erp", "size": 1, "sha256": "sha256:" + "c" * 64}, {"id": "website", "size": 1, "sha256": "sha256:" + "d" * 64}],
                 "services": [{"id": str(index), "immutableRef": "sha256:" + str(index) * 64} for index in range(1, 8)],
                 "current": rehearsal.RELEASE,
@@ -169,7 +208,13 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
             "releaseId": rehearsal.RELEASE_ID,
             "previousRelease": rehearsal.PREVIOUS_RELEASE,
             "operationId": rehearsal.OPERATION,
+            "transactionStatus": "FAILED",
+            "cleanupStatus": "SUCCESS",
             "status": "FAILED",
+            "cliExit": 6,
+            "causeCode": rehearsal.CLI_CAUSE_UNAVAILABLE,
+            "journal": None,
+            "postgresManifestResolved": False,
             "journalSha256": None,
             "installedStateSha256": None,
             "steps": [],
@@ -183,7 +228,12 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
         with mock.patch.dict(os.environ, environment(), clear=True):
             for stage, code in rehearsal.STAGE_ERRORS.items():
                 with self.subTest(stage=stage):
-                    value = {**baseline, "failedStage": stage, "errorCode": code}
+                    value = {
+                        **baseline,
+                        "failedStage": stage,
+                        "errorCode": code,
+                        "cleanupStatus": "FAILED" if stage == "CLEANUP" else "SUCCESS",
+                    }
                     rehearsal._validate_rehearsal(value, success=False)
                     mutated = {**value, "errorCode": "REHEARSAL_FAILED"}
                     with self.assertRaises(rehearsal.RehearsalError):
@@ -231,6 +281,16 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                         mock.patch.object(rehearsal, "_release", return_value=manifest),
                         mock.patch.object(
                             rehearsal,
+                            "_capture_baseline",
+                            return_value={
+                                "containers": frozenset(),
+                                "images": {},
+                                "volumes": {},
+                                "networks": {},
+                            },
+                        ),
+                        mock.patch.object(
+                            rehearsal,
                             "_prepare_root",
                             side_effect=prepare_error,
                             return_value=root,
@@ -244,6 +304,11 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                             rehearsal.deployment_plan,
                             "generate_bundle",
                             side_effect=bundle_error,
+                        ),
+                        mock.patch.object(
+                            rehearsal,
+                            "_resolve_postgres_manifest",
+                            return_value=False,
                         ),
                         mock.patch.object(
                             rehearsal,
@@ -267,6 +332,389 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                     self.assertNotIn(os.fspath(parent), rendered)
                     if root is not None and root.exists():
                         shutil.rmtree(root)
+
+    def test_postgres_image_and_executor_steps_are_causally_aligned(self) -> None:
+        runner = mock.Mock()
+        runner.run.return_value = production_adapter.ProcessResult(1, b"")
+        instance = object.__new__(production_adapter.ProductionDeploymentAdapter)
+        instance.runner = runner
+        instance.docker = Path("/usr/bin/docker")
+        self.assertEqual(instance._image_probe(rehearsal.POSTGRES_IMAGE), "ABSENT")
+        self.assertEqual(
+            instance._image_probe(
+                "postgres@sha256:"
+                + rehearsal.POSTGRES_IMAGE.rsplit("@sha256:", 1)[1]
+            ),
+            "UNKNOWN",
+        )
+        self.assertEqual(rehearsal.EXPECTED_STEPS, deployment_executor.STEPS)
+        self.assertEqual(runner.run.call_count, 1)
+
+    def test_success_transaction_requires_restore_true_and_rollback_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "releases/v0.1.1").mkdir(parents=True)
+            (root / "current").symlink_to("releases/v0.1.1")
+            journal = {
+                "state": "SUCCEEDED",
+                "errorCode": None,
+                "databaseRestoreRequired": True,
+                "steps": [
+                    {
+                        "name": name,
+                        "status": "PENDING" if name == "ROLLBACK" else "SUCCEEDED",
+                    }
+                    for name in rehearsal.EXPECTED_STEPS
+                ],
+            }
+            state = {"release": rehearsal.RELEASE, "reconciled": True}
+            backup = {
+                "databases": [
+                    {"id": "erp", "size": 1},
+                    {"id": "website", "size": 1},
+                ]
+            }
+            self.assertTrue(
+                rehearsal._transaction_valid(journal, state, backup, root)
+            )
+            restore_mutant = json.loads(json.dumps(journal))
+            restore_mutant["databaseRestoreRequired"] = False
+            self.assertFalse(
+                rehearsal._transaction_valid(restore_mutant, state, backup, root)
+            )
+            rollback_mutant = json.loads(json.dumps(journal))
+            rollback_mutant["steps"][-1]["status"] = "SUCCEEDED"
+            self.assertFalse(
+                rehearsal._transaction_valid(rollback_mutant, state, backup, root)
+            )
+
+    def test_cli_evidence_is_closed_for_prejournal_terminal_and_invalid_output(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            journal_path = Path(raw) / "journal.json"
+            prejournal = rehearsal._cli_evidence(
+                rehearsal.subprocess.CompletedProcess(
+                    (), 4, b"", rehearsal.canonical({"errorCode": "UNSAFE_PATH"})
+                ),
+                journal_path,
+            )
+            self.assertEqual(
+                prejournal,
+                {"cliExit": 4, "causeCode": "UNSAFE_PATH", "journal": None},
+            )
+            journal = {
+                "state": "FAILED",
+                "errorCode": "PULL_FAILED",
+                "rollbackErrorCode": None,
+                "databaseRestoreRequired": True,
+                "steps": [
+                    {
+                        "name": name,
+                        "status": "FAILED" if name == "PULL" else "PENDING",
+                        "errorCode": "PULL_FAILED" if name == "PULL" else None,
+                    }
+                    for name in rehearsal.EXPECTED_STEPS
+                ],
+            }
+            journal_path.write_bytes(rehearsal.canonical(journal))
+            terminal = rehearsal._cli_evidence(
+                rehearsal.subprocess.CompletedProcess(
+                    (),
+                    21,
+                    rehearsal.canonical(
+                        {
+                            "databaseRestoreRequired": True,
+                            "errorCode": "PULL_FAILED",
+                            "operationId": rehearsal.OPERATION,
+                            "state": "FAILED",
+                        }
+                    ),
+                    b"",
+                ),
+                journal_path,
+            )
+            self.assertEqual(terminal["causeCode"], "PULL_FAILED")
+            self.assertEqual(terminal["journal"]["steps"][0]["status"], "FAILED")
+            invalid = rehearsal._cli_evidence(
+                rehearsal.subprocess.CompletedProcess(
+                    (), 3, b"/private/path\n", b'{"errorCode":"UNSAFE_PATH"}\ntraceback\n'
+                ),
+                journal_path,
+            )
+            self.assertEqual(invalid["causeCode"], rehearsal.CLI_CAUSE_UNAVAILABLE)
+            self.assertIsNone(invalid["journal"])
+            rendered = json.dumps(invalid, sort_keys=True)
+            self.assertNotIn("private", rendered)
+            self.assertNotIn("traceback", rendered)
+
+    def test_cleanup_preserves_baseline_image_and_removes_created_image(self) -> None:
+        image = rehearsal.POSTGRES_IMAGE
+        calls: list[tuple[str, ...]] = []
+        present = {image: True}
+
+        def run(
+            argv: tuple[str, ...],
+            *,
+            environment: dict[str, str] | None = None,
+            timeout: int = 2700,
+        ) -> rehearsal.subprocess.CompletedProcess[bytes]:
+            del environment, timeout
+            calls.append(argv)
+            if argv[1:3] == ("ps", "-aq"):
+                return rehearsal.subprocess.CompletedProcess(argv, 0, b"", b"")
+            if argv[1:3] == ("image", "inspect"):
+                return rehearsal.subprocess.CompletedProcess(
+                    argv, 0 if present[image] else 1, b"", b""
+                )
+            if argv[1:3] == ("image", "rm"):
+                present[image] = False
+                return rehearsal.subprocess.CompletedProcess(argv, 0, b"", b"")
+            raise AssertionError(argv)
+
+        with mock.patch.object(rehearsal, "_run", side_effect=run):
+            preserved = rehearsal._cleanup(
+                None,
+                None,
+                None,
+                None,
+                [image],
+                {},
+                {
+                    "containers": frozenset(),
+                    "images": {image: True},
+                    "volumes": {},
+                    "networks": {},
+                },
+                run_id=123,
+            )
+            self.assertEqual(preserved["images"], 0)
+            self.assertTrue(present[image])
+            self.assertFalse(any(call[1:3] == ("image", "rm") for call in calls))
+
+            calls.clear()
+            created = rehearsal._cleanup(
+                None,
+                None,
+                None,
+                None,
+                [image],
+                {},
+                {
+                    "containers": frozenset(),
+                    "images": {image: False},
+                    "volumes": {},
+                    "networks": {},
+                },
+                run_id=123,
+            )
+            self.assertEqual(created["images"], 0)
+            self.assertFalse(present[image])
+            self.assertTrue(any(call[1:3] == ("image", "rm") for call in calls))
+
+    def test_cleanup_nonzero_down_image_rm_and_shred_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            bundle = base / "bundle"
+            bundle.mkdir()
+            (bundle / "release.env").write_text("X=y\n", encoding="utf-8")
+            (bundle / "compose.prod.yml").write_text("services: {}\n", encoding="utf-8")
+            env_file = base / ".env"
+            env_file.write_text("X=y\n", encoding="utf-8")
+
+            def down_failure(
+                argv: tuple[str, ...], **_kwargs: object
+            ) -> rehearsal.subprocess.CompletedProcess[bytes]:
+                if "down" in argv:
+                    return rehearsal.subprocess.CompletedProcess(argv, 1, b"", b"")
+                if argv[1:3] == ("ps", "-aq"):
+                    return rehearsal.subprocess.CompletedProcess(argv, 0, b"", b"")
+                if argv[0] == "/usr/bin/shred":
+                    Path(argv[-1]).unlink(missing_ok=True)
+                    return rehearsal.subprocess.CompletedProcess(argv, 0, b"", b"")
+                raise AssertionError(argv)
+
+            with mock.patch.object(rehearsal, "_run", side_effect=down_failure):
+                with self.assertRaises(rehearsal.CleanupError):
+                    rehearsal._cleanup(
+                        None,
+                        bundle,
+                        env_file,
+                        None,
+                        [],
+                        {},
+                        {
+                            "containers": frozenset(),
+                            "images": {},
+                            "volumes": {},
+                            "networks": {},
+                        },
+                        run_id=123,
+                    )
+
+            image = rehearsal.POSTGRES_IMAGE
+
+            def image_rm_failure(
+                argv: tuple[str, ...], **_kwargs: object
+            ) -> rehearsal.subprocess.CompletedProcess[bytes]:
+                if argv[1:3] == ("ps", "-aq"):
+                    return rehearsal.subprocess.CompletedProcess(argv, 0, b"", b"")
+                if argv[1:3] == ("image", "inspect"):
+                    return rehearsal.subprocess.CompletedProcess(argv, 0, b"", b"")
+                if argv[1:3] == ("image", "rm"):
+                    return rehearsal.subprocess.CompletedProcess(argv, 1, b"", b"")
+                raise AssertionError(argv)
+
+            with mock.patch.object(rehearsal, "_run", side_effect=image_rm_failure):
+                with self.assertRaises(rehearsal.CleanupError):
+                    rehearsal._cleanup(
+                        None,
+                        None,
+                        None,
+                        None,
+                        [image],
+                        {},
+                        {
+                            "containers": frozenset(),
+                            "images": {image: False},
+                            "volumes": {},
+                            "networks": {},
+                        },
+                        run_id=123,
+                    )
+
+            secret = base / "secret"
+            secret.write_text("opaque\n", encoding="utf-8")
+
+            def shred_failure(
+                argv: tuple[str, ...], **_kwargs: object
+            ) -> rehearsal.subprocess.CompletedProcess[bytes]:
+                if argv[1:3] == ("ps", "-aq"):
+                    return rehearsal.subprocess.CompletedProcess(argv, 0, b"", b"")
+                if argv[0] == "/usr/bin/shred":
+                    return rehearsal.subprocess.CompletedProcess(argv, 1, b"", b"")
+                raise AssertionError(argv)
+
+            with mock.patch.object(rehearsal, "_run", side_effect=shred_failure):
+                with self.assertRaises(rehearsal.CleanupError):
+                    rehearsal._cleanup(
+                        None,
+                        None,
+                        None,
+                        secret,
+                        [],
+                        {},
+                        {
+                            "containers": frozenset(),
+                            "images": {},
+                            "volumes": {},
+                            "networks": {},
+                        },
+                        run_id=123,
+                    )
+
+    def test_journal_capture_precedes_cleanup_and_receipt_follows_cleanup(self) -> None:
+        sequence: list[str] = []
+        captured: dict[str, object] = {}
+        manifest = {
+            "components": [
+                {"id": f"service-{index}", "immutableRef": f"ghcr.io/example/service-{index}@sha256:" + "a" * 64}
+                for index in range(6)
+            ]
+        }
+        with tempfile.TemporaryDirectory(dir=ROOT) as raw, mock.patch.dict(
+            os.environ, environment(), clear=True
+        ):
+            root = Path(raw) / "root"
+            root.mkdir(mode=0o700)
+            trust = {
+                "schemaVersion": 1,
+                "kind": "deployment-engine-trust",
+                **rehearsal.binding(),
+                "status": "TRUSTED",
+            }
+
+            def fake_env(
+                selected: Path, _manifest: dict[str, object], run_id: int
+            ) -> tuple[Path, Path, dict[str, str]]:
+                shared = selected / "shared"
+                shared.mkdir(mode=0o700)
+                env_file = shared / ".env"
+                identity = shared / "identity"
+                env_file.write_text("FICTITIOUS=true\n", encoding="utf-8")
+                identity.write_text("opaque\n", encoding="utf-8")
+                env_file.chmod(0o600)
+                identity.chmod(0o600)
+                return env_file, identity, rehearsal._resource_names(run_id)
+
+            real_cli_evidence = rehearsal._cli_evidence
+
+            def capture_cli(
+                completed: rehearsal.subprocess.CompletedProcess[bytes],
+                journal_path: Path,
+            ) -> dict[str, object]:
+                sequence.append("journal")
+                return real_cli_evidence(completed, journal_path)
+
+            def cleanup(*_args: object, **_kwargs: object) -> dict[str, int]:
+                sequence.append("cleanup")
+                return {"containers": 0, "volumes": 0, "networks": 0, "images": 0}
+
+            def write(
+                _directory: Path, _name: str, value: dict[str, object]
+            ) -> None:
+                sequence.append("receipt")
+                captured.update(value)
+
+            with (
+                mock.patch.object(rehearsal, "_load_bundle", return_value=trust),
+                mock.patch.object(rehearsal, "_release", return_value=manifest),
+                mock.patch.object(
+                    rehearsal,
+                    "_capture_baseline",
+                    return_value={
+                        "containers": frozenset(),
+                        "images": {},
+                        "volumes": {},
+                        "networks": {},
+                    },
+                ),
+                mock.patch.object(rehearsal, "_prepare_root", return_value=root),
+                mock.patch.object(rehearsal, "_env", side_effect=fake_env),
+                mock.patch.object(rehearsal.deployment_plan, "generate_bundle"),
+                mock.patch.object(
+                    rehearsal, "_resolve_postgres_manifest", return_value=False
+                ),
+                mock.patch.object(
+                    rehearsal,
+                    "_run",
+                    return_value=rehearsal.subprocess.CompletedProcess(
+                        (), 4, b"", rehearsal.canonical({"errorCode": "UNSAFE_PATH"})
+                    ),
+                ),
+                mock.patch.object(rehearsal, "_cli_evidence", side_effect=capture_cli),
+                mock.patch.object(rehearsal, "_cleanup", side_effect=cleanup),
+                mock.patch.object(rehearsal, "_write_bundle", side_effect=write),
+            ):
+                with self.assertRaises(rehearsal.RehearsalError):
+                    rehearsal.rehearse(Path(raw) / "trust", Path(raw) / "assets", Path(raw) / "output")
+            self.assertEqual(sequence, ["journal", "cleanup", "receipt"])
+            self.assertEqual(captured["transactionStatus"], "FAILED")
+            self.assertEqual(captured["cleanupStatus"], "SUCCESS")
+            self.assertEqual(captured["status"], "FAILED")
+            self.assertEqual(captured["causeCode"], "UNSAFE_PATH")
+
+    def test_global_success_requires_transaction_and_cleanup_success(self) -> None:
+        self.assertEqual(
+            rehearsal._overall_status("SUCCESS", "SUCCESS"), "SUCCESS"
+        )
+        self.assertEqual(
+            rehearsal._overall_status("SUCCESS", "FAILED"), "FAILED"
+        )
+        self.assertEqual(
+            rehearsal._overall_status("FAILED", "SUCCESS"), "FAILED"
+        )
+        self.assertEqual(
+            rehearsal._overall_status("FAILED", "FAILED"), "FAILED"
+        )
 
 
 if __name__ == "__main__":

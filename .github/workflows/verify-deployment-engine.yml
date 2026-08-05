@@ -50,7 +50,7 @@ jobs:
       actions: read
       packages: read
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -72,6 +72,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Normalize the ephemeral Docker config permissions
+        run: |
+          chmod 0700 "$HOME/.docker"
+          chmod 0600 "$HOME/.docker/config.json"
+          test "$(stat -c '%a' "$HOME/.docker")" = 700
+          test "$(stat -c '%a' "$HOME/.docker/config.json")" = 600
       - name: Execute the real isolated deployment transaction
         id: rehearsal
         continue-on-error: true

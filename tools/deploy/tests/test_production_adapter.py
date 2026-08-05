@@ -1287,6 +1287,187 @@ class ProductionAdapterTest(unittest.TestCase):
         )
         self.assertEqual(self.make_adapter(runner)._image_probe(ref), "UNKNOWN")
 
+    def test_58_readiness_waits_fit_strictly_inside_process_timeouts(self) -> None:
+        def successful(
+            _argv: tuple[str, ...], _timeout: int, output: Path | None
+        ) -> adapter.ProcessResult:
+            if output is not None:
+                output.write_bytes(b"PGDMP")
+                os.chmod(output, 0o600)
+            return process()
+
+        def wait_pair(call: tuple[tuple[str, ...], int, Path | None]) -> tuple[int, int]:
+            argv, process_timeout, _ = call
+            position = argv.index("--wait-timeout")
+            return int(argv[position + 1]), process_timeout
+
+        direct_runner = FakeRunner()
+        direct = self.make_adapter(direct_runner)
+        direct._up_services(self.bundle, adapter.COMPONENTS, 540)
+        self.assertEqual(wait_pair(direct_runner.calls[-1]), (480, 540))
+
+        update_runner = FakeRunner()
+        self.make_adapter(update_runner).execute(self.context("UPDATE"))
+        self.assertEqual(wait_pair(update_runner.calls[-1]), (480, 540))
+
+        verify_runner = FakeRunner()
+        self.make_adapter(verify_runner).execute(self.context("VERIFY"))
+        self.assertEqual(wait_pair(verify_runner.calls[-1]), (480, 540))
+
+        bundle, plan = self.update_bundle()
+        rollback_runner = FakeRunner()
+        self.make_adapter(
+            rollback_runner, bundle=bundle, plan=plan
+        ).execute(self.context("ROLLBACK", bundle=bundle, plan=plan))
+        self.assertEqual(wait_pair(rollback_runner.calls[-1]), (480, 540))
+
+        backup_runner = FakeRunner(successful)
+        self.make_adapter(backup_runner).execute(self.context("BACKUP"))
+        self.assertEqual(wait_pair(backup_runner.calls[0]), (240, 300))
+
+        for runner in (
+            direct_runner,
+            update_runner,
+            verify_runner,
+            rollback_runner,
+            backup_runner,
+        ):
+            wait_timeout, process_timeout = wait_pair(
+                next(call for call in runner.calls if "--wait-timeout" in call[0])
+            )
+            self.assertGreater(process_timeout, wait_timeout)
+
+    def test_59_real_cli_planner_executor_adapter_first_install_succeeds(self) -> None:
+        from tools.deploy import deployment_cli
+        from tools.deploy import deployment_engine_rehearsal as rehearsal
+
+        def cli_process(
+            code: int = 0, stdout: bytes = b""
+        ) -> deployment_cli.production_adapter.ProcessResult:
+            return deployment_cli.production_adapter.ProcessResult(code, stdout)
+
+        class TransactionRunner:
+            def __init__(inner_self) -> None:
+                inner_self.images: set[str] = set()
+                inner_self.migrated = False
+                inner_self.components_up = False
+
+            def run(
+                inner_self,
+                argv: tuple[str, ...],
+                *,
+                timeout_seconds: int,
+                stdout_file: Path | None = None,
+            ) -> adapter.ProcessResult:
+                del timeout_seconds
+                if argv[0] == os.fspath(CURL):
+                    return cli_process()
+                if "compose" not in argv:
+                    if argv[1:3] == ("image", "inspect"):
+                        reference = argv[-1]
+                        if reference not in inner_self.images:
+                            return cli_process(1)
+                        repository, digest_value = reference.rsplit("@", 1)
+                        return cli_process(
+                            0, json.dumps([f"{repository}@{digest_value}"]).encode()
+                        )
+                    if argv[1:3] == ("container", "inspect"):
+                        service = argv[-1].removeprefix("container-")
+                        image = (
+                            rehearsal.POSTGRES_IMAGE
+                            if service == "postgresql"
+                            else self.refs[service]
+                        )
+                        return cli_process(
+                            0,
+                            json.dumps(
+                                {
+                                    "Config": {"Image": image},
+                                    "State": {
+                                        "Status": "running",
+                                        "Health": {"Status": "healthy"},
+                                    },
+                                }
+                            ).encode(),
+                        )
+                    raise AssertionError(argv)
+                command = argv[argv.index("compose") + 1 :]
+                if "config" in command and "--quiet" in command:
+                    return cli_process()
+                if "config" in command and "--format" in command:
+                    return cli_process(
+                        0,
+                        json.dumps(
+                            {
+                                "services": {
+                                    "postgresql": {"image": rehearsal.POSTGRES_IMAGE}
+                                }
+                            }
+                        ).encode(),
+                    )
+                if "pull" in command:
+                    inner_self.images = {
+                        rehearsal.POSTGRES_IMAGE,
+                        *self.refs.values(),
+                    }
+                    return cli_process()
+                if "exec" in command:
+                    assert stdout_file is not None
+                    stdout_file.write_bytes(b"PGDMP-causal")
+                    os.chmod(stdout_file, 0o600)
+                    return cli_process()
+                if "run" in command:
+                    mode = command[-1]
+                    if mode == "migrate":
+                        inner_self.migrated = True
+                        return cli_process(0, b"MIGRATIONS_APPLIED\n")
+                    return cli_process(
+                        0 if inner_self.migrated else 10,
+                        b"MIGRATIONS_APPLIED\n"
+                        if inner_self.migrated
+                        else b"MIGRATIONS_PENDING\n",
+                    )
+                if "up" in command:
+                    if any(service in command for service in adapter.COMPONENTS):
+                        inner_self.components_up = True
+                    return cli_process()
+                if "ps" in command and "--format" in command:
+                    services = (
+                        list(adapter.ALL_SERVICES)
+                        if inner_self.components_up
+                        else []
+                    )
+                    return cli_process(
+                        0,
+                        json.dumps([{"Service": item} for item in services]).encode(),
+                    )
+                if "ps" in command and "-q" in command:
+                    service = command[-1]
+                    running = service == "postgresql" or inner_self.components_up
+                    return cli_process(
+                        0,
+                        (f"container-{service}\n" if running else "").encode(),
+                    )
+                raise AssertionError(argv)
+
+        journal, exit_code = deployment_cli.execute(
+            operation_id=OPERATION,
+            release=self.plan["targetRelease"],
+            deploy_root=self.root,
+            runner=TransactionRunner(),
+            clock=FakeClock(),
+            docker_binary=DOCKER,
+            curl_binary=CURL,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(journal["state"], "SUCCEEDED")
+        self.assertTrue(journal["databaseRestoreRequired"])
+        self.assertEqual(tuple(step["name"] for step in journal["steps"]), core.STEPS)
+        self.assertTrue(
+            all(step["status"] == "SUCCEEDED" for step in journal["steps"][:6])
+        )
+        self.assertEqual(journal["steps"][6]["status"], "PENDING")
+
 
 if __name__ == "__main__":
     unittest.main()

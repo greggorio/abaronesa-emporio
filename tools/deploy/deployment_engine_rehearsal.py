@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,14 +35,77 @@ RELEASE_ID = 365219520
 OPERATION = "deployment_engine_rehearsal_v011"
 PROJECT = "abaronesa-emporio"
 ROOT_PREFIX = ".s46-engine-"
-EXPECTED_STEPS = ("PULL", "BACKUP", "MIGRATE", "UPDATE", "VERIFY", "COMMIT_STATE")
-POSTGRES_IMAGE = "postgres@sha256:589f3b24f30e60a2b33f79543ed51c8f897589bcde5c59f4dc0e814551eeeb0f"
+EXPECTED_STEPS = ("PULL", "BACKUP", "MIGRATE", "UPDATE", "VERIFY", "COMMIT_STATE", "ROLLBACK")
+POSTGRES_IMAGE = "postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297"
 TRUST_FILE = "deployment-engine-trust.json"
 REHEARSAL_FILE = "deployment-engine-rehearsal.json"
 OUTCOME_FILE = "deployment-engine-rehearsal-outcome.json"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 POSITIVE_RE = re.compile(r"^[1-9][0-9]*$")
 MAX_OUTPUT = 128 * 1024
+CLI_TIMEOUT = 3600
+CLEANUP_DEADLINE = 600
+CLI_EXITS = frozenset({0, 2, 3, 4, 6, 20, 21})
+CLI_CAUSE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+CLI_CAUSE_UNAVAILABLE = "CLI_CAUSE_UNAVAILABLE"
+CLI_CAUSES = frozenset(
+    {
+        "ATOMICITY_FAILED",
+        "BACKUP_CONFLICT",
+        "BACKUP_DUMP_FAILED",
+        "BACKUP_FAILED",
+        "BACKUP_INVALID",
+        "BACKUP_IO_FAILED",
+        "BACKUP_POSTGRES_FAILED",
+        "BINARY_UNAVAILABLE",
+        "BUNDLE_CONFLICT",
+        "COMMAND_FAILED",
+        "COMMAND_TIMEOUT",
+        "COMMIT_STATE_FAILED",
+        "COMPOSE_CONFIG_FAILED",
+        "CONTAINER_PROBE_FAILED",
+        "CURRENT_STATE_CONFLICT",
+        "CURRENT_STATE_MISMATCH",
+        "DEPENDENCY_UNAVAILABLE",
+        "DOCKER_CONFIG_INVALID",
+        "INVALID_ACTION_CONTEXT",
+        "INVALID_ADAPTER_RESULT",
+        "INVALID_ARGUMENT",
+        "INVALID_BUNDLE",
+        "INVALID_CLOCK",
+        "INVALID_COMMAND",
+        "INVALID_CONTRACT",
+        "INVALID_GATEWAY_PORT",
+        "INVALID_PROCESS_OUTPUT",
+        "INVALID_PROCESS_RESULT",
+        "INVALID_SMOKE_TARGET",
+        "JOURNAL_CORRUPT",
+        "JOURNAL_IO_FAILED",
+        "LINK_RECONCILIATION_FAILED",
+        "MIGRATION_COMMAND_FAILED",
+        "MIGRATION_FAILED",
+        "NON_FORWARD_MIGRATION",
+        "OPERATION_CONFLICT",
+        "OPERATIONAL_FAILURE",
+        "OPERATIONAL_IO_FAILED",
+        "PRODUCTION_OPERATION_ACTIVE",
+        "PULL_COMMAND_FAILED",
+        "PULL_FAILED",
+        "RELEASE_CHAIN_MISMATCH",
+        "RELEASE_MISMATCH",
+        "ROLLBACK_COMMAND_FAILED",
+        "ROLLBACK_FAILED",
+        "SOURCE_BUNDLE_INVALID",
+        "UNSAFE_BINARY",
+        "UNSAFE_LINK_STATE",
+        "UNSAFE_PATH",
+        "UPDATE_COMMAND_FAILED",
+        "UPDATE_FAILED",
+        "VERIFY_FAILED",
+    }
+)
+JOURNAL_STATES = frozenset({"QUEUED", "PULLING", "BACKING_UP", "MIGRATING", "UPDATING", "VERIFYING", "ROLLING_BACK", "SUCCEEDED", "ROLLED_BACK", "FAILED"})
+STEP_STATUSES = frozenset({"PENDING", "RUNNING", "SUCCEEDED", "FAILED", "SKIPPED"})
 FAILED_STAGES = frozenset(
     {
         "PREPARE_ROOT",
@@ -62,6 +126,12 @@ STAGE_ERRORS = {
 
 class RehearsalError(RuntimeError):
     pass
+
+
+class CleanupError(RehearsalError):
+    def __init__(self, code: str, counts: dict[str, int]):
+        super().__init__(code)
+        self.counts = counts
 
 
 def canonical(value: Any) -> bytes:
@@ -227,6 +297,198 @@ def _run(argv: tuple[str, ...], *, environment: dict[str, str] | None = None, ti
     return completed
 
 
+def _closed_cause(value: Any) -> str | None:
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or CLI_CAUSE_RE.fullmatch(value) is None
+        or value not in CLI_CAUSES
+    ):
+        raise RehearsalError("CLI_EVIDENCE_INVALID")
+    return value
+
+
+def _closed_json(raw: bytes) -> dict[str, Any]:
+    if not raw or len(raw) > MAX_OUTPUT or raw.startswith(b"\xef\xbb\xbf"):
+        raise RehearsalError("CLI_EVIDENCE_INVALID")
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise RehearsalError("CLI_EVIDENCE_INVALID") from exc
+    if not isinstance(value, dict) or raw != canonical(value):
+        raise RehearsalError("CLI_EVIDENCE_INVALID")
+    return value
+
+
+def _journal_projection(path: Path) -> tuple[dict[str, Any], bytes]:
+    raw = path.read_bytes()
+    value = _closed_json(raw)
+    state = value.get("state")
+    restore = value.get("databaseRestoreRequired")
+    rollback_code = value.get("rollbackErrorCode")
+    error_code = value.get("errorCode")
+    steps = value.get("steps")
+    if (
+        state not in JOURNAL_STATES
+        or not isinstance(restore, bool)
+        or not isinstance(steps, list)
+        or len(steps) != len(EXPECTED_STEPS)
+    ):
+        raise RehearsalError("CLI_EVIDENCE_INVALID")
+    projected_steps: list[dict[str, Any]] = []
+    for expected_name, step in zip(EXPECTED_STEPS, steps, strict=True):
+        if not isinstance(step, dict):
+            raise RehearsalError("CLI_EVIDENCE_INVALID")
+        name = step.get("name")
+        status = step.get("status")
+        step_code = step.get("errorCode")
+        if name != expected_name or status not in STEP_STATUSES:
+            raise RehearsalError("CLI_EVIDENCE_INVALID")
+        projected_steps.append(
+            {"name": name, "status": status, "errorCode": _closed_cause(step_code)}
+        )
+    projection = {
+        "state": state,
+        "errorCode": _closed_cause(error_code),
+        "rollbackErrorCode": _closed_cause(rollback_code),
+        "databaseRestoreRequired": restore,
+        "steps": projected_steps,
+    }
+    return projection, raw
+
+
+def _cli_evidence(
+    completed: subprocess.CompletedProcess[bytes], journal_path: Path
+) -> dict[str, Any]:
+    exit_code = completed.returncode if completed.returncode in CLI_EXITS else 6
+    unavailable = {
+        "cliExit": exit_code,
+        "causeCode": CLI_CAUSE_UNAVAILABLE,
+        "journal": None,
+    }
+    try:
+        if completed.returncode not in CLI_EXITS:
+            raise RehearsalError("CLI_EVIDENCE_INVALID")
+        if completed.returncode in {0, 20, 21}:
+            if completed.stderr:
+                raise RehearsalError("CLI_EVIDENCE_INVALID")
+            summary = _closed_json(completed.stdout)
+            if set(summary) != {
+                "databaseRestoreRequired",
+                "errorCode",
+                "operationId",
+                "state",
+            } or summary.get("operationId") != OPERATION:
+                raise RehearsalError("CLI_EVIDENCE_INVALID")
+            projection, _ = _journal_projection(journal_path)
+            if (
+                summary.get("state") != projection["state"]
+                or summary.get("databaseRestoreRequired")
+                != projection["databaseRestoreRequired"]
+                or summary.get("errorCode") != projection["errorCode"]
+            ):
+                raise RehearsalError("CLI_EVIDENCE_INVALID")
+            cause = projection["errorCode"]
+            if completed.returncode == 0 and (
+                projection["state"] != "SUCCEEDED" or cause is not None
+            ):
+                raise RehearsalError("CLI_EVIDENCE_INVALID")
+            if completed.returncode != 0 and cause is None:
+                raise RehearsalError("CLI_EVIDENCE_INVALID")
+            return {"cliExit": completed.returncode, "causeCode": cause, "journal": projection}
+        if completed.stdout:
+            raise RehearsalError("CLI_EVIDENCE_INVALID")
+        failure = _closed_json(completed.stderr)
+        if set(failure) != {"errorCode"}:
+            raise RehearsalError("CLI_EVIDENCE_INVALID")
+        return {
+            "cliExit": completed.returncode,
+            "causeCode": _closed_cause(failure["errorCode"]),
+            "journal": None,
+        }
+    except (OSError, RehearsalError):
+        return unavailable
+
+
+def _validate_journal_projection(value: Any) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict) or set(value) != {
+        "state",
+        "errorCode",
+        "rollbackErrorCode",
+        "databaseRestoreRequired",
+        "steps",
+    }:
+        raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
+    if (
+        value.get("state") not in JOURNAL_STATES
+        or not isinstance(value.get("databaseRestoreRequired"), bool)
+        or not isinstance(value.get("steps"), list)
+        or len(value["steps"]) != len(EXPECTED_STEPS)
+    ):
+        raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
+    try:
+        _closed_cause(value.get("errorCode"))
+        _closed_cause(value.get("rollbackErrorCode"))
+        for name, step in zip(EXPECTED_STEPS, value["steps"], strict=True):
+            if (
+                not isinstance(step, dict)
+                or set(step) != {"name", "status", "errorCode"}
+                or step.get("name") != name
+                or step.get("status") not in STEP_STATUSES
+            ):
+                raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
+            _closed_cause(step.get("errorCode"))
+    except RehearsalError as exc:
+        raise RehearsalError("REHEARSAL_ARTIFACT_INVALID") from exc
+
+
+def _transaction_valid(
+    journal: dict[str, Any],
+    state: dict[str, Any],
+    backup_manifest: dict[str, Any],
+    root: Path,
+) -> bool:
+    steps = journal.get("steps", [])
+    return bool(
+        journal.get("state") == "SUCCEEDED"
+        and journal.get("errorCode") is None
+        and journal.get("databaseRestoreRequired") is True
+        and tuple(step.get("name") for step in steps) == EXPECTED_STEPS
+        and all(step.get("status") == "SUCCEEDED" for step in steps[:6])
+        and len(steps) == 7
+        and steps[6].get("status") == "PENDING"
+        and state.get("release") == RELEASE
+        and state.get("reconciled") is True
+        and os.readlink(root / "current") == f"releases/{RELEASE}"
+        and not (root / "previous").exists()
+        and tuple(item.get("id") for item in backup_manifest.get("databases", []))
+        == ("erp", "website")
+        and all(item.get("size", 0) > 0 for item in backup_manifest["databases"])
+    )
+
+
+def _resolve_postgres_manifest() -> bool:
+    try:
+        result = _run(
+            ("/usr/bin/docker", "manifest", "inspect", POSTGRES_IMAGE),
+            timeout=120,
+        )
+    except (OSError, RehearsalError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def _overall_status(transaction_status: str, cleanup_status: str) -> str:
+    return (
+        "SUCCESS"
+        if transaction_status == "SUCCESS" and cleanup_status == "SUCCESS"
+        else "FAILED"
+    )
+
+
 def _mask(value: str) -> None:
     print(f"::add-mask::{value}")
 
@@ -249,7 +511,7 @@ def _env(root: Path, manifest: dict[str, Any], run_id: int) -> tuple[Path, Path,
     }
     for value in sensitive.values():
         _mask(value)
-    suffix = f"s46-engine-{run_id}"
+    resource_names = _resource_names(run_id)
     values = {
         "POSTGRES_IMAGE": POSTGRES_IMAGE,
         "POSTGRES_ADMIN_USER": "rehearsal_admin",
@@ -259,12 +521,7 @@ def _env(root: Path, manifest: dict[str, Any], run_id: int) -> tuple[Path, Path,
         "WEBSITE_DB_USER": "rehearsal_website_user",
         "GOOGLE_CLIENT_ID": "rehearsal.invalid",
         "GATEWAY_LOOPBACK_PORT": "8120",
-        "APP_NETWORK_NAME": suffix + "-app",
-        "DB_NETWORK_NAME": suffix + "-db",
-        "POSTGRES_VOLUME_NAME": suffix + "-postgres",
-        "BACKEND_UPLOADS_VOLUME_NAME": suffix + "-backend-uploads",
-        "WEBSITE_UPLOADS_VOLUME_NAME": suffix + "-website-uploads",
-        "WHATSAPP_SESSION_VOLUME_NAME": suffix + "-whatsapp-session",
+        **resource_names,
         "RELEASE_CONTROL_MODE": "disabled",
         "RELEASE_CONTROL_DEPLOYER_IDENTITY_ENABLED": "false",
         "RELEASE_CONTROL_DEPLOYER_IDENTITY_PRIVATE_KEY_FILE": os.fspath(identity),
@@ -275,17 +532,17 @@ def _env(root: Path, manifest: dict[str, Any], run_id: int) -> tuple[Path, Path,
     return env_file, identity, values
 
 
-def _docker_project_ids() -> tuple[str, ...]:
-    result = _run(("/usr/bin/docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={PROJECT}"), timeout=30)
+def _docker_project_ids(*, timeout: int = 30) -> tuple[str, ...]:
+    result = _run(("/usr/bin/docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={PROJECT}"), timeout=timeout)
     if result.returncode != 0:
         raise RehearsalError("DOCKER_INSPECT_FAILED")
     return tuple(sorted(line for line in result.stdout.decode("ascii").splitlines() if line))
 
 
-def _shred(path: Path) -> None:
+def _shred(path: Path, *, timeout: int = 30) -> None:
     if not path.exists():
         return
-    result = _run(("/usr/bin/shred", "-u", os.fspath(path)), timeout=30)
+    result = _run(("/usr/bin/shred", "-u", os.fspath(path)), timeout=timeout)
     if result.returncode != 0 or path.exists():
         raise RehearsalError("SECRET_CLEANUP_FAILED")
 
@@ -350,34 +607,135 @@ def _remove_ephemeral_root(root: Path, *, run_id: int) -> None:
         raise RehearsalError("CLEANUP_INCOMPLETE")
 
 
-def _cleanup(root: Path | None, bundle: Path | None, env_file: Path | None, identity: Path | None, image_refs: list[str], names: dict[str, str], *, run_id: int) -> dict[str, int]:
+def _resource_names(run_id: int) -> dict[str, str]:
+    suffix = f"s46-engine-{run_id}"
+    return {
+        "APP_NETWORK_NAME": suffix + "-app",
+        "DB_NETWORK_NAME": suffix + "-db",
+        "POSTGRES_VOLUME_NAME": suffix + "-postgres",
+        "BACKEND_UPLOADS_VOLUME_NAME": suffix + "-backend-uploads",
+        "WEBSITE_UPLOADS_VOLUME_NAME": suffix + "-website-uploads",
+        "WHATSAPP_SESSION_VOLUME_NAME": suffix + "-whatsapp-session",
+    }
+
+
+def _docker_exists(kind: str, value: str, *, timeout: int = 30) -> bool:
+    result = _run(("/usr/bin/docker", kind, "inspect", value), timeout=timeout)
+    if result.returncode not in {0, 1}:
+        raise RehearsalError("DOCKER_INSPECT_FAILED")
+    return result.returncode == 0
+
+
+def _capture_baseline(image_refs: list[str], names: dict[str, str]) -> dict[str, Any]:
+    return {
+        "containers": frozenset(_docker_project_ids()),
+        "images": {image: _docker_exists("image", image) for image in image_refs},
+        "volumes": {
+            value: _docker_exists("volume", value)
+            for key, value in names.items()
+            if key.endswith("VOLUME_NAME")
+        },
+        "networks": {
+            value: _docker_exists("network", value)
+            for key, value in names.items()
+            if key.endswith("NETWORK_NAME")
+        },
+    }
+
+
+def _cleanup(
+    root: Path | None,
+    bundle: Path | None,
+    env_file: Path | None,
+    identity: Path | None,
+    image_refs: list[str],
+    names: dict[str, str],
+    baseline: dict[str, Any],
+    *,
+    run_id: int,
+) -> dict[str, int]:
+    deadline = time.monotonic() + CLEANUP_DEADLINE
+    failed = False
+
+    def remaining(cap: int) -> int:
+        available = int(deadline - time.monotonic())
+        if available <= 0:
+            raise RehearsalError("CLEANUP_DEADLINE_EXCEEDED")
+        return min(cap, available)
+
     if bundle is not None and env_file is not None and bundle.is_dir() and env_file.is_file():
-        _run((
-            "/usr/bin/docker", "compose", "--project-name", PROJECT,
-            "--env-file", os.fspath(env_file), "--env-file", os.fspath(bundle / "release.env"),
-            "-f", os.fspath(bundle / "compose.prod.yml"), "down", "-v", "--remove-orphans",
-        ), timeout=300)
+        try:
+            down = _run((
+                "/usr/bin/docker", "compose", "--project-name", PROJECT,
+                "--env-file", os.fspath(env_file), "--env-file", os.fspath(bundle / "release.env"),
+                "-f", os.fspath(bundle / "compose.prod.yml"), "down", "-v", "--remove-orphans",
+            ), timeout=remaining(300))
+            failed = down.returncode != 0
+        except (OSError, RehearsalError, subprocess.SubprocessError):
+            failed = True
     for image in image_refs:
-        _run(("/usr/bin/docker", "image", "rm", image), timeout=120)
+        if baseline.get("images", {}).get(image, False):
+            continue
+        try:
+            if _docker_exists("image", image, timeout=remaining(30)):
+                removed = _run(
+                    ("/usr/bin/docker", "image", "rm", image),
+                    timeout=remaining(120),
+                )
+                failed = failed or removed.returncode != 0
+        except (OSError, RehearsalError, subprocess.SubprocessError):
+            failed = True
     if identity is not None:
-        _shred(identity)
+        try:
+            _shred(identity, timeout=remaining(30))
+        except (OSError, RehearsalError, subprocess.SubprocessError):
+            failed = True
     if env_file is not None:
-        _shred(env_file)
-    counts = {"containers": len(_docker_project_ids()), "volumes": 0, "networks": 0, "images": 0}
+        try:
+            _shred(env_file, timeout=remaining(30))
+        except (OSError, RehearsalError, subprocess.SubprocessError):
+            failed = True
+    counts = {"containers": -1, "volumes": -1, "networks": -1, "images": -1}
+    try:
+        counts = {
+            "containers": len(
+                set(_docker_project_ids(timeout=remaining(30)))
+                - set(baseline.get("containers", ()))
+            ),
+            "volumes": 0,
+            "networks": 0,
+            "images": 0,
+        }
+    except (OSError, RehearsalError, subprocess.SubprocessError):
+        failed = True
     for kind, values in (("volume", [value for key, value in names.items() if key.endswith("VOLUME_NAME")]), ("network", [value for key, value in names.items() if key.endswith("NETWORK_NAME")])):
         for value in values:
-            result = _run(("/usr/bin/docker", kind, "inspect", value), timeout=30)
-            if result.returncode == 0:
-                counts[kind + "s"] += 1
+            try:
+                existed = baseline.get(kind + "s", {}).get(value, False)
+                if not existed and _docker_exists(kind, value, timeout=remaining(30)):
+                    counts[kind + "s"] += 1
+            except (OSError, RehearsalError, subprocess.SubprocessError):
+                counts[kind + "s"] = -1
+                failed = True
     for image in image_refs:
-        if _run(("/usr/bin/docker", "image", "inspect", image), timeout=30).returncode == 0:
-            counts["images"] += 1
+        if baseline.get("images", {}).get(image, False):
+            continue
+        try:
+            if _docker_exists("image", image, timeout=remaining(30)):
+                counts["images"] += 1
+        except (OSError, RehearsalError, subprocess.SubprocessError):
+            counts["images"] = -1
+            failed = True
     if root is not None and (root.exists() or root.is_symlink()):
-        _remove_ephemeral_root(root, run_id=run_id)
+        try:
+            remaining(1)
+            _remove_ephemeral_root(root, run_id=run_id)
+        except (OSError, RehearsalError):
+            failed = True
     if any(counts.values()) or (
         root is not None and (root.exists() or root.is_symlink())
-    ):
-        raise RehearsalError("CLEANUP_INCOMPLETE")
+    ) or failed:
+        raise CleanupError("CLEANUP_INCOMPLETE", counts)
     return counts
 
 
@@ -392,13 +750,40 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
     bundle: Path | None = None
     env_file: Path | None = None
     identity: Path | None = None
-    names: dict[str, str] = {}
+    names = _resource_names(bound["runId"])
     image_refs = [item["immutableRef"] for item in manifest["components"]] + [POSTGRES_IMAGE]
-    receipt: dict[str, Any] | None = None
+    baseline: dict[str, Any] | None = None
     error_code: str | None = None
     failed_stage: str | None = "PREPARE_ROOT"
     cleanup_counts = {"containers": -1, "volumes": -1, "networks": -1, "images": -1}
+    transaction_status = "FAILED"
+    cleanup_status = "FAILED"
+    postgres_manifest_resolved = False
+    cli_evidence: dict[str, Any] = {
+        "cliExit": 6,
+        "causeCode": CLI_CAUSE_UNAVAILABLE,
+        "journal": None,
+    }
+    journal_sha: str | None = None
+    state_sha: str | None = None
+    receipt_steps: list[dict[str, Any]] = []
+    receipt_backup: list[dict[str, Any]] = []
+    receipt_services: list[dict[str, Any]] = []
+    current: str | None = None
+    previous: str | None = None
+    replay_evidence = {
+        "journalUnchanged": False,
+        "backupUnchanged": False,
+        "containersUnchanged": False,
+    }
     try:
+        baseline = _capture_baseline(image_refs, names)
+        if (
+            baseline["containers"]
+            or any(baseline["volumes"].values())
+            or any(baseline["networks"].values())
+        ):
+            raise RehearsalError("RESOURCE_BASELINE_CONFLICT")
         root = _prepare_root(bound["runId"])
         failed_stage = "BUNDLE_GENERATION"
         releases = root / "releases"
@@ -407,7 +792,12 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
         support.mkdir(mode=0o700)
         shutil.copyfile(ROOT / "ops/db/init-databases.sh", support / "init-databases.sh")
         (support / "init-databases.sh").chmod(0o700)
-        env_file, identity, names = _env(root, manifest, bound["runId"])
+        env_file, identity, environment_values = _env(root, manifest, bound["runId"])
+        names = {
+            key: value
+            for key, value in environment_values.items()
+            if key.endswith("VOLUME_NAME") or key.endswith("NETWORK_NAME")
+        }
         target = root / "release.json"
         _write_exclusive(target, global_release.canonical(manifest))
         bundle = releases / RELEASE
@@ -423,11 +813,13 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
             "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "EMPORIO_DEPLOY_ROOT": os.fspath(root),
         }
         command = (sys.executable, os.fspath(ROOT / "tools/deploy/deployment_cli.py"), "deploy", "--operation-id", OPERATION, "--release", RELEASE)
-        first = _run(command, environment=cli_env)
+        postgres_manifest_resolved = _resolve_postgres_manifest()
+        journal_path = root / "shared/deploy/journals" / f"{OPERATION}.json"
+        first = _run(command, environment=cli_env, timeout=CLI_TIMEOUT)
+        cli_evidence = _cli_evidence(first, journal_path)
         if first.returncode != 0:
             raise RehearsalError("DEPLOYMENT_CLI_FAILED")
         failed_stage = "TRANSACTION_EVIDENCE"
-        journal_path = root / "shared/deploy/journals" / f"{OPERATION}.json"
         state_path = root / "shared/deploy/installed-state.json"
         backup = root / "shared/backups" / OPERATION
         journal_raw = journal_path.read_bytes()
@@ -438,17 +830,8 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
         if (
             journal_raw != canonical(journal)
             or state_raw != canonical(state)
-            or journal.get("state") != "SUCCEEDED"
-            or journal.get("databaseRestoreRequired") is not False
-            or journal.get("errorCode") is not None
-            or tuple(step.get("name") for step in journal.get("steps", [])) != EXPECTED_STEPS
-            or any(step.get("status") != "SUCCEEDED" for step in journal["steps"])
-            or state.get("release") != RELEASE
-            or state.get("reconciled") is not True
-            or os.readlink(root / "current") != f"releases/{RELEASE}"
-            or (root / "previous").exists()
-            or tuple(item.get("id") for item in backup_manifest.get("databases", [])) != ("erp", "website")
-            or any(item.get("size", 0) <= 0 for item in backup_manifest["databases"])
+            or cli_evidence["journal"] is None
+            or not _transaction_valid(journal, state, backup_manifest, root)
         ):
             raise RehearsalError("TRANSACTION_INVALID")
         containers_before = _docker_project_ids()
@@ -460,6 +843,53 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
         backup_after = sorted((item.name, digest(item.read_bytes())) for item in backup.iterdir() if item.is_file())
         if journal_path.read_bytes() != journal_raw or containers_after != containers_before or backup_after != backup_before:
             raise RehearsalError("REPLAY_EFFECT_DETECTED")
+        transaction_status = "SUCCESS"
+        journal_sha = digest(journal_raw)
+        state_sha = digest(state_raw)
+        receipt_steps = [
+            {"name": item["name"], "status": item["status"]}
+            for item in journal["steps"]
+        ]
+        receipt_backup = [
+            {"id": item["id"], "size": item["size"], "sha256": item["sha256"]}
+            for item in backup_manifest["databases"]
+        ]
+        receipt_services = [
+            {"id": item["id"], "immutableRef": item["immutableRef"]}
+            for item in manifest["components"]
+        ] + [{"id": "postgresql", "immutableRef": POSTGRES_IMAGE}]
+        current = RELEASE
+        replay_evidence = {
+            "journalUnchanged": True,
+            "backupUnchanged": True,
+            "containersUnchanged": True,
+        }
+        failed_stage = None
+    except Exception:
+        if failed_stage not in FAILED_STAGES:
+            failed_stage = "TRANSACTION_EVIDENCE"
+        error_code = STAGE_ERRORS[failed_stage]
+    finally:
+        try:
+            if baseline is None and root is None:
+                cleanup_counts = {
+                    "containers": 0, "volumes": 0, "networks": 0, "images": 0
+                }
+            else:
+                assert baseline is not None
+                cleanup_counts = _cleanup(
+                    root, bundle, env_file, identity, image_refs, names, baseline,
+                    run_id=bound["runId"],
+                )
+            cleanup_status = "SUCCESS"
+        except CleanupError as exc:
+            cleanup_counts = exc.counts
+            failed_stage = "CLEANUP"
+            error_code = STAGE_ERRORS[failed_stage]
+        except (OSError, RehearsalError, subprocess.SubprocessError):
+            failed_stage = "CLEANUP"
+            error_code = STAGE_ERRORS[failed_stage]
+        status = _overall_status(transaction_status, cleanup_status)
         receipt = {
             "schemaVersion": 1,
             "kind": "deployment-engine-rehearsal",
@@ -468,53 +898,31 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
             "releaseId": RELEASE_ID,
             "previousRelease": PREVIOUS_RELEASE,
             "operationId": OPERATION,
-            "status": "SUCCESS",
-            "errorCode": None,
-            "failedStage": None,
-            "journalSha256": digest(journal_raw),
-            "installedStateSha256": digest(state_raw),
-            "steps": [{"name": item["name"], "status": item["status"]} for item in journal["steps"]],
-            "backup": [{"id": item["id"], "size": item["size"], "sha256": item["sha256"]} for item in backup_manifest["databases"]],
-            "services": [{"id": item["id"], "immutableRef": item["immutableRef"]} for item in manifest["components"]] + [{"id": "postgresql", "immutableRef": POSTGRES_IMAGE}],
-            "current": RELEASE,
-            "previous": None,
-            "replay": {"journalUnchanged": True, "backupUnchanged": True, "containersUnchanged": True},
+            "transactionStatus": transaction_status,
+            "cleanupStatus": cleanup_status,
+            "status": status,
+            "errorCode": None if status == "SUCCESS" else (
+                error_code or STAGE_ERRORS["TRANSACTION_EVIDENCE"]
+            ),
+            "failedStage": None if status == "SUCCESS" else (
+                failed_stage or "TRANSACTION_EVIDENCE"
+            ),
+            "cliExit": cli_evidence["cliExit"],
+            "causeCode": None if status == "SUCCESS" else (
+                cli_evidence["causeCode"] or CLI_CAUSE_UNAVAILABLE
+            ),
+            "journal": cli_evidence["journal"],
+            "postgresManifestResolved": postgres_manifest_resolved,
+            "journalSha256": journal_sha,
+            "installedStateSha256": state_sha,
+            "steps": receipt_steps,
+            "backup": receipt_backup,
+            "services": receipt_services,
+            "current": current,
+            "previous": previous,
+            "replay": replay_evidence,
             "cleanup": cleanup_counts,
         }
-        failed_stage = None
-    except Exception:
-        if failed_stage not in FAILED_STAGES:
-            failed_stage = "TRANSACTION_EVIDENCE"
-        error_code = STAGE_ERRORS[failed_stage]
-    finally:
-        cleanup_failure: RehearsalError | None = None
-        try:
-            cleanup_counts = _cleanup(
-                root, bundle, env_file, identity, image_refs, names,
-                run_id=bound["runId"],
-            )
-        except RehearsalError as exc:
-            cleanup_failure = exc
-            failed_stage = "CLEANUP"
-            error_code = STAGE_ERRORS[failed_stage]
-        if receipt is None:
-            receipt = {
-                "schemaVersion": 1, "kind": "deployment-engine-rehearsal", **bound,
-                "release": RELEASE, "releaseId": RELEASE_ID, "previousRelease": PREVIOUS_RELEASE,
-                "operationId": OPERATION, "status": "FAILED",
-                "errorCode": error_code or STAGE_ERRORS["TRANSACTION_EVIDENCE"],
-                "failedStage": failed_stage or "TRANSACTION_EVIDENCE",
-                "journalSha256": None, "installedStateSha256": None, "steps": [], "backup": [],
-                "services": [], "current": None, "previous": None,
-                "replay": {"journalUnchanged": False, "backupUnchanged": False, "containersUnchanged": False},
-                "cleanup": cleanup_counts,
-            }
-        else:
-            receipt["cleanup"] = cleanup_counts
-            if cleanup_failure is not None:
-                receipt["status"] = "FAILED"
-                receipt["errorCode"] = error_code
-                receipt["failedStage"] = failed_stage
         _write_bundle(output, REHEARSAL_FILE, receipt)
     if receipt.get("status") != "SUCCESS":
         raise RehearsalError(str(receipt["errorCode"]))
@@ -522,21 +930,54 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
 
 def _validate_rehearsal(value: dict[str, Any], *, success: bool) -> None:
     bound = binding()
+    expected_keys = {
+        "schemaVersion", "kind", "repository", "workflow", "workflowRef",
+        "runId", "runAttempt", "sha", "actorId", "release", "releaseId",
+        "previousRelease", "operationId", "transactionStatus", "cleanupStatus",
+        "status", "errorCode", "failedStage", "cliExit", "causeCode", "journal",
+        "postgresManifestResolved", "journalSha256", "installedStateSha256",
+        "steps", "backup", "services", "current", "previous", "replay", "cleanup",
+    }
+    _validate_journal_projection(value.get("journal"))
     if (
-        value.get("schemaVersion") != 1
+        set(value) != expected_keys
+        or value.get("schemaVersion") != 1
         or value.get("kind") != "deployment-engine-rehearsal"
         or any(value.get(key) != item for key, item in bound.items())
         or value.get("release") != RELEASE
         or value.get("releaseId") != RELEASE_ID
         or value.get("previousRelease") != PREVIOUS_RELEASE
         or value.get("operationId") != OPERATION
+        or value.get("transactionStatus") not in {"SUCCESS", "FAILED"}
+        or value.get("cleanupStatus") not in {"SUCCESS", "FAILED"}
         or value.get("status") != ("SUCCESS" if success else "FAILED")
+        or (value.get("status") == "SUCCESS")
+        != (
+            value.get("transactionStatus") == "SUCCESS"
+            and value.get("cleanupStatus") == "SUCCESS"
+        )
+        or value.get("cliExit") not in CLI_EXITS
+        or not isinstance(value.get("postgresManifestResolved"), bool)
         or value.get("failedStage")
         not in ({None} if success else FAILED_STAGES)
     ):
         raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
     if success and (
         value.get("errorCode") is not None
+        or value.get("causeCode") is not None
+        or value.get("cliExit") != 0
+        or not isinstance(value.get("journal"), dict)
+        or value.get("journal", {}).get("state") != "SUCCEEDED"
+        or value.get("journal", {}).get("databaseRestoreRequired") is not True
+        or value.get("journal", {}).get("errorCode") is not None
+        or tuple(
+            step.get("name") for step in value.get("journal", {}).get("steps", [])
+        ) != EXPECTED_STEPS
+        or any(
+            step.get("status") != "SUCCEEDED"
+            for step in value["journal"]["steps"][:6]
+        )
+        or value["journal"]["steps"][6].get("status") != "PENDING"
         or value.get("current") != RELEASE
         or value.get("previous") is not None
         or len(value.get("services", [])) != 7
@@ -545,8 +986,22 @@ def _validate_rehearsal(value: dict[str, Any], *, success: bool) -> None:
         or value.get("replay") != {"journalUnchanged": True, "backupUnchanged": True, "containersUnchanged": True}
     ):
         raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
-    if not success and value.get("errorCode") != STAGE_ERRORS[value["failedStage"]]:
-        raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
+    if not success:
+        cause = value.get("causeCode")
+        if (
+            value.get("errorCode") != STAGE_ERRORS[value["failedStage"]]
+            or cause not in CLI_CAUSES | {CLI_CAUSE_UNAVAILABLE}
+            or (isinstance(cause, str) and CLI_CAUSE_RE.fullmatch(cause) is None)
+            or (
+                value.get("cleanupStatus") == "FAILED"
+                and value.get("failedStage") != "CLEANUP"
+            )
+            or (
+                value.get("failedStage") == "CLEANUP"
+                and value.get("cleanupStatus") != "FAILED"
+            )
+        ):
+            raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
 
 
 def outcome(trust_directory: Path, rehearsal_directory: Path, output: Path) -> None:
@@ -561,6 +1016,9 @@ def outcome(trust_directory: Path, rehearsal_directory: Path, output: Path) -> N
         "status": "SUCCESS" if success else "FAILED",
         "errorCode": rehearsal_value.get("errorCode"),
         "failedStage": rehearsal_value.get("failedStage"),
+        "transactionStatus": rehearsal_value.get("transactionStatus"),
+        "cleanupStatus": rehearsal_value.get("cleanupStatus"),
+        "causeCode": rehearsal_value.get("causeCode"),
         "trustResult": _required("TRUST_RESULT"), "rehearsalResult": _required("REHEARSAL_RESULT"),
         "rehearsalSha256": digest(canonical(rehearsal_value)),
         "cleanup": rehearsal_value.get("cleanup"),
@@ -576,6 +1034,9 @@ def validate(rehearsal_directory: Path, outcome_directory: Path) -> None:
         or outcome_value.get("status") != "SUCCESS"
         or outcome_value.get("errorCode") is not None
         or outcome_value.get("failedStage") is not None
+        or outcome_value.get("transactionStatus") != "SUCCESS"
+        or outcome_value.get("cleanupStatus") != "SUCCESS"
+        or outcome_value.get("causeCode") is not None
         or outcome_value.get("trustResult") != "success"
         or outcome_value.get("rehearsalResult") != "success"
         or outcome_value.get("rehearsalSha256") != digest(canonical(rehearsal_value))

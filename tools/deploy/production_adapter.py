@@ -998,10 +998,10 @@ class ProductionDeploymentAdapter:
                 "--no-build",
                 "--wait",
                 "--wait-timeout",
-                "180",
+                "240",
                 "postgresql",
             ),
-            180,
+            300,
         )
         if postgres.return_code != 0:
             raise ProductionAdapterError("BACKUP_POSTGRES_FAILED")
@@ -1336,7 +1336,7 @@ class ProductionDeploymentAdapter:
             *(("--remove-orphans",) if remove_orphans else ()),
             "--wait",
             "--wait-timeout",
-            "180",
+            "480",
         )
         result = self._run(
             self._compose_base(bundle)
@@ -1351,7 +1351,7 @@ class ProductionDeploymentAdapter:
         self._up_services(
             self.bundle,
             context.services,
-            300,
+            540,
             remove_orphans=True,
         )
 
@@ -1441,7 +1441,7 @@ class ProductionDeploymentAdapter:
         return self._result("VERIFY", "ABSENT")
 
     def _execute_verify(self, context: ActionContext) -> None:
-        self._up_services(self.bundle, COMPONENTS, 300)
+        self._up_services(self.bundle, COMPONENTS, 540)
 
     def _probe_rollback(self, context: ActionContext) -> ProbeResult:
         if context.source_release is None:
@@ -1490,6 +1490,6 @@ class ProductionDeploymentAdapter:
             return
         source_bundle = self._source_bundle()
         try:
-            self._up_services(source_bundle, COMPONENTS, 300)
+            self._up_services(source_bundle, COMPONENTS, 540)
         except ProductionAdapterError as exc:
             raise ProductionAdapterError("ROLLBACK_COMMAND_FAILED") from exc

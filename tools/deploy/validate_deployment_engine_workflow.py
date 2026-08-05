@@ -59,7 +59,7 @@ def validate(root: Path = ROOT) -> list[str]:
     if not isinstance(jobs, dict) or list(jobs) != ["trust", "rehearse", "outcome"]:
         errors.append("jobs")
         jobs = jobs if isinstance(jobs, dict) else {}
-    expected = {"trust": (None, "10"), "rehearse": ("trust", "45"), "outcome": (["trust", "rehearse"], "10")}
+    expected = {"trust": (None, "10"), "rehearse": ("trust", "90"), "outcome": (["trust", "rehearse"], "10")}
     for name, (needs, timeout) in expected.items():
         job = jobs.get(name)
         if not isinstance(job, dict): continue
@@ -77,10 +77,34 @@ def validate(root: Path = ROOT) -> list[str]:
     ]
     if len(rehearsal_steps) != 1 or rehearsal_steps[0].get("continue-on-error") != "true":
         errors.append("rehearsal-diagnostic-preservation")
+    named_rehearsal_steps = {
+        step.get("name"): (index, step)
+        for index, step in enumerate(jobs.get("rehearse", {}).get("steps", []))
+        if isinstance(step, dict) and isinstance(step.get("name"), str)
+    }
+    authenticate = named_rehearsal_steps.get("Authenticate the ephemeral runner to GHCR")
+    normalize = named_rehearsal_steps.get("Normalize the ephemeral Docker config permissions")
+    execute = named_rehearsal_steps.get("Execute the real isolated deployment transaction")
+    expected_normalization = (
+        'chmod 0700 "$HOME/.docker"\n'
+        'chmod 0600 "$HOME/.docker/config.json"\n'
+        'test "$(stat -c \'%a\' "$HOME/.docker")" = 700\n'
+        'test "$(stat -c \'%a\' "$HOME/.docker/config.json")" = 600\n'
+    )
+    if (
+        authenticate is None
+        or normalize is None
+        or execute is None
+        or not authenticate[0] < normalize[0] < execute[0]
+        or normalize[1].get("run") != expected_normalization
+    ):
+        errors.append("docker-config-normalization")
     if jobs.get("outcome", {}).get("if") != "always()": errors.append("outcome-always")
     for marker in (
         "gh release download v0.1.1", "/releases/365219520", "/git/ref/tags/v0.1.1",
         "docker login ghcr.io", "docker logout ghcr.io",
+        'chmod 0700 "$HOME/.docker"', 'chmod 0600 "$HOME/.docker/config.json"',
+        'stat -c \'%a\' "$HOME/.docker"', 'stat -c \'%a\' "$HOME/.docker/config.json"',
         "deployment_engine_rehearsal.py rehearse", "deployment-engine-rehearsal-outcome",
         "continue-on-error: true", "if: always()", "DEPLOYER_ACTOR_IDS",
     ):
@@ -92,7 +116,18 @@ def validate(root: Path = ROOT) -> list[str]:
         "pull_request:", "push:", "schedule:", "docker system prune", ":latest",
     ):
         if forbidden in lowered: errors.append(f"forbidden:{forbidden}")
-    constants = {"REPOSITORY": "greggorio/abaronesa-emporio", "WORKFLOW": ".github/workflows/verify-deployment-engine.yml", "RELEASE": "v0.1.1", "PREVIOUS_RELEASE": "v0.1.0", "RELEASE_ID": 365219520, "PROJECT": "abaronesa-emporio"}
+    constants = {
+        "REPOSITORY": "greggorio/abaronesa-emporio",
+        "WORKFLOW": ".github/workflows/verify-deployment-engine.yml",
+        "RELEASE": "v0.1.1",
+        "PREVIOUS_RELEASE": "v0.1.0",
+        "RELEASE_ID": 365219520,
+        "PROJECT": "abaronesa-emporio",
+        "POSTGRES_IMAGE": "postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297",
+        "EXPECTED_STEPS": (
+            "PULL", "BACKUP", "MIGRATE", "UPDATE", "VERIFY", "COMMIT_STATE", "ROLLBACK",
+        ),
+    }
     for name, value in constants.items():
         if _assignment(runtime, name) != value: errors.append(f"runtime:{name}")
     for marker in (
@@ -102,7 +137,10 @@ def validate(root: Path = ROOT) -> list[str]:
         'failed_stage = "DEPLOYMENT_CLI"',
         'failed_stage = "TRANSACTION_EVIDENCE"',
         "current_path=None", "current_manifest_path=None",
-        '"BACKUP"', '"MIGRATE"', '"UPDATE"', '"VERIFY"', '"COMMIT_STATE"',
+        '"BACKUP"', '"MIGRATE"', '"UPDATE"', '"VERIFY"', '"COMMIT_STATE"', '"ROLLBACK"',
+        "postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297",
+        'journal.get("databaseRestoreRequired") is True', '"transactionStatus"',
+        '"cleanupStatus"', '"causeCode"', '"postgresManifestResolved"',
         "backup-manifest.json", "journalUnchanged", "containersUnchanged",
         '"down", "-v", "--remove-orphans"', '"image", "rm"',
         "_remove_ephemeral_root(root, run_id=run_id)",
