@@ -222,12 +222,26 @@ def _path_components(path: Path) -> list[Path]:
         current = current.parent
 
 
-def _safe_directory(path: Path) -> Path:
+def _safe_directory(path: Path, trusted_root: Path | None = None) -> Path:
+    """Confine the journal and installed-state directories to a trusted tree.
+
+    The tree used to be inferred from this module's own location, which silently
+    assumed that the code and the deploy root share a workspace. That holds for a
+    checkout and for /tmp, but never in production: the control root is installed
+    at <deploy_root>/shared/control, so the journal directory at
+    <deploy_root>/shared/deploy/journals is its sibling and could never be
+    accepted. Callers that already validated a deploy root pass it here; the
+    inferred workspace and /tmp stay allowed so checkouts and tests are
+    unaffected. Every other protection is unchanged.
+    """
     lexical = _lexical_absolute(path)
     try:
         resolved = lexical.resolve(strict=True)
         workspace = ROOT.resolve(strict=True)
         temporary = Path("/tmp").resolve(strict=True)
+        trusted = (
+            None if trusted_root is None else Path(trusted_root).resolve(strict=True)
+        )
     except (OSError, RuntimeError) as exc:
         raise DeploymentExecutionError("UNSAFE_PATH", 4) from exc
     if resolved != lexical:
@@ -235,6 +249,11 @@ def _safe_directory(path: Path) -> Path:
     allowed = (
         (_is_relative_to(resolved, workspace) and resolved != workspace)
         or (_is_relative_to(resolved, temporary) and resolved != temporary)
+        or (
+            trusted is not None
+            and _is_relative_to(resolved, trusted)
+            and resolved != trusted
+        )
     )
     home_roots = {Path.home().resolve(), Path("/root").resolve()}
     home_parent = Path("/home")
@@ -264,11 +283,13 @@ def _safe_directory(path: Path) -> Path:
 
 
 def _validate_paths(
-    journal_dir: Path, installed_state_path: Path
+    journal_dir: Path,
+    installed_state_path: Path,
+    trusted_root: Path | None = None,
 ) -> tuple[Path, Path]:
-    journal = _safe_directory(journal_dir)
+    journal = _safe_directory(journal_dir, trusted_root)
     state_input = _lexical_absolute(installed_state_path)
-    state_parent = _safe_directory(state_input.parent)
+    state_parent = _safe_directory(state_input.parent, trusted_root)
     if (
         state_input.parent != state_parent
         or state_input.name.endswith("installed-state.json") is False
@@ -1455,6 +1476,7 @@ def execute_deployment(
     installed_state_path: Path,
     adapter: DeploymentAdapter,
     clock: DeploymentClock,
+    trusted_root: Path | None = None,
 ) -> dict[str, Any]:
     """Create or resume one deployment transaction without real side effects."""
     if not isinstance(operation_id, str) or OPERATION_RE.fullmatch(operation_id) is None:
@@ -1465,7 +1487,7 @@ def execute_deployment(
     except Exception as exc:
         raise DeploymentExecutionError("INVALID_CONTRACT") from exc
     journal_root, state_path = _validate_paths(
-        Path(journal_dir), Path(installed_state_path)
+        Path(journal_dir), Path(installed_state_path), trusted_root
     )
     try:
         identity_bytes = _read_regular(

@@ -456,6 +456,12 @@ def execute(
         installed_state_path=state_path,
         adapter=adapter,
         clock=actual_clock,
+        # Already validated by _validate_root above: absolute, no "..", no
+        # symlinked component, owned by the effective user and writable by nobody
+        # else. Without it the executor falls back to inferring a workspace from
+        # its own module path, which in production resolves to the control root —
+        # a sibling of the deploy root, so the journal directory is refused.
+        trusted_root=root,
     )
     _reconcile_links(root, plan, journal, state_path)
     return journal, TERMINAL_EXIT[journal["state"]]
