@@ -129,6 +129,19 @@
 > terminal antes do JWKS/POST e, fechadas as capabilities, retoma a mesma S46
 > para uma única instalação de `v0.1.1`. Deploy e rollback permanecem em zero
 > no checkpoint; S46 ainda não foi aceita.
+>
+> **Atualização S46 correction-02 — 05/08/2026:** a correction-01 atualizou o
+> control root e criou a primeira intenção, mas o run `30981846816` falhou no
+> `prepare`: `deployment_transport.py` ainda exigia `name=Deploy Production` e
+> `path=deploy-production.yml@main`, enquanto a API real devolve o `run-name`
+> materializado e path sem ref. `deploy` foi `skipped`; há somente o artifact
+> trust, zero recurso/backup/migration comercial e a operação permanece
+> `INDETERMINATE`, com readiness 503. A correction-02 mantém essa evidência,
+> corrige o validador, acrescenta reconciliação estrita de falha pré-deploy,
+> atualiza imagem/control root e só então autoriza uma única operação comercial
+> substituta. O total terminal esperado passa a ser dois runs — um pré-deploy
+> falho e um comercial verde — com zero rollback/restore. S46 ainda não foi
+> aceita.
 
 ## 1. Mandato e modo de condução
 
