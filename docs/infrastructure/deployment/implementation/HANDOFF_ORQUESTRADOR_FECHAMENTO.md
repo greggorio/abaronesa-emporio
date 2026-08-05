@@ -107,6 +107,17 @@
 > `v0.1.0` é imutável, a correction-01 corrige os contratos, publica `v0.1.1`
 > pela UI/runtime e a deixa elegível, ainda com zero deploy/rollback. O primeiro
 > deploy acompanhado passa a usar `v0.1.1`, sem criar slice intermediária.
+>
+> **Atualização S45/S46 — 05/08/2026:** S45 aceita no SHA remoto
+> `cf3385f1012b9661ddbc2e83d5241aaa8633f8fd`. CI `30960751303`, candidato
+> `30961397124`, imagem operacional `30961863663` e publicação global
+> `30962554318` fecharam verdes. A release `v0.1.1` (ID `365219520`) possui BOM
+> de seis componentes, está elegível e o `.env` comercial aponta para seus
+> digests; scopes e os dois namespaces same-origin convergem. Control plane,
+> swap, Nginx/TLS e backup/restore de ensaio estão verdes, com zero deploy e
+> rollback. S46 é o contrato vigente para uma única primeira instalação de
+> `v0.1.1`; documenta o bootstrap inevitável antes de existir UI/backend e
+> exige substituí-lo pela identidade/UI reais logo após o sucesso.
 
 ## 1. Mandato e modo de condução
 
