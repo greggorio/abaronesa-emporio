@@ -204,6 +204,19 @@
 > config autenticado para runner e usuário `deploy-emporio`, revalida o control
 > root e retoma no rehearsal; os checkpoints anteriores não são repetidos.
 > S46 não está aceita.
+
+> **Atualização S46 correction-09 — 05/08/2026:** o run `31021376896`
+> preservou trust e outcome, falhou em `DEPLOYMENT_CLI` e encerrou sem SSH,
+> probe ou efeito comercial. A causa foi fechada em quatro defeitos
+> determinísticos: imagem PostgreSQL inválida somente no rehearsal, contrato de
+> seis passos incompatível com o journal de sete passos, expectativa invertida
+> de `databaseRestoreRequired` e janela de readiness insuficiente no adapter.
+> A correction-09 substitui a correction-08 rejeitada, preserva evidência
+> estruturada antes do cleanup, separa transação/limpeza/status global, limpa
+> por diferença contra baseline e ajusta workflow/validador em lockstep. Há uma
+> única janela de CI e rehearsal; somente com esse run verde seguem rotação do
+> control root, SSH, dois probes e uma operação comercial de `v0.1.1`. S46 não
+> está aceita.
 >
 > **Pré-revisão S47 — 05/08/2026:** `v0.1.1 -> v0.1.0` troca os seis digests,
 > mas os inventários de migrations ERP/website são idênticos e não requerem
