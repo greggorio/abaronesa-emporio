@@ -193,6 +193,18 @@
 > na configuração da fingerprint, probes e único POST ainda pendentes. S46 não
 > está aceita.
 >
+> **Atualização S46 correction-07 — 05/08/2026:** a correction-06 publicou
+> `d43d0d1…`, deixou CI/candidato verdes e rotacionou o control root. O run
+> `31015462556` falhou antes do CLI porque o rehearsal criou o deploy root em
+> `RUNNER_TEMP`, irmão do checkout, enquanto o planner só permite workspace ou
+> `/tmp`; a exceção `UNSAFE_PATH` foi reduzida indevidamente a
+> `REHEARSAL_FAILED`. A reprodução do orquestrador fechou a causa sem novo run e
+> provou que um root `0700` sob o checkout passa simultaneamente planner e CLI.
+> A correction-07 corrige somente esse path/diagnóstico, explicita o Docker
+> config autenticado para runner e usuário `deploy-emporio`, revalida o control
+> root e retoma no rehearsal; os checkpoints anteriores não são repetidos.
+> S46 não está aceita.
+>
 > **Pré-revisão S47 — 05/08/2026:** `v0.1.1 -> v0.1.0` troca os seis digests,
 > mas os inventários de migrations ERP/website são idênticos e não requerem
 > restore. O runtime/API/UI de rollback existe parcialmente, porém o workflow é
