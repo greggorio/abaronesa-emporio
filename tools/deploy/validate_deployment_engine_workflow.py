@@ -97,13 +97,21 @@ def validate(root: Path = ROOT) -> list[str]:
         if _assignment(runtime, name) != value: errors.append(f"runtime:{name}")
     for marker in (
         "deployment_plan.generate_bundle(", "deployment_cli.py", "EMPORIO_DEPLOY_ROOT",
+        "_prepare_root(bound[\"runId\"])", "_validate_ephemeral_root",
+        'failed_stage = "BUNDLE_GENERATION"',
+        'failed_stage = "DEPLOYMENT_CLI"',
+        'failed_stage = "TRANSACTION_EVIDENCE"',
         "current_path=None", "current_manifest_path=None",
         '"BACKUP"', '"MIGRATE"', '"UPDATE"', '"VERIFY"', '"COMMIT_STATE"',
         "backup-manifest.json", "journalUnchanged", "containersUnchanged",
-        '"down", "-v", "--remove-orphans"', '"image", "rm"', "shutil.rmtree(root)",
+        '"down", "-v", "--remove-orphans"', '"image", "rm"',
+        "_remove_ephemeral_root(root, run_id=run_id)",
+        '"failedStage"', '"PREPARE_ROOT_FAILED"',
+        '"BUNDLE_GENERATION_FAILED"', '"DEPLOYMENT_CLI_FAILED"',
+        '"TRANSACTION_EVIDENCE_FAILED"', '"CLEANUP_INCOMPLETE"',
     ):
         if marker not in runtime: errors.append(f"runtime-marker:{marker}")
-    for forbidden in ("PRODUCTION_SSH", "environment: production", "deploy-production.yml", "rollback-production.yml", "shell=True", "docker system prune"):
+    for forbidden in ("PRODUCTION_SSH", "environment: production", "deploy-production.yml", "rollback-production.yml", "shell=True", "docker system prune", "RUNNER_TEMP"):
         if forbidden in runtime: errors.append(f"runtime-forbidden:{forbidden}")
     return sorted(set(errors))
 

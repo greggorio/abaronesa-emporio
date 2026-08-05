@@ -33,6 +33,7 @@ PREVIOUS_RELEASE = "v0.1.0"
 RELEASE_ID = 365219520
 OPERATION = "deployment_engine_rehearsal_v011"
 PROJECT = "abaronesa-emporio"
+ROOT_PREFIX = ".s46-engine-"
 EXPECTED_STEPS = ("PULL", "BACKUP", "MIGRATE", "UPDATE", "VERIFY", "COMMIT_STATE")
 POSTGRES_IMAGE = "postgres@sha256:589f3b24f30e60a2b33f79543ed51c8f897589bcde5c59f4dc0e814551eeeb0f"
 TRUST_FILE = "deployment-engine-trust.json"
@@ -41,6 +42,22 @@ OUTCOME_FILE = "deployment-engine-rehearsal-outcome.json"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 POSITIVE_RE = re.compile(r"^[1-9][0-9]*$")
 MAX_OUTPUT = 128 * 1024
+FAILED_STAGES = frozenset(
+    {
+        "PREPARE_ROOT",
+        "BUNDLE_GENERATION",
+        "DEPLOYMENT_CLI",
+        "TRANSACTION_EVIDENCE",
+        "CLEANUP",
+    }
+)
+STAGE_ERRORS = {
+    "PREPARE_ROOT": "PREPARE_ROOT_FAILED",
+    "BUNDLE_GENERATION": "BUNDLE_GENERATION_FAILED",
+    "DEPLOYMENT_CLI": "DEPLOYMENT_CLI_FAILED",
+    "TRANSACTION_EVIDENCE": "TRANSACTION_EVIDENCE_FAILED",
+    "CLEANUP": "CLEANUP_INCOMPLETE",
+}
 
 
 class RehearsalError(RuntimeError):
@@ -273,7 +290,67 @@ def _shred(path: Path) -> None:
         raise RehearsalError("SECRET_CLEANUP_FAILED")
 
 
-def _cleanup(root: Path, bundle: Path | None, env_file: Path | None, identity: Path | None, image_refs: list[str], names: dict[str, str]) -> dict[str, int]:
+def _validate_ephemeral_root(root: Path, *, run_id: int) -> Path:
+    trusted_root = ROOT.resolve(strict=True)
+    try:
+        candidate = root.absolute()
+        details = candidate.lstat()
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise RehearsalError("PREPARE_ROOT_FAILED") from exc
+    expected_prefix = f"{ROOT_PREFIX}{run_id}-"
+    if (
+        resolved != candidate
+        or resolved.parent != trusted_root
+        or not resolved.name.startswith(expected_prefix)
+        or len(resolved.name) <= len(expected_prefix)
+        or not stat.S_ISDIR(details.st_mode)
+        or stat.S_IMODE(details.st_mode) != 0o700
+        or details.st_uid != os.geteuid()
+        or details.st_gid != os.getegid()
+        or stat.S_IMODE(details.st_mode) & 0o077
+    ):
+        raise RehearsalError("PREPARE_ROOT_FAILED")
+    components: list[Path] = []
+    component = resolved
+    while True:
+        components.append(component)
+        if component.parent == component:
+            break
+        component = component.parent
+    for component in reversed(components):
+        component_details = component.lstat()
+        if (
+            component.is_symlink()
+            or not stat.S_ISDIR(component_details.st_mode)
+            or stat.S_IMODE(component_details.st_mode) & 0o022
+        ):
+            raise RehearsalError("PREPARE_ROOT_FAILED")
+    return resolved
+
+
+def _prepare_root(run_id: int) -> Path:
+    trusted_root = ROOT.resolve(strict=True)
+    created = Path(
+        tempfile.mkdtemp(prefix=f"{ROOT_PREFIX}{run_id}-", dir=trusted_root)
+    )
+    try:
+        created.chmod(0o700)
+        return _validate_ephemeral_root(created, run_id=run_id)
+    except Exception:
+        if created.exists() and not created.is_symlink():
+            shutil.rmtree(created)
+        raise
+
+
+def _remove_ephemeral_root(root: Path, *, run_id: int) -> None:
+    validated = _validate_ephemeral_root(root, run_id=run_id)
+    shutil.rmtree(validated)
+    if validated.exists() or validated.is_symlink():
+        raise RehearsalError("CLEANUP_INCOMPLETE")
+
+
+def _cleanup(root: Path | None, bundle: Path | None, env_file: Path | None, identity: Path | None, image_refs: list[str], names: dict[str, str], *, run_id: int) -> dict[str, int]:
     if bundle is not None and env_file is not None and bundle.is_dir() and env_file.is_file():
         _run((
             "/usr/bin/docker", "compose", "--project-name", PROJECT,
@@ -295,9 +372,11 @@ def _cleanup(root: Path, bundle: Path | None, env_file: Path | None, identity: P
     for image in image_refs:
         if _run(("/usr/bin/docker", "image", "inspect", image), timeout=30).returncode == 0:
             counts["images"] += 1
-    if root.exists():
-        shutil.rmtree(root)
-    if any(counts.values()) or root.exists():
+    if root is not None and (root.exists() or root.is_symlink()):
+        _remove_ephemeral_root(root, run_id=run_id)
+    if any(counts.values()) or (
+        root is not None and (root.exists() or root.is_symlink())
+    ):
         raise RehearsalError("CLEANUP_INCOMPLETE")
     return counts
 
@@ -309,11 +388,7 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
     if any(trust_value.get(key) != value for key, value in bound.items()):
         raise RehearsalError("TRUST_BINDING_INVALID")
     manifest = _release(assets)
-    parent = Path(_required("RUNNER_TEMP")).resolve()
-    if parent.is_symlink() or not parent.is_dir():
-        raise RehearsalError("RUNNER_TEMP_INVALID")
-    root = Path(tempfile.mkdtemp(prefix="s46-engine-", dir=parent))
-    root.chmod(0o700)
+    root: Path | None = None
     bundle: Path | None = None
     env_file: Path | None = None
     identity: Path | None = None
@@ -321,8 +396,11 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
     image_refs = [item["immutableRef"] for item in manifest["components"]] + [POSTGRES_IMAGE]
     receipt: dict[str, Any] | None = None
     error_code: str | None = None
+    failed_stage: str | None = "PREPARE_ROOT"
     cleanup_counts = {"containers": -1, "volumes": -1, "networks": -1, "images": -1}
     try:
+        root = _prepare_root(bound["runId"])
+        failed_stage = "BUNDLE_GENERATION"
         releases = root / "releases"
         releases.mkdir(mode=0o700)
         support = releases / "db"
@@ -339,6 +417,7 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
             compose_path=ROOT / "ops/compose/compose.prod.yml", planned_at=planned_at,
             output_path=bundle,
         )
+        failed_stage = "DEPLOYMENT_CLI"
         cli_env = {
             "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "EMPORIO_DEPLOY_ROOT": os.fspath(root),
@@ -347,6 +426,7 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
         first = _run(command, environment=cli_env)
         if first.returncode != 0:
             raise RehearsalError("DEPLOYMENT_CLI_FAILED")
+        failed_stage = "TRANSACTION_EVIDENCE"
         journal_path = root / "shared/deploy/journals" / f"{OPERATION}.json"
         state_path = root / "shared/deploy/installed-state.json"
         backup = root / "shared/backups" / OPERATION
@@ -390,6 +470,7 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
             "operationId": OPERATION,
             "status": "SUCCESS",
             "errorCode": None,
+            "failedStage": None,
             "journalSha256": digest(journal_raw),
             "installedStateSha256": digest(state_raw),
             "steps": [{"name": item["name"], "status": item["status"]} for item in journal["steps"]],
@@ -400,24 +481,29 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
             "replay": {"journalUnchanged": True, "backupUnchanged": True, "containersUnchanged": True},
             "cleanup": cleanup_counts,
         }
-    except RehearsalError as exc:
-        error_code = str(exc)
-        raise
-    except Exception as exc:
-        error_code = "REHEARSAL_FAILED"
-        raise RehearsalError(error_code) from exc
+        failed_stage = None
+    except Exception:
+        if failed_stage not in FAILED_STAGES:
+            failed_stage = "TRANSACTION_EVIDENCE"
+        error_code = STAGE_ERRORS[failed_stage]
     finally:
         cleanup_failure: RehearsalError | None = None
         try:
-            cleanup_counts = _cleanup(root, bundle, env_file, identity, image_refs, names)
+            cleanup_counts = _cleanup(
+                root, bundle, env_file, identity, image_refs, names,
+                run_id=bound["runId"],
+            )
         except RehearsalError as exc:
             cleanup_failure = exc
-            error_code = str(exc)
+            failed_stage = "CLEANUP"
+            error_code = STAGE_ERRORS[failed_stage]
         if receipt is None:
             receipt = {
                 "schemaVersion": 1, "kind": "deployment-engine-rehearsal", **bound,
                 "release": RELEASE, "releaseId": RELEASE_ID, "previousRelease": PREVIOUS_RELEASE,
-                "operationId": OPERATION, "status": "FAILED", "errorCode": error_code or "REHEARSAL_FAILED",
+                "operationId": OPERATION, "status": "FAILED",
+                "errorCode": error_code or STAGE_ERRORS["TRANSACTION_EVIDENCE"],
+                "failedStage": failed_stage or "TRANSACTION_EVIDENCE",
                 "journalSha256": None, "installedStateSha256": None, "steps": [], "backup": [],
                 "services": [], "current": None, "previous": None,
                 "replay": {"journalUnchanged": False, "backupUnchanged": False, "containersUnchanged": False},
@@ -428,9 +514,10 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
             if cleanup_failure is not None:
                 receipt["status"] = "FAILED"
                 receipt["errorCode"] = error_code
+                receipt["failedStage"] = failed_stage
         _write_bundle(output, REHEARSAL_FILE, receipt)
-        if cleanup_failure is not None:
-            raise cleanup_failure
+    if receipt.get("status") != "SUCCESS":
+        raise RehearsalError(str(receipt["errorCode"]))
 
 
 def _validate_rehearsal(value: dict[str, Any], *, success: bool) -> None:
@@ -444,6 +531,8 @@ def _validate_rehearsal(value: dict[str, Any], *, success: bool) -> None:
         or value.get("previousRelease") != PREVIOUS_RELEASE
         or value.get("operationId") != OPERATION
         or value.get("status") != ("SUCCESS" if success else "FAILED")
+        or value.get("failedStage")
+        not in ({None} if success else FAILED_STAGES)
     ):
         raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
     if success and (
@@ -455,6 +544,8 @@ def _validate_rehearsal(value: dict[str, Any], *, success: bool) -> None:
         or any(value.get("cleanup", {}).values())
         or value.get("replay") != {"journalUnchanged": True, "backupUnchanged": True, "containersUnchanged": True}
     ):
+        raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
+    if not success and value.get("errorCode") != STAGE_ERRORS[value["failedStage"]]:
         raise RehearsalError("REHEARSAL_ARTIFACT_INVALID")
 
 
@@ -469,6 +560,7 @@ def outcome(trust_directory: Path, rehearsal_directory: Path, output: Path) -> N
         "release": RELEASE, "operationId": OPERATION,
         "status": "SUCCESS" if success else "FAILED",
         "errorCode": rehearsal_value.get("errorCode"),
+        "failedStage": rehearsal_value.get("failedStage"),
         "trustResult": _required("TRUST_RESULT"), "rehearsalResult": _required("REHEARSAL_RESULT"),
         "rehearsalSha256": digest(canonical(rehearsal_value)),
         "cleanup": rehearsal_value.get("cleanup"),
@@ -483,6 +575,7 @@ def validate(rehearsal_directory: Path, outcome_directory: Path) -> None:
         outcome_value.get("kind") != "deployment-engine-rehearsal-outcome"
         or outcome_value.get("status") != "SUCCESS"
         or outcome_value.get("errorCode") is not None
+        or outcome_value.get("failedStage") is not None
         or outcome_value.get("trustResult") != "success"
         or outcome_value.get("rehearsalResult") != "success"
         or outcome_value.get("rehearsalSha256") != digest(canonical(rehearsal_value))

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 from typing import Any, Callable
@@ -289,6 +290,64 @@ class ProductionAdapterTest(unittest.TestCase):
         runner = FakeRunner(lambda *_: process(2))
         with self.assertRaisesRegex(adapter.ProductionAdapterError, "PULL_COMMAND_FAILED"):
             self.make_adapter(runner).execute(self.context("PULL"))
+
+    def _docker_home(self, name: str = "effective-home") -> Path:
+        home = self.root / name
+        home.mkdir(mode=0o700)
+        docker_config = home / ".docker"
+        docker_config.mkdir(mode=0o700)
+        config = docker_config / "config.json"
+        config.write_bytes(b'{"auths":{"registry.invalid":{}}}\n')
+        config.chmod(0o600)
+        return home
+
+    def test_03a_docker_config_uses_effective_os_identity_only_for_docker(self) -> None:
+        home = self._docker_home()
+        identity = types.SimpleNamespace(pw_dir=os.fspath(home))
+        with (
+            patch.object(adapter.pwd, "getpwuid", return_value=identity),
+            patch.object(Path, "read_bytes", side_effect=AssertionError("must not read config")),
+        ):
+            docker_env = adapter._command_environment((os.fspath(DOCKER), "version"))
+            curl_env = adapter._command_environment((os.fspath(CURL), "--version"))
+        self.assertEqual(docker_env["DOCKER_CONFIG"], os.fspath(home / ".docker"))
+        self.assertNotIn("DOCKER_CONFIG", curl_env)
+        self.assertNotIn("HOME", docker_env)
+        self.assertNotIn("HOME", curl_env)
+        self.assertEqual(
+            {key: curl_env[key] for key in adapter.MINIMUM_ENV},
+            adapter.MINIMUM_ENV,
+        )
+
+    def test_03b_docker_config_missing_or_insecure_fails_closed(self) -> None:
+        home = self._docker_home("missing-home")
+        identity = types.SimpleNamespace(pw_dir=os.fspath(home))
+        (home / ".docker/config.json").unlink()
+        with patch.object(adapter.pwd, "getpwuid", return_value=identity):
+            with self.assertRaisesRegex(adapter.ProductionAdapterError, "DOCKER_CONFIG_INVALID"):
+                adapter._command_environment((os.fspath(DOCKER), "version"))
+        home = self._docker_home("mode-home")
+        identity = types.SimpleNamespace(pw_dir=os.fspath(home))
+        (home / ".docker/config.json").chmod(0o640)
+        with patch.object(adapter.pwd, "getpwuid", return_value=identity):
+            with self.assertRaisesRegex(adapter.ProductionAdapterError, "DOCKER_CONFIG_INVALID"):
+                adapter._command_environment((os.fspath(DOCKER), "version"))
+        home = self._docker_home("symlink-home")
+        real = home / "real-docker"
+        (home / ".docker").rename(real)
+        (home / ".docker").symlink_to(real, target_is_directory=True)
+        identity = types.SimpleNamespace(pw_dir=os.fspath(home))
+        with patch.object(adapter.pwd, "getpwuid", return_value=identity):
+            with self.assertRaisesRegex(adapter.ProductionAdapterError, "DOCKER_CONFIG_INVALID"):
+                adapter._command_environment((os.fspath(DOCKER), "version"))
+        home = self._docker_home("owner-home")
+        identity = types.SimpleNamespace(pw_dir=os.fspath(home))
+        with (
+            patch.object(adapter.pwd, "getpwuid", return_value=identity),
+            patch.object(adapter.os, "geteuid", return_value=os.geteuid() + 1),
+        ):
+            with self.assertRaisesRegex(adapter.ProductionAdapterError, "DOCKER_CONFIG_INVALID"):
+                adapter._command_environment((os.fspath(DOCKER), "version"))
 
     def test_04_secret_never_enters_argv_error_or_evidence(self) -> None:
         secret = "FICTITIOUS_SUPER_SECRET"

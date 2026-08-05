@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import pwd
 import re
 import select
 import shutil
@@ -152,6 +153,57 @@ def resolve_binary(name: str) -> Path:
     return _validate_binary_path(Path(located))
 
 
+def _effective_docker_config() -> Path:
+    """Resolve Docker credentials from the effective OS identity, never env."""
+    uid = os.geteuid()
+    try:
+        identity = pwd.getpwuid(uid)
+        home = Path(identity.pw_dir)
+    except (KeyError, OSError, TypeError) as exc:
+        raise ProductionAdapterError("DOCKER_CONFIG_INVALID") from exc
+    if not home.is_absolute() or not _is_safe_text(os.fspath(home)):
+        raise ProductionAdapterError("DOCKER_CONFIG_INVALID")
+    docker_config = home / ".docker"
+    config_file = docker_config / "config.json"
+    try:
+        home_details = home.lstat()
+        docker_details = docker_config.lstat()
+        config_details = config_file.lstat()
+        home_resolved = home.resolve(strict=True)
+        docker_resolved = docker_config.resolve(strict=True)
+        config_resolved = config_file.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ProductionAdapterError("DOCKER_CONFIG_INVALID") from exc
+    if (
+        home_resolved != home
+        or docker_resolved != docker_config
+        or config_resolved != config_file
+        or docker_resolved.parent != home_resolved
+        or config_resolved.parent != docker_resolved
+        or home.is_symlink()
+        or docker_config.is_symlink()
+        or config_file.is_symlink()
+        or not stat.S_ISDIR(home_details.st_mode)
+        or not stat.S_ISDIR(docker_details.st_mode)
+        or not stat.S_ISREG(config_details.st_mode)
+        or home_details.st_uid != uid
+        or docker_details.st_uid != uid
+        or config_details.st_uid != uid
+        or stat.S_IMODE(home_details.st_mode) & 0o022
+        or stat.S_IMODE(docker_details.st_mode) != 0o700
+        or stat.S_IMODE(config_details.st_mode) != 0o600
+    ):
+        raise ProductionAdapterError("DOCKER_CONFIG_INVALID")
+    return docker_resolved
+
+
+def _command_environment(argv: tuple[str, ...]) -> dict[str, str]:
+    environment = dict(MINIMUM_ENV)
+    if Path(argv[0]).name == "docker":
+        environment["DOCKER_CONFIG"] = os.fspath(_effective_docker_config())
+    return environment
+
+
 class SubprocessRunner:
     """Real runner with bounded capture, fixed environment and no shell."""
 
@@ -198,7 +250,7 @@ class SubprocessRunner:
                 stderr=subprocess.DEVNULL,
                 close_fds=True,
                 timeout=timeout_seconds,
-                env=dict(MINIMUM_ENV),
+                env=_command_environment(argv),
                 check=False,
             )
             output_stream.flush()
@@ -222,7 +274,7 @@ class SubprocessRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 close_fds=True,
-                env=dict(MINIMUM_ENV),
+                env=_command_environment(argv),
             )
         except OSError as exc:
             raise ProductionAdapterError("COMMAND_FAILED") from exc
