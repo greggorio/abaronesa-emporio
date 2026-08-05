@@ -217,6 +217,17 @@
 > única janela de CI e rehearsal; somente com esse run verde seguem rotação do
 > control root, SSH, dois probes e uma operação comercial de `v0.1.1`. S46 não
 > está aceita.
+
+> **Atualização S46 correction-10 — 05/08/2026:** o rehearsal único da
+> correction-09 fechou em `BACKUP_FAILED`, com `PULL=SUCCEEDED`, limpeza verde
+> e evidência estruturada preservada. A inspeção somente leitura da VPS
+> encontrou `<deploy_root>/releases/db/init-databases.sh` ausente e selecionou
+> objetivamente o ramo B. A correction-10 corrige o modo do script no
+> rehearsal, força o healthcheck PostgreSQL por TCP e incorpora ao control root
+> a materialização idempotente do script comercial em modo `0755`. Permanecem
+> uma única janela de CI e rehearsal; rotação do control root, SSH, dois probes
+> e uma operação comercial de `v0.1.1` somente seguem se esse run for verde.
+> S46 não está aceita.
 >
 > **Pré-revisão S47 — 05/08/2026:** `v0.1.1 -> v0.1.0` troca os seis digests,
 > mas os inventários de migrations ERP/website são idênticos e não requerem
