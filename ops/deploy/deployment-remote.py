@@ -60,7 +60,13 @@ TIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 ARCHIVE_LIMIT = 16 * 1024 * 1024
 STDOUT_LIMIT = 65_536
-EXECUTE_TIMEOUT = 2_700
+# Must stay strictly below the transport's client-side execute timeout, which in
+# turn must stay well below the deploy job ceiling. When the remote budget is the
+# first to expire the helper still returns a sanitized code over a live channel,
+# so the transport can persist evidence. If the job ceiling expired first the run
+# would be cancelled, no artifact would be uploaded, and the only possible verdict
+# would be an evidence-free INDETERMINATE.
+EXECUTE_TIMEOUT = 3_600
 BUNDLE_FILES = frozenset(
     {
         "manifest.json",

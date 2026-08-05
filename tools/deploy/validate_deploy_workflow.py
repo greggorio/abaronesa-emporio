@@ -211,7 +211,7 @@ def validate_workflow(workflow: dict[str, Any], source: str) -> None:
         "deploy": ["prepare"],
         "outcome": ["trust", "prepare", "deploy"],
     }
-    expected_timeouts = {"trust": 10, "prepare": 15, "deploy": 45, "outcome": 10}
+    expected_timeouts = {"trust": 10, "prepare": 15, "deploy": 120, "outcome": 10}
     for name in JOBS:
         job = jobs[name]
         require(_needs(job) == expected_needs[name], f"workflow-needs:{name}")

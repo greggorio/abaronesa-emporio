@@ -44,6 +44,13 @@ DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 ERROR_CODE_RE = re.compile(r"[A-Z][A-Z0-9_]{2,63}")
 TIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 MAX_STDOUT = 65536
+# Client-side budget for the remote transaction. Strictly greater than the
+# helper's own EXECUTE_TIMEOUT so the helper always loses the race and answers
+# with a sanitized code, and strictly smaller than the deploy job ceiling so the
+# transport always reaches its artifact write. Breaking either inequality turns
+# any slow first installation into an evidence-free INDETERMINATE.
+EXECUTE_TIMEOUT = 3_900
+DEPLOY_JOB_TIMEOUT_MINUTES = 120
 MAX_ARCHIVE = 16 * 1024 * 1024
 BUNDLE_FILES = (
     "manifest.json",
@@ -852,7 +859,7 @@ class OpenSshTransport:
             raise DeploymentTransportError("BUNDLE_CONFLICT")
 
     def execute(self, operation: str, release: str) -> dict[str, Any]:
-        result = self._remote(("execute", "--operation-id", operation, "--release", release), 2700)
+        result = self._remote(("execute", "--operation-id", operation, "--release", release), EXECUTE_TIMEOUT)
         value = _parse_single_json(result, "REMOTE_RESULT_INVALID", allowed=(0, 20, 21))
         expected_state = {0: "SUCCEEDED", 20: "ROLLED_BACK", 21: "FAILED"}[result.return_code]
         if (

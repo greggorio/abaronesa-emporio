@@ -308,6 +308,49 @@ class DeployWorkflowContractTest(unittest.TestCase):
                     self.workflow_source + "\n# " + mutant + "\n",
                 )
 
+    def test_execute_budgets_are_strictly_nested_inside_the_job_ceiling(self) -> None:
+        """The remote helper must exhaust its budget before the transport, and the
+        transport before the job. When the job ceiling expires first the run is
+        cancelled, the result artifact is never uploaded, and the only reachable
+        verdict is an evidence-free INDETERMINATE."""
+        remote_source = (ROOT / "ops/deploy/deployment-remote.py").read_text(
+            encoding="utf-8"
+        )
+        transport_source = (ROOT / "tools/deploy/deployment_transport.py").read_text(
+            encoding="utf-8"
+        )
+        remote = _int_assignment(remote_source, "EXECUTE_TIMEOUT")
+        client = _int_assignment(transport_source, "EXECUTE_TIMEOUT")
+        declared = _int_assignment(transport_source, "DEPLOY_JOB_TIMEOUT_MINUTES")
+        job = self.workflow["jobs"]["deploy"]["timeout-minutes"]
+
+        self.assertEqual(declared, job)
+        self.assertLess(remote, client, "helper must lose the race to the transport")
+        self.assertLess(
+            client + 900,
+            job * 60,
+            "transport must finish with margin for snapshot, upload and install",
+        )
+        self.assertIn(
+            "EXECUTE_TIMEOUT",
+            transport_source.split("def execute(")[1].split("def ")[0],
+            "execute must consume the shared constant, never a literal",
+        )
+
+
+def _int_assignment(source: str, name: str) -> int:
+    import ast
+
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in node.targets
+        ):
+            value = ast.literal_eval(node.value)
+            assert isinstance(value, int)
+            return value
+    raise AssertionError(f"{name} not found")
+
 
 if __name__ == "__main__":
     unittest.main()
