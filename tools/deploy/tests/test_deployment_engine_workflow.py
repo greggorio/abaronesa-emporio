@@ -58,6 +58,12 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
             ("runtime", '"down", "-v", "--remove-orphans"', '"down"'),
             ("runtime", '"image", "rm"', '"system", "prune"'),
             ("runtime", "deployment_plan.generate_bundle(", "fake_bundle("),
+            ("runtime", "current_path=None", 'current_path=root / "current"'),
+            (
+                "runtime",
+                "current_manifest_path=None",
+                'current_manifest_path=root / "releases/v0.1.0/manifest.json"',
+            ),
             ("runtime", "deployment_cli.py", "fake_cli.py"),
             ("runtime", "shutil.rmtree(root)", "pass # leaked root"),
         )

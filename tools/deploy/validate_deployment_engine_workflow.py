@@ -97,6 +97,7 @@ def validate(root: Path = ROOT) -> list[str]:
         if _assignment(runtime, name) != value: errors.append(f"runtime:{name}")
     for marker in (
         "deployment_plan.generate_bundle(", "deployment_cli.py", "EMPORIO_DEPLOY_ROOT",
+        "current_path=None", "current_manifest_path=None",
         '"BACKUP"', '"MIGRATE"', '"UPDATE"', '"VERIFY"', '"COMMIT_STATE"',
         "backup-manifest.json", "journalUnchanged", "containersUnchanged",
         '"down", "-v", "--remove-orphans"', '"image", "rm"', "shutil.rmtree(root)",

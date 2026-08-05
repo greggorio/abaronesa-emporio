@@ -214,16 +214,31 @@ class DeploymentPlanTest(unittest.TestCase):
                     self.current,
                 )
 
-    def test_first_installation_and_update_previous_release_rules(self) -> None:
+    def test_first_installation_accepts_historical_predecessor_without_installing_it(
+        self,
+    ) -> None:
         first = copy.deepcopy(self.target)
         first["previousRelease"] = "v0.0.0"
-        self.assert_code(
-            "RELEASE_CHAIN_MISMATCH",
-            planner.build_plan,
-            first,
-            None,
-            "2026-07-29T16:00:00Z",
+        plan = planner.build_plan(first, None, "2026-07-29T16:00:00Z")
+        self.assertTrue(plan["firstInstallation"])
+        self.assertIsNone(plan["sourceRelease"])
+        self.assertEqual(
+            ["UPDATE"] * 6, [item["action"] for item in plan["components"]]
         )
+        self.assertEqual(
+            [None] * 6, [item["currentDigest"] for item in plan["components"]]
+        )
+        self.assertEqual(
+            [database["migrations"] for database in first["databases"]],
+            [database["pendingMigrations"] for database in plan["databases"]],
+        )
+        self.assertEqual(
+            [True, True], [item["changed"] for item in plan["databases"]]
+        )
+        self.assertTrue(plan["migrationRequired"])
+        self.assertTrue(plan["backupRequired"])
+
+    def test_update_still_requires_the_installed_release_as_predecessor(self) -> None:
         update = self.update_target()
         update["previousRelease"] = "v0.0.0"
         self.assert_code(
@@ -233,6 +248,34 @@ class DeploymentPlanTest(unittest.TestCase):
             self.current,
             PLANNED_AT,
         )
+
+    def test_first_installation_bundle_preserves_null_operational_source(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="s46-first-lineage-", dir="/tmp") as raw:
+            parent = Path(raw)
+            target = copy.deepcopy(self.target)
+            target["previousRelease"] = "v0.0.0"
+            target_path = self.write_json(parent, "target.json", target)
+            bundle = parent / "bundle"
+            plan = planner.generate_bundle(
+                target_path=target_path,
+                current_path=None,
+                current_manifest_path=None,
+                compose_path=COMPOSE_PATH,
+                planned_at="2026-07-29T16:00:00Z",
+                output_path=bundle,
+            )
+            self.assertTrue(plan["firstInstallation"])
+            self.assertIsNone(plan["sourceRelease"])
+            validated = planner.validate_bundle(bundle)
+            self.assertTrue(validated["firstInstallation"])
+            self.assertIsNone(validated["sourceRelease"])
+
+            plan_path = bundle / "deployment-plan.json"
+            invented = json.loads(plan_path.read_text(encoding="utf-8"))
+            invented["sourceRelease"] = target["previousRelease"]
+            plan_path.write_bytes(planner._json_file_bytes(invented))
+            self.rewrite_checksums(bundle)
+            self.assert_code("INVALID_CONTRACT", planner.validate_bundle, bundle)
 
     def test_current_and_historical_manifest_must_be_paired(self) -> None:
         with tempfile.TemporaryDirectory(prefix="s18-pair-", dir="/tmp") as raw:

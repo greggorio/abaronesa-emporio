@@ -334,8 +334,10 @@ def _validate_chain(target: dict[str, Any], current: dict[str, Any] | None) -> N
     except Exception as exc:
         raise DeploymentPlanError("INVALID_CONTRACT") from exc
     if current is None:
-        if target.get("previousRelease") is not None:
-            raise DeploymentPlanError("RELEASE_CHAIN_MISMATCH")
+        # `previousRelease` describes the immutable publication lineage.  It is
+        # not evidence that this environment already has that release
+        # installed.  A greenfield host may therefore install the latest valid
+        # global release directly while its operational source remains null.
         return
     try:
         current_version = global_release.parse_semver(current["release"])
@@ -718,19 +720,21 @@ def _validate_plan_bundle_coherence(
     next_state: dict[str, Any],
     release_env: bytes,
 ) -> None:
+    first = plan.get("firstInstallation")
+    source_release = plan.get("sourceRelease")
     if (
         plan.get("targetRelease") != target["release"]
         or plan.get("targetSourceCommit") != target["sourceCommit"]
         or plan.get("targetManifestSha256") != manifest_digest(target)
-        or plan.get("sourceRelease") != target.get("previousRelease")
         or next_state != build_next_state(target, plan.get("plannedAt"))
         or release_env != build_release_env(target)
         or plan.get("servicesToPull") != plan.get("servicesToUpdate")
         or plan.get("executionOrder") != list(EXECUTION_ORDER)
     ):
         raise DeploymentPlanError("INVALID_CONTRACT")
-    first = plan.get("firstInstallation")
-    if first is not (plan.get("sourceRelease") is None):
+    if first is not (source_release is None):
+        raise DeploymentPlanError("INVALID_CONTRACT")
+    if not first and source_release != target.get("previousRelease"):
         raise DeploymentPlanError("INVALID_CONTRACT")
     _ids_in_order(
         [
