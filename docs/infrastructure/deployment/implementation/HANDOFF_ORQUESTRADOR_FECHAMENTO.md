@@ -155,6 +155,18 @@
 > permite um único ciclo adicional apenas diante de falha confirmada anterior a
 > upload/install/execute e com zero efeito/resíduo comercial. S46 ainda não foi
 > aceita; rollback/restore permanecem em zero.
+>
+> **Atualização S46 correction-04 — 05/08/2026:** a correction-03 corrigiu o
+> helper, publicou `69621c2…`, rotacionou o control root e provou capabilities
+> direto como `deploy-emporio`. O run `30993832964` passou trust/prepare, mas o
+> runner não autenticou com o secret SSH; outcome `CONFIRMED/FAILED`, restore
+> false e zero snapshot/upload/install/recurso comercial foram comprovados. Uma
+> observação transitória anterior também deixou o `current` vazio marcado como
+> incerto após o outcome terminal, mantendo readiness 503. A correction-04
+> corrige essa recuperação sem SQL, rotaciona a chave e a prova por workflow
+> dedicado sem inputs antes de qualquer novo POST; só então autoriza a conclusão
+> de `v0.1.1`. Os três runs falhos permanecem históricos, rollback/restore em
+> zero e S46 ainda não está aceita.
 
 ## 1. Mandato e modo de condução
 
