@@ -437,6 +437,7 @@ class ReleasePublicationTests(unittest.TestCase):
             "deploy-production.yml",
             "rollback-production.yml",
             "verify-production-transport.yml",
+            "verify-deployment-engine.yml",
             # Operational-only workflow for the release-control image; it never
             # participates in the candidate or the global release BOM.
             "publish-release-control.yml",

@@ -14,6 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = Path(".github/workflows/verify-production-transport.yml")
 RUNTIME = Path("tools/deploy/production_transport_probe.py")
+SSH_MATERIAL = Path("tools/deploy/ssh_material.py")
 CHECKOUT = "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
 UPLOAD = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
 DOWNLOAD = "actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0"
@@ -60,6 +61,7 @@ def validate(root: Path = ROOT) -> list[str]:
     try:
         source = workflow_path.read_text(encoding="utf-8")
         runtime = runtime_path.read_text(encoding="utf-8")
+        ssh_material = (root / SSH_MATERIAL).read_text(encoding="utf-8")
         workflow = yaml.load(source, Loader=yaml.BaseLoader)
     except (OSError, UnicodeError, yaml.YAMLError):
         return ["source"]
@@ -136,8 +138,15 @@ def validate(root: Path = ROOT) -> list[str]:
     if probe_runs != [
         "python3 tools/deploy/production_transport_probe.py probe --trust trust --output probe",
         "python3 tools/deploy/production_transport_probe.py cleanup",
+        "exit 1",
     ]:
         errors.append("probe-commands")
+    transport_steps = [
+        step for step in probe_job.get("steps", [])
+        if isinstance(step, dict) and step.get("id") == "transport"
+    ]
+    if len(transport_steps) != 1 or transport_steps[0].get("continue-on-error") != "true":
+        errors.append("probe-diagnostic-preservation")
     cleanup_steps = [
         step
         for step in probe_job.get("steps", [])
@@ -165,6 +174,8 @@ def validate(root: Path = ROOT) -> list[str]:
         errors.append("private-key-secret")
     if source.count("${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}") != 1:
         errors.append("known-hosts-secret")
+    if source.count("${{ vars.PRODUCTION_SSH_PUBLIC_KEY_SHA256 }}") != 1:
+        errors.append("fingerprint-variable")
     for marker in (
         "TRUSTED_TRIGGERING_ACTOR: ${{ github.triggering_actor }}",
         "TRUSTED_SENDER_ID: ${{ github.event.sender.id }}",
@@ -217,16 +228,21 @@ def validate(root: Path = ROOT) -> list[str]:
         "PasswordAuthentication no",
         "KbdInteractiveAuthentication no",
         "stderr=subprocess.DEVNULL",
-        "shred",
+        'shutil.which("shred", path="/usr/bin:/bin")',
     )
+    shared_runtime = runtime + "\n" + ssh_material
     for marker in runtime_markers:
-        if marker not in runtime:
+        if marker not in shared_runtime:
             errors.append(f"runtime-marker:{marker}")
     if "REMOTE_COMMAND = (REMOTE_HELPER, \"capabilities\")" not in runtime:
         errors.append("runtime-constant:REMOTE_COMMAND")
     if runtime.count("*REMOTE_COMMAND") != 1:
         errors.append("runtime-command-use")
-    if "PRODUCTION_SSH_PRIVATE_KEY" not in runtime or "SSH_AUTH_SOCK" in runtime:
+    if (
+        "PRODUCTION_SSH_PRIVATE_KEY" not in runtime
+        or "PRODUCTION_SSH_PUBLIC_KEY_SHA256" not in runtime
+        or "SSH_AUTH_SOCK" in shared_runtime
+    ):
         errors.append("runtime-credential-policy")
     for forbidden in (
         '"snapshot"',

@@ -1,8 +1,9 @@
 # Workflows GitHub Actions
 
-Existem exatamente sete workflows ativos: `ci.yml`, `publish-candidate.yml`,
+Existem exatamente oito workflows ativos: `ci.yml`, `publish-candidate.yml`,
 `publish-release.yml`, `deploy-production.yml`, `rollback-production.yml` e
-`publish-release-control.yml`, além de `verify-production-transport.yml`. Os cinco
+`publish-release-control.yml`, além de `verify-production-transport.yml` e
+`verify-deployment-engine.yml`. Os cinco
 primeiros formam o caminho comercial; o
 `publish-release-control.yml` é exclusivamente manual e publica somente a imagem
 operacional do `release_control`, que nunca entra no candidato nem no BOM da
@@ -66,3 +67,9 @@ Ele usa o environment `production`, a mesma concorrência fail-closed do deploy 
 executa exclusivamente `capabilities` pelo helper fixo do control root. Seus
 artifacts vinculam repositório, run, attempt, SHA, ator e `controlSha`; a chave
 materializada é destruída em cleanup `always()`. O probe não realiza deploy, rollback ou mutação comercial.
+
+`verify-deployment-engine.yml` também é exclusivamente manual e sem inputs. Ele
+executa em Docker isolado o caminho transacional real da `v0.1.1`, cobrindo
+bundle, backup, migrations, journal, sete serviços, estado instalado, replay e
+limpeza dirigida. Não usa o environment `production`, SSH, App PEM, VPS ou
+qualquer workflow de deploy/rollback.

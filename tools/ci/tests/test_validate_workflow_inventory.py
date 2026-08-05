@@ -69,12 +69,12 @@ class WorkflowInventoryContractTest(unittest.TestCase):
         )
 
     def test_mutant_05_stale_workflow_count_readme_is_rejected(self) -> None:
-        for stale in ("quatro", "cinco", "seis"):
+        for stale in ("quatro", "cinco", "seis", "sete"):
             with self.subTest(stale=stale):
                 self.assert_mutant_rejected(
                     ".github/workflows/README.md",
                     lambda text, stale=stale: text.replace(
-                        "Existem exatamente sete workflows",
+                        "Existem exatamente oito workflows",
                         f"Existem exatamente {stale} workflows",
                         1,
                     ),
@@ -91,6 +91,14 @@ class WorkflowInventoryContractTest(unittest.TestCase):
             ".github/workflows/README.md",
             lambda text: text.replace(
                 "`verify-production-transport.yml`", "`other-transport.yml`"
+            ),
+        )
+
+    def test_mutant_05d_readme_missing_engine_rehearsal_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            ".github/workflows/README.md",
+            lambda text: text.replace(
+                "`verify-deployment-engine.yml`", "`other-engine.yml`"
             ),
         )
 

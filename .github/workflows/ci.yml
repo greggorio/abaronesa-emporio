@@ -60,6 +60,7 @@ jobs:
           python3 tools/ci/invocability.py
           python3 tools/ci/migrations_contract.py
           python3 tools/deploy/validate_production_transport_workflow.py
+          python3 tools/deploy/validate_deployment_engine_workflow.py
           python3 tools/releases/candidate_manifest.py validate --manifest ops/releases/examples/candidate-manifest.example.json
       - name: Validate accepted infrastructure contracts
         run: |

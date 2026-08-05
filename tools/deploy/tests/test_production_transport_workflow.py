@@ -17,6 +17,7 @@ class ProductionTransportWorkflowTest(unittest.TestCase):
         for relative in (
             ".github/workflows/verify-production-transport.yml",
             "tools/deploy/production_transport_probe.py",
+            "tools/deploy/ssh_material.py",
         ):
             destination = root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -32,7 +33,7 @@ class ProductionTransportWorkflowTest(unittest.TestCase):
             ("workflow", "contents: read", "packages: write"),
             ("workflow", "environment: production", "environment: staging"),
             ("workflow", "group: emporio-production", "group: other"),
-            ("runtime", "StrictHostKeyChecking", "WeakHostKeyChecking"),
+            ("shared", "StrictHostKeyChecking", "WeakHostKeyChecking"),
             ("workflow", "if: always()", "if: success()"),
             ("workflow", "name: production-transport-probe", "name: other-probe"),
             (
@@ -40,19 +41,23 @@ class ProductionTransportWorkflowTest(unittest.TestCase):
                 'REMOTE_COMMAND = (REMOTE_HELPER, "capabilities")',
                 'REMOTE_COMMAND = (REMOTE_HELPER, "snapshot")',
             ),
-            ("runtime", "IdentitiesOnly yes", "IdentitiesOnly no"),
-            ("runtime", "IdentityAgent none", "IdentityAgent SSH_AUTH_SOCK"),
-            ("runtime", "shred", "unlink-only"),
+            ("shared", "IdentitiesOnly yes", "IdentitiesOnly no"),
+            ("shared", "IdentityAgent none", "IdentityAgent SSH_AUTH_SOCK"),
+            (
+                "shared",
+                'shutil.which("shred", path="/usr/bin:/bin")',
+                'shutil.which("unlink-only", path="/usr/bin:/bin")',
+            ),
         )
         for target, old, new in mutants:
             with self.subTest(old=old):
                 temporary, root = self.package_copy()
                 self.addCleanup(temporary.cleanup)
-                relative = (
-                    ".github/workflows/verify-production-transport.yml"
-                    if target == "workflow"
-                    else "tools/deploy/production_transport_probe.py"
-                )
+                relative = {
+                    "workflow": ".github/workflows/verify-production-transport.yml",
+                    "runtime": "tools/deploy/production_transport_probe.py",
+                    "shared": "tools/deploy/ssh_material.py",
+                }[target]
                 path = root / relative
                 source = path.read_text(encoding="utf-8")
                 self.assertIn(old, source)

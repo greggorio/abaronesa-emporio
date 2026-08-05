@@ -64,6 +64,7 @@ SOURCE_FILES: tuple[str, ...] = (
     "tools/deploy/deployment_executor.py",
     "tools/deploy/deployment_plan.py",
     "tools/deploy/production_adapter.py",
+    "tools/deploy/ssh_material.py",
     "tools/candidates/artifact_io.py",
     "tools/candidates/lineage.py",
     "tools/releases/candidate_manifest.py",

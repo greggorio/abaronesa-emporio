@@ -97,6 +97,7 @@ jobs:
           PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT }}
           PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
           PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+          PRODUCTION_SSH_PUBLIC_KEY_SHA256: ${{ vars.PRODUCTION_SSH_PUBLIC_KEY_SHA256 }}
         run: python3 tools/deploy/deployment_transport.py deploy --handoff handoff --output result
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

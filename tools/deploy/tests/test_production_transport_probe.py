@@ -11,9 +11,25 @@ from unittest import mock
 from tools.deploy import production_transport_probe as probe
 
 SHA = "a" * 40
+REAL_RUN = subprocess.run
 
 
 def environment(temporary: Path) -> dict[str, str]:
+    identity = temporary / "fixture_identity"
+    generated = REAL_RUN(
+        ("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", os.fspath(identity)),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if generated.returncode != 0:
+        raise RuntimeError("fixture key generation failed")
+    public = (temporary / "fixture_identity.pub").read_text(encoding="ascii").split()
+    fingerprint = REAL_RUN(
+        ("/usr/bin/ssh-keygen", "-lf", os.fspath(identity), "-E", "sha256"),
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout.decode("ascii").split()[1]
     return {
         "TRUSTED_REPOSITORY": probe.REPOSITORY,
         "TRUSTED_WORKFLOW_REF": f"{probe.REPOSITORY}/{probe.WORKFLOW}@{probe.REF}",
@@ -30,11 +46,9 @@ def environment(temporary: Path) -> dict[str, str]:
         "RUNNER_TEMP": os.fspath(temporary),
         "PRODUCTION_SSH_HOST": "192.0.2.10",
         "PRODUCTION_SSH_PORT": "22",
-        "PRODUCTION_SSH_PRIVATE_KEY": (
-            "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nprivate\n"
-            "-----END " + "OPENSSH PRIVATE KEY-----\n"
-        ),
-        "PRODUCTION_SSH_KNOWN_HOSTS": "192.0.2.10 ssh-ed25519 public\n",
+        "PRODUCTION_SSH_PRIVATE_KEY": identity.read_text(encoding="ascii"),
+        "PRODUCTION_SSH_KNOWN_HOSTS": f"192.0.2.10 {public[0]} {public[1]}\n",
+        "PRODUCTION_SSH_PUBLIC_KEY_SHA256": fingerprint,
         "TRUST_RESULT": "success",
         "PROBE_RESULT": "success",
     }
@@ -67,6 +81,8 @@ def successful_runner(
             "user": probe.REMOTE_USER,
         }
         return subprocess.CompletedProcess(argv, 0, probe.canonical(value), b"")
+    if Path(argv[0]).name == "ssh-keygen":
+        return REAL_RUN(argv, **kwargs)
     if Path(argv[0]).name == "shred":
         Path(argv[-1]).unlink()
         return subprocess.CompletedProcess(argv, 0, b"", b"")
@@ -86,9 +102,7 @@ class ProductionTransportProbeTest(unittest.TestCase):
         trust = self.root / "trust"
         result = self.root / "probe"
         outcome = self.root / "outcome"
-        with mock.patch.object(probe.subprocess, "run", side_effect=successful_runner), mock.patch.object(
-            probe.shutil, "which", side_effect=lambda name: f"/usr/bin/{name}"
-        ):
+        with mock.patch.object(probe.subprocess, "run", side_effect=successful_runner):
             probe.trust(trust)
             probe.probe(trust, result)
             probe.outcome(trust, result, outcome)
@@ -118,13 +132,11 @@ class ProductionTransportProbeTest(unittest.TestCase):
 
         def failing_runner(argv: tuple[str, ...], **kwargs: Any):
             if argv[0] == "/usr/bin/ssh":
-                return subprocess.CompletedProcess(argv, 255, b"", b"denied")
+                return subprocess.CompletedProcess(argv, 255, b"", b"Permission denied")
             return successful_runner(argv, **kwargs)
 
-        with mock.patch.object(probe.subprocess, "run", side_effect=failing_runner), mock.patch.object(
-            probe.shutil, "which", side_effect=lambda name: f"/usr/bin/{name}"
-        ):
-            with self.assertRaisesRegex(probe.ProbeError, "SSH_PROBE_FAILED"):
+        with mock.patch.object(probe.subprocess, "run", side_effect=failing_runner):
+            with self.assertRaisesRegex(probe.ProbeError, "SSH_AUTHENTICATION_FAILED"):
                 probe.probe(trust, self.root / "probe")
         self.assertFalse(any(self.root.glob("emporio-production-transport-*")))
 

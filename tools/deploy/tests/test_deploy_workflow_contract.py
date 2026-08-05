@@ -224,6 +224,15 @@ class DeployWorkflowContractTest(unittest.TestCase):
                 self.assert_workflow_invalid(candidate, code)
 
     def test_production_secrets_are_scoped_to_deploy_env(self) -> None:
+        deployment_step = next(
+            step
+            for step in self.workflow["jobs"]["deploy"]["steps"]
+            if step.get("id") == "deployment"
+        )
+        self.assertEqual(
+            "${{ vars.PRODUCTION_SSH_PUBLIC_KEY_SHA256 }}",
+            deployment_step["env"]["PRODUCTION_SSH_PUBLIC_KEY_SHA256"],
+        )
         candidate = copy.deepcopy(self.workflow)
         candidate["jobs"]["prepare"]["steps"][2].setdefault("env", {})[
             "KEY"

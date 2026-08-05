@@ -1,5 +1,5 @@
-name: Verify Production Transport
-run-name: verify-production-transport-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+name: Verify Deployment Engine
+run-name: verify-deployment-engine-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: emporio-production
+  group: emporio-deployment-engine-rehearsal
   cancel-in-progress: false
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Validate trusted transport probe dispatch
+      - name: Validate trusted rehearsal dispatch
         env:
           TRUSTED_REPOSITORY: ${{ github.repository }}
           TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
@@ -34,20 +34,23 @@ jobs:
           TRUSTED_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           TRUSTED_SENDER_ID: ${{ github.event.sender.id }}
           DEPLOYER_ACTOR_IDS: ${{ vars.DEPLOYER_ACTOR_IDS }}
-        run: python3 tools/deploy/production_transport_probe.py trust --output trust
+        run: python3 tools/deploy/deployment_engine_rehearsal.py trust --output trust
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: production-transport-trust
+          name: deployment-engine-trust
           path: trust/
           if-no-files-found: error
           retention-days: 90
           overwrite: false
 
-  probe:
+  rehearse:
     needs: trust
-    environment: production
+    permissions:
+      contents: read
+      actions: read
+      packages: read
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -55,10 +58,22 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
-          name: production-transport-trust
+          name: deployment-engine-trust
           path: trust
-      - name: Execute the fixed non-mutating capabilities probe
-        id: transport
+      - name: Download the immutable v0.1.1 release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          install -d -m 0700 release-assets
+          gh api /repos/greggorio/abaronesa-emporio/releases/365219520 > release-assets/release-record.json
+          gh api /repos/greggorio/abaronesa-emporio/git/ref/tags/v0.1.1 > release-assets/tag-ref.json
+          gh release download v0.1.1 --repo greggorio/abaronesa-emporio --dir release-assets --pattern metadata.json --pattern release.json --pattern release.json.sha256
+      - name: Authenticate the ephemeral runner to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Execute the real isolated deployment transaction
+        id: rehearsal
         continue-on-error: true
         env:
           TRUSTED_REPOSITORY: ${{ github.repository }}
@@ -67,38 +82,26 @@ jobs:
           TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
           TRUSTED_SHA: ${{ github.sha }}
           TRUSTED_ACTOR_ID: ${{ github.actor_id }}
-          PRODUCTION_SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
-          PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT }}
-          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-          PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
-          PRODUCTION_SSH_PUBLIC_KEY_SHA256: ${{ vars.PRODUCTION_SSH_PUBLIC_KEY_SHA256 }}
-        run: python3 tools/deploy/production_transport_probe.py probe --trust trust --output probe
-      - name: Remove any materialized SSH credentials
-        id: cleanup
+        run: python3 tools/deploy/deployment_engine_rehearsal.py rehearse --trust trust --assets release-assets --output rehearsal
+      - name: Logout from GHCR
+        id: logout
         if: always()
-        env:
-          TRUSTED_REPOSITORY: ${{ github.repository }}
-          TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
-          TRUSTED_RUN_ID: ${{ github.run_id }}
-          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
-          TRUSTED_SHA: ${{ github.sha }}
-          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
-        run: python3 tools/deploy/production_transport_probe.py cleanup
+        run: docker logout ghcr.io
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always() && steps.cleanup.outcome == 'success'
+        if: always()
         with:
-          name: production-transport-probe
-          path: probe/
+          name: deployment-engine-rehearsal
+          path: rehearsal/
           if-no-files-found: error
           retention-days: 90
           overwrite: false
-      - name: Enforce the probe result after preserving diagnostics
-        if: steps.transport.outcome != 'success' || steps.cleanup.outcome != 'success'
+      - name: Enforce rehearsal success after preserving evidence
+        if: steps.rehearsal.outcome != 'success' || steps.logout.outcome != 'success'
         run: exit 1
 
   outcome:
     if: always()
-    needs: [trust, probe]
+    needs: [trust, rehearse]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -110,15 +113,15 @@ jobs:
         if: needs.trust.result == 'success'
         continue-on-error: true
         with:
-          name: production-transport-trust
+          name: deployment-engine-trust
           path: trust
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         if: needs.trust.result == 'success'
         continue-on-error: true
         with:
-          name: production-transport-probe
-          path: probe
-      - name: Record the probe outcome without inventing success
+          name: deployment-engine-rehearsal
+          path: rehearsal
+      - name: Record the rehearsal outcome without inventing success
         env:
           TRUSTED_REPOSITORY: ${{ github.repository }}
           TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
@@ -127,12 +130,12 @@ jobs:
           TRUSTED_SHA: ${{ github.sha }}
           TRUSTED_ACTOR_ID: ${{ github.actor_id }}
           TRUST_RESULT: ${{ needs.trust.result }}
-          PROBE_RESULT: ${{ needs.probe.result }}
-        run: python3 tools/deploy/production_transport_probe.py outcome --trust trust --probe probe --output outcome
+          REHEARSAL_RESULT: ${{ needs.rehearse.result }}
+        run: python3 tools/deploy/deployment_engine_rehearsal.py outcome --trust trust --rehearsal rehearsal --output outcome
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: production-transport-probe-outcome
+          name: deployment-engine-rehearsal-outcome
           path: outcome/
           if-no-files-found: error
           retention-days: 90

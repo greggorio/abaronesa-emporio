@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import ipaddress
 import json
 import os
 import re
@@ -26,9 +25,10 @@ import jsonschema
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools/releases"))
 sys.path.insert(0, str(ROOT / "tools/deploy"))
+import deployment_plan  # noqa: E402
 import global_release  # noqa: E402
 import release_publication  # noqa: E402
-import deployment_plan  # noqa: E402
+import ssh_material  # noqa: E402
 
 REPOSITORY = "greggorio/abaronesa-emporio"
 OWNER = "greggorio"
@@ -42,9 +42,6 @@ OPERATION_RE = re.compile(r"[A-Za-z0-9_-]{20,128}")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 ERROR_CODE_RE = re.compile(r"[A-Z][A-Z0-9_]{2,63}")
-HOST_RE = re.compile(
-    r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*"
-)
 TIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 MAX_STDOUT = 65536
 MAX_ARCHIVE = 16 * 1024 * 1024
@@ -66,6 +63,9 @@ PUBLIC_ERRORS = frozenset(
         "REMOTE_CAPABILITY_MISMATCH", "REMOTE_SNAPSHOT_INVALID",
         "SNAPSHOT_CONFLICT", "BUNDLE_GENERATION_FAILED", "BUNDLE_INVALID",
         "BUNDLE_CONFLICT", "SSH_CONFIGURATION_INVALID", "SSH_UNAVAILABLE",
+        "SSH_KEY_FORMAT_INVALID", "SSH_KEY_FINGERPRINT_MISMATCH",
+        "SSH_KNOWN_HOSTS_INVALID", "SSH_CONNECTION_FAILED",
+        "SSH_AUTHENTICATION_FAILED",
         "REMOTE_RESULT_UNAVAILABLE", "REMOTE_RESULT_INVALID",
         "REMOTE_CLEANUP_FAILED", "INTERNAL_ERROR",
     }
@@ -695,6 +695,7 @@ def validate_bundle_archive(archive: Path) -> None:
 class ProcessResult:
     return_code: int
     stdout: bytes
+    stderr: bytes = b""
 
 
 class ProcessRunner(Protocol):
@@ -707,14 +708,17 @@ class SubprocessRunner:
             raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
         process = subprocess.Popen(
             argv, shell=False, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, close_fds=True,
+            stderr=subprocess.PIPE, close_fds=True,
             env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
         )
         output = bytearray()
+        diagnostic = bytearray()
         selector = selectors.DefaultSelector()
         try:
             assert process.stdout is not None
-            selector.register(process.stdout, selectors.EVENT_READ)
+            assert process.stderr is not None
+            selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+            selector.register(process.stderr, selectors.EVENT_READ, "stderr")
             import time
             deadline = time.monotonic() + timeout_seconds
             while selector.get_map():
@@ -728,12 +732,13 @@ class SubprocessRunner:
                     if not chunk:
                         selector.unregister(key.fileobj)
                     else:
-                        output.extend(chunk)
-                        if len(output) > MAX_STDOUT:
+                        target = output if key.data == "stdout" else diagnostic
+                        target.extend(chunk)
+                        if len(target) > MAX_STDOUT:
                             process.kill(); process.wait()
                             raise DeploymentTransportError("SSH_UNAVAILABLE")
             return_code = process.wait(timeout=max(0.1, deadline - time.monotonic()))
-            return ProcessResult(return_code, bytes(output))
+            return ProcessResult(return_code, bytes(output), bytes(diagnostic))
         except subprocess.TimeoutExpired as exc:
             process.kill(); process.wait()
             raise DeploymentTransportError("SSH_UNAVAILABLE") from exc
@@ -741,84 +746,25 @@ class SubprocessRunner:
             selector.close()
             if process.stdout is not None:
                 process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
 
 
-def _validate_binary(path: Path, expected: str) -> Path:
-    try:
-        resolved = path.resolve(strict=True)
-        details = path.lstat()
-        target = resolved.stat()
-    except OSError as exc:
-        raise DeploymentTransportError("SSH_CONFIGURATION_INVALID") from exc
-    if (
-        path.is_symlink() or not stat.S_ISREG(details.st_mode) or not stat.S_ISREG(target.st_mode)
-        or resolved.name != expected or target.st_uid != 0
-        or target.st_mode & (stat.S_IWGRP | stat.S_IWOTH) or not os.access(resolved, os.X_OK)
-    ):
-        raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
-    return resolved
+SshConfiguration = ssh_material.SshConfiguration
 
 
 def resolve_openssh(name: str) -> Path:
-    if name not in {"ssh", "scp"}:
-        raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
-    located = shutil.which(name, path="/usr/bin:/bin")
-    if located is None:
-        raise DeploymentTransportError("SSH_UNAVAILABLE")
-    return _validate_binary(Path(located), name)
-
-
-@dataclass(frozen=True)
-class SshConfiguration:
-    directory: Path
-    config: Path
-    destination: str
-    ssh: Path
-    scp: Path
-
-
-def materialize_ssh_configuration(
-    *, directory: Path, host: str, port: int, private_key: bytes,
-    known_hosts: bytes, ssh_binary: Path, scp_binary: Path,
-) -> SshConfiguration:
-    if (
-        not isinstance(host, str) or host != host.strip() or host.startswith("-")
-        or any(character in host for character in " /\\\t\r\n;|&$`(){}[]*?!'\"")
-        or isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535
-    ):
-        raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
     try:
-        address = ipaddress.ip_address(host)
-        if not isinstance(address, ipaddress.IPv4Address):
-            raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
-    except ValueError:
-        if HOST_RE.fullmatch(host) is None:
-            raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
-    if not isinstance(private_key, bytes) or not 1 <= len(private_key) <= 64 * 1024:
-        raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
-    if not isinstance(known_hosts, bytes) or not 1 <= len(known_hosts) <= 1024 * 1024:
-        raise DeploymentTransportError("SSH_CONFIGURATION_INVALID")
-    directory = Path(directory)
-    directory.mkdir(mode=0o700, parents=False, exist_ok=False)
-    key = directory / "identity"
-    hosts = directory / "known_hosts"
-    config = directory / "config"
-    _write_private(key, private_key)
-    _write_private(hosts, known_hosts)
-    lines = [
-        "Host *", f"  HostName {host}", f"  Port {port}",
-        f"  User {REMOTE_USER}", "  BatchMode yes", "  IdentitiesOnly yes",
-        "  StrictHostKeyChecking yes", f"  UserKnownHostsFile {hosts}",
-        f"  IdentityFile {key}", "  ConnectTimeout 15", "  ConnectionAttempts 1",
-        "  ServerAliveInterval 15", "  ServerAliveCountMax 2", "  ForwardAgent no",
-        "  ClearAllForwardings yes", "  PasswordAuthentication no",
-        "  KbdInteractiveAuthentication no", "  LogLevel ERROR", "",
-    ]
-    _write_private(config, "\n".join(lines).encode("utf-8"))
-    return SshConfiguration(
-        directory, config, f"{REMOTE_USER}@{host}",
-        _validate_binary(Path(ssh_binary), "ssh"), _validate_binary(Path(scp_binary), "scp"),
-    )
+        return ssh_material.resolve_openssh(name)
+    except ssh_material.SshMaterialError as exc:
+        raise DeploymentTransportError(exc.code) from exc
+
+
+def materialize_ssh_configuration(**values: Any) -> SshConfiguration:
+    try:
+        return ssh_material.materialize_ssh_configuration(**values)
+    except ssh_material.SshMaterialError as exc:
+        raise DeploymentTransportError(exc.code) from exc
 
 
 class OpenSshTransport:
@@ -844,6 +790,10 @@ class OpenSshTransport:
         if not isinstance(control_sha, str) or re.fullmatch(r"[0-9a-f]{40}", control_sha) is None:
             raise DeploymentTransportError("REMOTE_CAPABILITY_MISMATCH")
         result = self._remote(("capabilities",))
+        if result.return_code != 0:
+            raise DeploymentTransportError(
+                ssh_material.classify_ssh_failure(result.stderr, stage="capabilities")
+            )
         value = _parse_single_json(result, "REMOTE_CAPABILITY_MISMATCH")
         if value != {
             "controlSha": control_sha,
@@ -1226,10 +1176,14 @@ def main(argv: list[str] | None = None) -> int:
                         port=port,
                         private_key=os.environ.get("PRODUCTION_SSH_PRIVATE_KEY", "").encode(),
                         known_hosts=os.environ.get("PRODUCTION_SSH_KNOWN_HOSTS", "").encode(),
+                        expected_fingerprint=os.environ.get(
+                            "PRODUCTION_SSH_PUBLIC_KEY_SHA256", ""
+                        ),
                         ssh_binary=resolve_openssh("ssh"),
                         scp_binary=resolve_openssh("scp"),
+                        keygen_binary=resolve_openssh("ssh-keygen"),
                     )
-                except OSError as exc:
+                except OSError:
                     local_error = DeploymentTransportError(
                         "SSH_CONFIGURATION_INVALID"
                     )
@@ -1247,7 +1201,11 @@ def main(argv: list[str] | None = None) -> int:
                         args.output, "deployment-result.json", final_outcome
                     )
                 except DeploymentTransportError as exc:
-                    if exc.code not in {"SSH_CONFIGURATION_INVALID", "SSH_UNAVAILABLE"}:
+                    if exc.code not in {
+                        "SSH_CONFIGURATION_INVALID", "SSH_UNAVAILABLE",
+                        "SSH_KEY_FORMAT_INVALID", "SSH_KEY_FINGERPRINT_MISMATCH",
+                        "SSH_KNOWN_HOSTS_INVALID",
+                    }:
                         raise
                     final_outcome = build_outcome(
                         request,
@@ -1269,7 +1227,10 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 finally:
                     if ssh_directory is not None and ssh_directory.exists():
-                        shutil.rmtree(ssh_directory)
+                        try:
+                            ssh_material.cleanup_ssh_configuration(ssh_directory)
+                        except ssh_material.SshMaterialError as exc:
+                            raise DeploymentTransportError(exc.code) from exc
         else:
             with private_handoff(args.handoff, args.output.parent) as handoff:
                 request, _release = validate_handoff(handoff)

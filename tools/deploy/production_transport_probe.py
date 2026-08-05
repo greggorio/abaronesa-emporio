@@ -8,12 +8,14 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import stat
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ssh_material
 
 REPOSITORY = "greggorio/abaronesa-emporio"
 WORKFLOW = ".github/workflows/verify-production-transport.yml"
@@ -27,7 +29,6 @@ TRUST_FILE = "production-transport-trust.json"
 PROBE_FILE = "production-transport-probe.json"
 OUTCOME_FILE = "production-transport-probe-outcome.json"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
 POSITIVE_RE = re.compile(r"^[1-9][0-9]*$")
 MAX_STDOUT = 4096
 
@@ -209,41 +210,11 @@ def _temporary_directory(binding: dict[str, Any]) -> Path:
     return root / f"emporio-production-transport-{binding['runId']}-{binding['runAttempt']}"
 
 
-def _remove_regular(path: Path, *, secret: bool = False) -> None:
-    if not path.exists():
-        return
-    if path.is_symlink() or not path.is_file():
-        raise ProbeError("CLEANUP_TARGET_INVALID")
-    if secret:
-        shred = shutil.which("shred")
-        if shred is None:
-            raise ProbeError("SHRED_UNAVAILABLE")
-        completed = subprocess.run(
-            (shred, "-u", os.fspath(path)),
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
-        )
-        if completed.returncode != 0 or path.exists():
-            raise ProbeError("PRIVATE_KEY_CLEANUP_FAILED")
-    else:
-        path.unlink()
-
-
 def _cleanup_temporary(directory: Path) -> None:
-    if not directory.exists():
-        return
-    if directory.is_symlink() or not directory.is_dir():
-        raise ProbeError("CLEANUP_TARGET_INVALID")
-    allowed = {"id_ed25519", "known_hosts", "ssh_config"}
-    observed = {item.name for item in directory.iterdir()}
-    if not observed.issubset(allowed):
-        raise ProbeError("CLEANUP_TARGET_INVALID")
-    _remove_regular(directory / "id_ed25519", secret=True)
-    _remove_regular(directory / "known_hosts")
-    _remove_regular(directory / "ssh_config")
-    directory.rmdir()
+    try:
+        ssh_material.cleanup_ssh_configuration(directory)
+    except ssh_material.SshMaterialError as exc:
+        raise ProbeError(exc.code) from exc
 
 
 def probe(trust_directory: Path, output: Path) -> None:
@@ -256,53 +227,41 @@ def probe(trust_directory: Path, output: Path) -> None:
     port = _positive(os.environ.get("PRODUCTION_SSH_PORT"), "SSH_PORT_INVALID")
     private_key = _required("PRODUCTION_SSH_PRIVATE_KEY")
     known_hosts = _required("PRODUCTION_SSH_KNOWN_HOSTS")
-    if (
-        HOST_RE.fullmatch(host) is None
-        or port > 65535
-        or not private_key.startswith("-----BEGIN " + "OPENSSH PRIVATE KEY-----")
-        or "\n" not in known_hosts
-    ):
-        raise ProbeError("SSH_CONFIGURATION_INVALID")
+    expected_fingerprint = _required("PRODUCTION_SSH_PUBLIC_KEY_SHA256")
 
     temporary = _temporary_directory(binding)
-    _create_directory(temporary)
+    stage = "materialize"
+    error_code: str | None = None
     try:
-        key_path = temporary / "id_ed25519"
-        known_hosts_path = temporary / "known_hosts"
-        config_path = temporary / "ssh_config"
-        _write_exclusive(key_path, private_key.encode("utf-8"))
-        _write_exclusive(known_hosts_path, known_hosts.encode("utf-8"))
-        config = (
-            "Host production\n"
-            f"  HostName {host}\n"
-            f"  Port {port}\n"
-            f"  User {REMOTE_USER}\n"
-            f"  IdentityFile {key_path}\n"
-            "  IdentitiesOnly yes\n"
-            "  IdentityAgent none\n"
-            "  BatchMode yes\n"
-            "  StrictHostKeyChecking yes\n"
-            f"  UserKnownHostsFile {known_hosts_path}\n"
-            "  PasswordAuthentication no\n"
-            "  KbdInteractiveAuthentication no\n"
-            "  ConnectTimeout 15\n"
-            "  LogLevel ERROR\n"
-        ).encode("utf-8")
-        _write_exclusive(config_path, config)
+        configuration = ssh_material.materialize_ssh_configuration(
+            directory=temporary,
+            host=host,
+            port=port,
+            private_key=private_key,
+            known_hosts=known_hosts,
+            expected_fingerprint=expected_fingerprint,
+        )
+        stage = "capabilities"
         completed = subprocess.run(
-            ("/usr/bin/ssh", "-F", os.fspath(config_path), "production", *REMOTE_COMMAND),
+            (
+                os.fspath(configuration.ssh), "-F", os.fspath(configuration.config),
+                configuration.destination, *REMOTE_COMMAND,
+            ),
             check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            capture_output=True,
             timeout=30,
             env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"},
         )
-        if completed.returncode != 0 or len(completed.stdout) > MAX_STDOUT:
-            raise ProbeError("SSH_PROBE_FAILED")
+        if completed.returncode != 0 or len(completed.stdout) > MAX_STDOUT or len(completed.stderr) > ssh_material.MAX_DIAGNOSTIC:
+            error_code = ssh_material.classify_ssh_failure(
+                completed.stderr, stage="capabilities"
+            )
+            raise ProbeError(error_code)
         try:
             capabilities = json.loads(completed.stdout)
         except (UnicodeError, json.JSONDecodeError) as exc:
-            raise ProbeError("CAPABILITIES_INVALID") from exc
+            error_code = "REMOTE_CAPABILITY_MISMATCH"
+            raise ProbeError(error_code) from exc
         expected = {
             "controlSha": binding["sha"],
             "deployRoot": DEPLOY_ROOT,
@@ -311,24 +270,42 @@ def probe(trust_directory: Path, output: Path) -> None:
             "user": REMOTE_USER,
         }
         if capabilities != expected or canonical(capabilities) != completed.stdout:
-            raise ProbeError("CAPABILITIES_INVALID")
+            error_code = "REMOTE_CAPABILITY_MISMATCH"
+            raise ProbeError(error_code)
+    except ssh_material.SshMaterialError as exc:
+        error_code = exc.code
+        raise ProbeError(exc.code) from exc
+    except ProbeError as exc:
+        error_code = str(exc)
+        raise
     finally:
-        _cleanup_temporary(temporary)
-
-    _write_bundle(
-        output,
-        PROBE_FILE,
-        {
-            "schemaVersion": 1,
-            "kind": "production-transport-probe",
-            **binding,
-            "controlSha": binding["sha"],
-            "protocol": PROTOCOL,
-            "deployRoot": DEPLOY_ROOT,
-            "user": REMOTE_USER,
-            "status": "SUCCESS",
-        },
-    )
+        cleanup_error: ProbeError | None = None
+        try:
+            _cleanup_temporary(temporary)
+        except ProbeError as exc:
+            cleanup_error = exc
+            error_code = str(exc)
+            stage = "cleanup"
+        if not output.exists():
+            _write_bundle(
+                output,
+                PROBE_FILE,
+                {
+                    "schemaVersion": 1,
+                    "kind": "production-transport-probe",
+                    **binding,
+                    "controlSha": binding["sha"],
+                    "protocol": PROTOCOL,
+                    "deployRoot": DEPLOY_ROOT,
+                    "user": REMOTE_USER,
+                    "fingerprintExpected": expected_fingerprint,
+                    "stage": stage,
+                    "errorCode": error_code,
+                    "status": "FAILED" if error_code else "SUCCESS",
+                },
+            )
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 def cleanup() -> None:
@@ -351,6 +328,9 @@ def _validate_probe(value: dict[str, Any]) -> None:
         "protocol",
         "deployRoot",
         "user",
+        "fingerprintExpected",
+        "stage",
+        "errorCode",
         "status",
     }
     if (
@@ -364,7 +344,15 @@ def _validate_probe(value: dict[str, Any]) -> None:
         or value.get("protocol") != PROTOCOL
         or value.get("deployRoot") != DEPLOY_ROOT
         or value.get("user") != REMOTE_USER
-        or value.get("status") != "SUCCESS"
+        or value.get("stage") not in {"materialize", "capabilities", "cleanup"}
+        or not isinstance(value.get("fingerprintExpected"), str)
+        or ssh_material.FINGERPRINT_RE.fullmatch(value["fingerprintExpected"]) is None
+        or value.get("status") not in {"SUCCESS", "FAILED"}
+        or (value.get("status") == "SUCCESS" and value.get("errorCode") is not None)
+        or (
+            value.get("status") == "FAILED"
+            and value.get("errorCode") not in ssh_material.ERRORS
+        )
     ):
         raise ProbeError("PROBE_INVALID")
 
@@ -374,7 +362,8 @@ def outcome(trust_directory: Path, probe_directory: Path, output: Path) -> None:
     trust_result = _required("TRUST_RESULT")
     probe_result = _required("PROBE_RESULT")
     success = trust_result == "success" and probe_result == "success"
-    if success:
+    probe_value: dict[str, Any] | None = None
+    if trust_result == "success":
         trust_value = _load_bundle(trust_directory, TRUST_FILE)
         probe_value = _load_bundle(probe_directory, PROBE_FILE)
         _validate_trust(trust_value)
@@ -394,6 +383,11 @@ def outcome(trust_directory: Path, probe_directory: Path, output: Path) -> None:
             "status": "SUCCESS" if success else "FAILED",
             "trustResult": trust_result,
             "probeResult": probe_result,
+            "stage": probe_value.get("stage") if probe_value else None,
+            "errorCode": probe_value.get("errorCode") if probe_value else None,
+            "fingerprintExpected": (
+                probe_value.get("fingerprintExpected") if probe_value else None
+            ),
         },
     )
 
@@ -415,6 +409,9 @@ def validate(probe_directory: Path, outcome_directory: Path) -> None:
         "status",
         "trustResult",
         "probeResult",
+        "stage",
+        "errorCode",
+        "fingerprintExpected",
     }
     if (
         set(outcome_value) != expected
@@ -423,6 +420,9 @@ def validate(probe_directory: Path, outcome_directory: Path) -> None:
         or outcome_value.get("status") != "SUCCESS"
         or outcome_value.get("trustResult") != "success"
         or outcome_value.get("probeResult") != "success"
+        or outcome_value.get("stage") != "capabilities"
+        or outcome_value.get("errorCode") is not None
+        or outcome_value.get("fingerprintExpected") != probe_value.get("fingerprintExpected")
         or any(
             outcome_value.get(key) != probe_value.get(key)
             for key in (

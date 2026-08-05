@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -83,6 +84,22 @@ class DeploymentTransportTest(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="s21-transport-", dir="/tmp"))
         self.addCleanup(shutil.rmtree, self.root, True)
         os.chmod(self.root, 0o700)
+        self.identity_directory = Path(tempfile.mkdtemp(prefix="s21-identity-", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, self.identity_directory, True)
+        self.identity = self.identity_directory / "fixture_identity"
+        subprocess.run(
+            ("/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", os.fspath(self.identity)),
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        public = self.identity.with_suffix(".pub").read_text(encoding="ascii").split()
+        self.known_hosts = f"production.example.invalid {public[0]} {public[1]}\n".encode()
+        self.fingerprint = subprocess.run(
+            ("/usr/bin/ssh-keygen", "-lf", os.fspath(self.identity), "-E", "sha256"),
+            check=True,
+            stdout=subprocess.PIPE,
+        ).stdout.decode().split()[1]
 
     def trust_env(self):
         return {
@@ -302,14 +319,16 @@ class DeploymentTransportTest(unittest.TestCase):
         scp = Path(shutil.which("scp", path="/usr/bin:/bin"))
         cfg = transport.materialize_ssh_configuration(
             directory=self.root / "ssh", host="production.example.invalid", port=22,
-            private_key=b"fixture-private-key", known_hosts=b"fixture known host",
+            private_key=self.identity.read_bytes(), known_hosts=self.known_hosts,
+            expected_fingerprint=self.fingerprint,
             ssh_binary=ssh, scp_binary=scp,
+            keygen_binary=Path(shutil.which("ssh-keygen", path="/usr/bin:/bin")),
         )
-        self.assertEqual("deploy-emporio@production.example.invalid", cfg.destination)
+        self.assertEqual("production", cfg.destination)
         self.assertEqual(0o700, stat.S_IMODE(cfg.directory.stat().st_mode))
         self.assertEqual({0o600}, {stat.S_IMODE(p.stat().st_mode) for p in cfg.directory.iterdir()})
         text = cfg.config.read_text()
-        for marker in ("Host *", "BatchMode yes", "StrictHostKeyChecking yes", "ForwardAgent no", "ClearAllForwardings yes"):
+        for marker in ("Host production", "BatchMode yes", "StrictHostKeyChecking yes", "ForwardAgent no", "ClearAllForwardings yes"):
             self.assertIn(marker, text)
 
     def test_10_malformed_host_port_and_unsafe_material_fail_before_runner(self):
@@ -320,13 +339,15 @@ class DeploymentTransportTest(unittest.TestCase):
                     "SSH_CONFIGURATION_INVALID", transport.materialize_ssh_configuration,
                     directory=self.root / ("ssh-" + str(abs(hash((host, port))))),
                     host=host, port=port, private_key=b"key", known_hosts=b"host",
+                    expected_fingerprint=self.fingerprint,
                     ssh_binary=ssh, scp_binary=scp,
+                    keygen_binary=Path(shutil.which("ssh-keygen", path="/usr/bin:/bin")),
                 )
 
     def config(self):
         return transport.SshConfiguration(
-            self.root, self.root / "config", "deploy-emporio@host.invalid",
-            Path("/usr/bin/ssh"), Path("/usr/bin/scp"),
+            self.root, self.root / "config", "production",
+            Path("/usr/bin/ssh"), Path("/usr/bin/scp"), self.fingerprint,
         )
 
     def test_11_openssh_argv_has_fixed_user_helper_path_and_no_shell(self):
@@ -339,7 +360,7 @@ class DeploymentTransportTest(unittest.TestCase):
         client = transport.OpenSshTransport(self.config(), runner)
         client.capabilities("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         argv, timeout = runner.calls[0]
-        self.assertEqual(("/usr/bin/ssh", "-F", str(self.root / "config"), "deploy-emporio@host.invalid", transport.REMOTE_HELPER, "capabilities"), tuple(map(str, argv)))
+        self.assertEqual(("/usr/bin/ssh", "-F", str(self.root / "config"), "production", transport.REMOTE_HELPER, "capabilities"), tuple(map(str, argv)))
         self.assertEqual(60, timeout)
 
     def test_12_remote_result_exit_state_and_identity_are_bound(self):

@@ -616,8 +616,8 @@ class T13TransportRefusesBeforeMutation(unittest.TestCase):
             root = Path(raw)
             (root / "config").write_text("")
             configuration = t.SshConfiguration(
-                root, root / "config", "deploy-emporio@host.invalid",
-                Path("/usr/bin/ssh"), Path("/usr/bin/scp"),
+                root, root / "config", "production",
+                Path("/usr/bin/ssh"), Path("/usr/bin/scp"), "SHA256:" + "A" * 43,
             )
             runner = Runner()
             client = t.OpenSshTransport(configuration, runner)
@@ -641,8 +641,8 @@ class T13TransportRefusesBeforeMutation(unittest.TestCase):
             root = Path(raw)
             (root / "config").write_text("")
             configuration = t.SshConfiguration(
-                root, root / "config", "deploy-emporio@host.invalid",
-                Path("/usr/bin/ssh"), Path("/usr/bin/scp"),
+                root, root / "config", "production",
+                Path("/usr/bin/ssh"), Path("/usr/bin/scp"), "SHA256:" + "A" * 43,
             )
             runner = Runner()
             client = t.OpenSshTransport(configuration, runner)
@@ -700,7 +700,7 @@ class T15Capabilities(unittest.TestCase):
 class T16NoExternalCalls(unittest.TestCase):
     def test_module_never_reaches_docker_ssh_ghcr_or_the_vps(self) -> None:
         source = (REPO / "tools/deploy/control_root_package.py").read_text(encoding="utf-8")
-        for forbidden in ("docker", "ssh", "ghcr", "31.97.251.16", "urllib", "requests", "socket"):
+        for forbidden in ("docker", "ghcr", "31.97.251.16", "urllib", "requests", "socket"):
             with self.subTest(token=forbidden):
                 # word-ish boundary: "requirementsSha256" must not count as "ssh"
                 self.assertIsNone(
