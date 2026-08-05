@@ -33,6 +33,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # shadows anything Python already put on sys.path at startup.
 sys.path.insert(0, str(ROOT / "vendor"))
 sys.path.insert(0, str(ROOT / "tools" / "deploy"))
+# The installed control root is an immutable, manifest-bound package.  Direct
+# shebang execution must not add __pycache__ files to that tree.
+sys.dont_write_bytecode = True
 import deployment_plan  # noqa: E402
 
 

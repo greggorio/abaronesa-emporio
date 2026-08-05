@@ -82,7 +82,14 @@ def _constants(module: Path) -> dict[str, object]:
             try:
                 found[target.id] = ast.literal_eval(value)
             except ValueError:
-                continue
+                if (
+                    isinstance(value, ast.Call)
+                    and isinstance(value.func, ast.Name)
+                    and value.func.id == "frozenset"
+                    and len(value.args) == 1
+                    and not value.keywords
+                ):
+                    found[target.id] = frozenset(ast.literal_eval(value.args[0]))
     return found
 
 
@@ -121,6 +128,22 @@ def _validate_builder(errors: list[str]) -> None:
     for entry in files or ():
         if "/tests/" in str(entry) or str(entry).endswith("_test.py"):
             errors.append("builder-allowlist-includes-tests")
+    executable = constants.get("EXECUTABLE_FILES")
+    if executable != frozenset(
+        {
+            "ops/deploy/deploy-release.sh",
+            "ops/deploy/deployment-remote.py",
+        }
+    ):
+        errors.append("builder-executable-set")
+    for required in (
+        "manifest executable file set is not exactly contracted",
+        "archive member mode is not contracted",
+        "installed file mode does not match the manifest",
+        "expected_owner=(owner.pw_uid, owner.pw_gid)",
+    ):
+        if required not in source:
+            errors.append(f"builder-missing-mode-check:{required}")
 
 
 def _validate_binding(errors: list[str]) -> None:
@@ -133,6 +156,10 @@ def _validate_binding(errors: list[str]) -> None:
         return
     if "controlSha" not in helper or "_installed_control_sha" not in helper:
         errors.append("helper-does-not-report-control-sha")
+    if not helper.startswith("#!/usr/bin/env python3\n"):
+        errors.append("helper-missing-python-shebang")
+    if "sys.dont_write_bytecode = True" not in helper:
+        errors.append("helper-can-write-bytecode-to-control-root")
     for required in ("REMOTE_CONTROL_MANIFEST_MISSING", "REMOTE_CONTROL_TAMPERED"):
         if required not in helper:
             errors.append(f"helper-missing-code:{required}")

@@ -46,8 +46,22 @@ def manifest_fixture(**overrides) -> dict:
         "pythonAbi": pkg.PYTHON_ABI,
         "requirementsSha256": "b" * 64,
         "files": [
-            {"path": "a.py", "mode": "0600", "size": 1, "sha256": "c" * 64},
-            {"path": "b.py", "mode": "0600", "size": 1, "sha256": "d" * 64},
+            {
+                "path": "ops/deploy/deploy-release.sh", "mode": "0755",
+                "size": 1, "sha256": "c" * 64,
+            },
+            {
+                "path": "ops/deploy/deployment-remote.py", "mode": "0755",
+                "size": 1, "sha256": "d" * 64,
+            },
+            {
+                "path": "tools/example.py", "mode": "0600",
+                "size": 1, "sha256": "e" * 64,
+            },
+            {
+                "path": "vendor/package.py", "mode": "0644",
+                "size": 1, "sha256": "f" * 64,
+            },
         ],
         "createdAt": "2026-08-03T10:00:00Z",
     }
@@ -91,6 +105,26 @@ class T02WorkingTree(unittest.TestCase):
 
 
 class T03Allowlist(unittest.TestCase):
+    def test_executable_set_and_mode_classes_are_exact(self) -> None:
+        self.assertEqual(
+            {
+                "ops/deploy/deploy-release.sh",
+                "ops/deploy/deployment-remote.py",
+            },
+            pkg.EXECUTABLE_FILES,
+        )
+        for path in pkg.EXECUTABLE_FILES:
+            self.assertEqual(0o755, pkg._mode_for(path))
+        self.assertEqual(0o600, pkg._mode_for("tools/deploy/deployment_cli.py"))
+        self.assertEqual(0o600, pkg._mode_for(pkg.LOCK_PATH))
+        self.assertEqual(0o644, pkg._mode_for("vendor/jsonschema/__init__.py"))
+
+    def test_helper_disables_bytecode_before_importing_packaged_modules(self) -> None:
+        helper = (REPO / "ops/deploy/deployment-remote.py").read_text()
+        disable = helper.index("sys.dont_write_bytecode = True")
+        packaged_import = helper.index("import deployment_plan")
+        self.assertLess(disable, packaged_import)
+
     def test_selection_is_closed_and_excludes_tests_and_examples(self) -> None:
         selected = pkg.selected_paths(REPO, head_sha())
         self.assertIn("ops/deploy/deployment-remote.py", selected)
@@ -137,6 +171,25 @@ class T04ArchiveSafety(unittest.TestCase):
         group_write = tarfile.TarInfo("loose.py"); group_write.size = 0; group_write.mode = 0o666
         cases.append(group_write)
 
+        for info in cases:
+            path = self._tar_with(info)
+            try:
+                with tarfile.open(path) as tar:
+                    with self.subTest(member=info.name), self.assertRaises(pkg.PackageError):
+                        pkg._safe_members(tar)
+            finally:
+                path.unlink(missing_ok=True)
+
+    def test_missing_helper_execute_bit_and_extra_executable_are_refused(self) -> None:
+        cases = []
+        helper = tarfile.TarInfo("ops/deploy/deployment-remote.py")
+        helper.size = 0
+        helper.mode = 0o600
+        cases.append(helper)
+        extra = tarfile.TarInfo("tools/deploy/deployment_cli.py")
+        extra.size = 0
+        extra.mode = 0o755
+        cases.append(extra)
         for info in cases:
             path = self._tar_with(info)
             try:
@@ -243,16 +296,81 @@ class T07ManifestIntegrity(unittest.TestCase):
                 {"path": "a.py", "mode": "0666", "size": 1, "sha256": "c" * 64}
             ]))
 
+    def test_manifest_requires_exact_executable_set_and_mode_classes(self) -> None:
+        for executable in sorted(pkg.EXECUTABLE_FILES):
+            mutant = json.loads(json.dumps(manifest_fixture()))
+            next(x for x in mutant["files"] if x["path"] == executable)["mode"] = "0600"
+            with self.subTest(path=executable), self.assertRaises(pkg.PackageError):
+                pkg.validate_manifest(mutant)
+
+        missing = json.loads(json.dumps(manifest_fixture()))
+        missing["files"] = [
+            x for x in missing["files"]
+            if x["path"] != "ops/deploy/deployment-remote.py"
+        ]
+        with self.assertRaises(pkg.PackageError):
+            pkg.validate_manifest(missing)
+
+        extra = json.loads(json.dumps(manifest_fixture()))
+        extra["files"].append(
+            {"path": "z-extra.py", "mode": "0755", "size": 1, "sha256": "a" * 64}
+        )
+        with self.assertRaises(pkg.PackageError):
+            pkg.validate_manifest(extra)
+
+        vendor = json.loads(json.dumps(manifest_fixture()))
+        next(x for x in vendor["files"] if x["path"].startswith("vendor/"))["mode"] = "0600"
+        with self.assertRaises(pkg.PackageError):
+            pkg.validate_manifest(vendor)
+
     def test_altered_file_is_detected_by_verify_tree(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "a.py").write_bytes(b"x")
+            (root / "a.py").chmod(0o600)
             manifest = manifest_fixture(files=[{
                 "path": "a.py", "mode": "0600", "size": 1,
                 "sha256": hashlib.sha256(b"x").hexdigest(),
             }])
             pkg.verify_tree(root, manifest)
             (root / "a.py").write_bytes(b"y")
+            with self.assertRaises(pkg.PackageError):
+                pkg.verify_tree(root, manifest)
+
+    def test_verify_tree_rejects_mode_tampering(self) -> None:
+        payloads = {
+            "ops/deploy/deploy-release.sh": b"s",
+            "ops/deploy/deployment-remote.py": b"h",
+            "tools/example.py": b"t",
+            "vendor/package.py": b"v",
+        }
+        files = [
+            {
+                "path": path,
+                "mode": f"{pkg._mode_for(path):04o}",
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+            for path, payload in sorted(payloads.items())
+        ]
+        manifest = manifest_fixture(files=files)
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            for path, payload in payloads.items():
+                destination = root / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(payload)
+                destination.chmod(pkg._mode_for(path))
+            for directory in (x for x in root.rglob("*") if x.is_dir()):
+                directory.chmod(0o700)
+            pkg.verify_tree(root, manifest)
+            helper = root / "ops/deploy/deployment-remote.py"
+            helper.chmod(0o600)
+            with self.assertRaises(pkg.PackageError):
+                pkg.verify_tree(root, manifest)
+            helper.chmod(0o755)
+            extra = root / "tools/example.py"
+            extra.chmod(0o755)
             with self.assertRaises(pkg.PackageError):
                 pkg.verify_tree(root, manifest)
 
@@ -368,6 +486,67 @@ class T11ExtractionFailureLeavesNoResidue(unittest.TestCase):
             self.assertFalse(staging.exists())
             self.assertTrue(target.exists())
             self.assertEqual([], list(target.iterdir()))
+
+    def test_install_preserves_exact_executable_modes_and_owner(self) -> None:
+        payloads = {
+            "ops/deploy/deploy-release.sh": b"#!/bin/sh\n",
+            "ops/deploy/deployment-remote.py": b"#!/usr/bin/env python3\n",
+            "tools/example.py": b"pass\n",
+            "vendor/package.py": b"VALUE = 1\n",
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            tree = root / "tree"
+            tree.mkdir(mode=0o700)
+            for path, payload in payloads.items():
+                destination = tree / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(payload)
+                destination.chmod(pkg._mode_for(path))
+            for directory in (x for x in tree.rglob("*") if x.is_dir()):
+                directory.chmod(0o700)
+            manifest = pkg.build_manifest(
+                SHA, "2026-08-03T10:00:00Z", "lock\n", pkg.collect_files(tree)
+            )
+            archive = root / "control-root.tar"
+            pkg.write_archive(tree, manifest, archive)
+            sidecar = root / "control-root.tar.sha256"
+            sidecar.write_bytes(pkg.sha256_hex(archive.read_bytes()).encode() + b"\n")
+            target = root / "control"
+            target.mkdir(mode=0o700)
+            info = target.lstat()
+            owner = _FakePasswdEntry(info.st_uid, info.st_gid)
+            args = argparse.Namespace(
+                archive=str(archive), sidecar=str(sidecar), source_sha=SHA,
+            )
+            with mock.patch.object(pkg, "TARGET", str(target)), \
+                 mock.patch.object(pkg, "_require_host"), \
+                 mock.patch.object(pkg.pwd, "getpwnam", return_value=owner), \
+                 mock.patch.object(pkg.os, "chown"):
+                self.assertEqual(0, pkg._cli_install(args))
+
+            executable = {
+                path.relative_to(target).as_posix()
+                for path in target.rglob("*")
+                if path.is_file() and path.stat().st_mode & 0o111
+            }
+            self.assertEqual(pkg.EXECUTABLE_FILES, executable)
+            helper = target / "ops/deploy/deployment-remote.py"
+            self.assertTrue(helper.is_file())
+            self.assertFalse(helper.is_symlink())
+            self.assertEqual(0o755, helper.stat().st_mode & 0o777)
+            self.assertEqual((info.st_uid, info.st_gid), (helper.stat().st_uid, helper.stat().st_gid))
+            direct = subprocess.run(
+                [os.fspath(helper), "capabilities"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            # Outside the isolated deploy-emporio runtime the helper rejects
+            # identity, but the kernel must execute its shebang directly. Exit
+            # 126/PermissionError would reproduce the production defect.
+            self.assertNotEqual(126, direct.returncode)
+            self.assertNotIn("Permission denied", direct.stderr)
 
 
 class T12ControlShaBinding(unittest.TestCase):

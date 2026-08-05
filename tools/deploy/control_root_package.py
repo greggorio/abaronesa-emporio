@@ -74,7 +74,12 @@ SCHEMA_GLOB_DIRS: tuple[str, ...] = (
     "ops/deploy/schemas",
     "ops/releases",
 )
-EXECUTABLE_FILES = frozenset({"ops/deploy/deploy-release.sh"})
+EXECUTABLE_FILES = frozenset(
+    {
+        "ops/deploy/deploy-release.sh",
+        "ops/deploy/deployment-remote.py",
+    }
+)
 
 MAX_FILE_BYTES = 8 * 1024 * 1024
 EPOCH = 0
@@ -221,7 +226,11 @@ def vendor_runtime(entries: list[dict[str, str]], wheels: Path, destination: Pat
 
 
 def _mode_for(path: str) -> int:
-    return 0o755 if path in EXECUTABLE_FILES else 0o600
+    if path in EXECUTABLE_FILES:
+        return 0o755
+    if path.startswith(f"{VENDOR_DIR}/"):
+        return 0o644
+    return 0o600
 
 
 def build_tree(root: Path, source_sha: str, lock_text: str, wheels: Path, staging: Path) -> None:
@@ -303,6 +312,7 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
     if not isinstance(files, list) or not files:
         raise PackageError("manifest files are missing")
     seen: set[str] = set()
+    executable: set[str] = set()
     for entry in files:
         if not isinstance(entry, dict) or set(entry) != {"path", "mode", "size", "sha256"}:
             raise PackageError("manifest file entry is malformed")
@@ -318,10 +328,17 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
             raise PackageError("manifest file size is invalid")
         if re.fullmatch(r"0[0-7]{3}", str(entry["mode"])) is None:
             raise PackageError("manifest file mode is invalid")
-        if int(str(entry["mode"]), 8) & 0o022:
+        mode = int(str(entry["mode"]), 8)
+        if mode & 0o022:
             raise PackageError("manifest file mode allows group or other write")
+        if mode != _mode_for(path):
+            raise PackageError(f"manifest file mode is not contracted: {path}")
+        if mode & 0o111:
+            executable.add(path)
     if [entry["path"] for entry in files] != sorted(entry["path"] for entry in files):
         raise PackageError("manifest files are not deterministically ordered")
+    if executable != EXECUTABLE_FILES or not EXECUTABLE_FILES.issubset(seen):
+        raise PackageError("manifest executable file set is not exactly contracted")
     return manifest
 
 
@@ -392,6 +409,15 @@ def _safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
             raise PackageError("archive accepts regular files and directories only")
         if member.mode & 0o022:
             raise PackageError("archive member mode allows group or other write")
+        expected_mode = (
+            0o700
+            if member.isdir()
+            else 0o600
+            if name in {MANIFEST_NAME, f"{MANIFEST_NAME}.sha256"}
+            else _mode_for(name)
+        )
+        if member.mode != expected_mode:
+            raise PackageError(f"archive member mode is not contracted: {name}")
         members.append(member)
     return members
 
@@ -474,6 +500,7 @@ def _cli_install(args: argparse.Namespace) -> int:
         for entry in sorted(staging.iterdir()):
             shutil.move(str(entry), str(target / entry.name))
         _fsync_dir(target)
+        verify_tree(target, manifest, expected_owner=(owner.pw_uid, owner.pw_gid))
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         for entry in list(target.iterdir()) if target.exists() else []:
@@ -486,7 +513,12 @@ def _cli_install(args: argparse.Namespace) -> int:
     return 0
 
 
-def verify_tree(root: Path, manifest: dict[str, Any]) -> None:
+def verify_tree(
+    root: Path,
+    manifest: dict[str, Any],
+    *,
+    expected_owner: tuple[int, int] | None = None,
+) -> None:
     """Re-read every byte and refuse extra, missing or altered files."""
     expected = {entry["path"]: entry for entry in manifest["files"]}
     # The manifest describes the payload, so it cannot describe itself; its own
@@ -499,14 +531,35 @@ def verify_tree(root: Path, manifest: dict[str, Any]) -> None:
     } - selfish
     if present != set(expected):
         raise PackageError("installed tree does not match the manifest file set")
+    for path in root.rglob("*"):
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode):
+            raise PackageError("installed tree must not contain symlinks")
+        if stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) != 0o700:
+            raise PackageError("installed directory mode is not 0700")
+        if expected_owner is not None and (info.st_uid, info.st_gid) != expected_owner:
+            raise PackageError("installed tree owner is not the dedicated user")
     for relative, entry in expected.items():
         path = root / relative
         info = path.lstat()
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise PackageError(f"installed path is not a regular file: {relative}")
+        if stat.S_IMODE(info.st_mode) != int(str(entry["mode"]), 8):
+            raise PackageError(f"installed file mode does not match the manifest: {relative}")
         payload = path.read_bytes()
         if len(payload) != entry["size"] or sha256_hex(payload) != entry["sha256"]:
             raise PackageError(f"installed file does not match the manifest: {relative}")
+    for name in selfish:
+        path = root / name
+        if not path.exists():
+            continue
+        info = path.lstat()
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISREG(info.st_mode)
+            or stat.S_IMODE(info.st_mode) != 0o600
+        ):
+            raise PackageError(f"installed manifest material is invalid: {name}")
 
 
 def _cli_verify(args: argparse.Namespace) -> int:
@@ -519,7 +572,8 @@ def _cli_verify(args: argparse.Namespace) -> int:
         raise PackageError("manifest is not canonical")
     if args.source_sha and manifest["sourceSha"] != args.source_sha:
         raise PackageError("installed control root does not match the expected source sha")
-    verify_tree(root, manifest)
+    owner = pwd.getpwnam(REMOTE_USER)
+    verify_tree(root, manifest, expected_owner=(owner.pw_uid, owner.pw_gid))
     print(f"control-root-package:verified:{manifest['sourceSha']}")
     return 0
 
