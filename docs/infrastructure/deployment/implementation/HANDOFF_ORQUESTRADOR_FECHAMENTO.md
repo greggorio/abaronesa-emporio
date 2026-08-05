@@ -167,6 +167,28 @@
 > dedicado sem inputs antes de qualquer novo POST; só então autoriza a conclusão
 > de `v0.1.1`. Os três runs falhos permanecem históricos, rollback/restore em
 > zero e S46 ainda não está aceita.
+>
+> **Atualização S46 correction-05 — 05/08/2026:** a correction-04 publicou
+> `636f09b…`, recuperou automaticamente a readiness para 200/current 404 e
+> deixou control root/control plane íntegros. O primeiro probe isolado
+> `31001791245` falhou porque probe e deploy ainda materializam a chave por
+> caminhos distintos, sem LF/fingerprint canônicos e sem diagnóstico por
+> estágio; as duas chaves foram corretamente preservadas e nenhum POST foi
+> feito. A revisão prévia também confirmou que o candidato já prova as sete
+> imagens com Docker real, faltando ensaiar apenas a transação de deploy. A
+> correction-05 final unifica SSH, exige `ssh-keygen`/fingerprint, adiciona
+> rehearsal real de bundle/backup/migrations/journal/replay e só autoriza um
+> POST depois de rehearsal e dois probes verdes. Não há nova tentativa após o
+> POST. S46 ainda não está aceita.
+>
+> **Pré-revisão S47 — 05/08/2026:** `v0.1.1 -> v0.1.0` troca os seis digests,
+> mas os inventários de migrations ERP/website são idênticos e não requerem
+> restore. O runtime/API/UI de rollback existe parcialmente, porém o workflow é
+> stub, helper/CLI não executam rollback comercial/restore, backups forward não
+> alimentam `rc_rollback_backup` e o vínculo backup-operação precisa correção.
+> S47 deverá implementar e provar tudo em ambiente isolado antes de decidir
+> sobre qualquer rollback real; essas lacunas não devem ser redescobertas por
+> tentativa em produção.
 
 ## 1. Mandato e modo de condução
 
