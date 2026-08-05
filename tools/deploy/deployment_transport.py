@@ -946,8 +946,10 @@ def execute_remote(
     except DeploymentTransportError as exc:
         error = exc.code
         if execute_started or mutation_possible:
+            # The cause is kept verbatim: DeploymentTransportError sanitizes
+            # unknown codes to INTERNAL_ERROR at construction, so nothing private
+            # can reach the outcome. See the same reasoning in deploy_handoff.
             outcome_status = "INDETERMINATE"
-            error = "REMOTE_RESULT_UNAVAILABLE" if execute_started else error
         else:
             result = {
                 "state": "FAILED", "databaseRestoreRequired": False,
@@ -1017,10 +1019,16 @@ def deploy_handoff(
             client.upload(archive, operation)
             mutation_possible = True
             client.install(operation, target, archive_sha)
-            try:
-                result = client.execute(operation, target)
-            except DeploymentTransportError as exc:
-                raise DeploymentTransportError("REMOTE_RESULT_UNAVAILABLE") from exc
+            # Deliberately unwrapped. Every other remote verb surfaces its own
+            # code; execute used to collapse all of them into one opaque verdict,
+            # so an INDETERMINATE outcome could not say whether the helper
+            # answered and refused a precondition (REMOTE_RESULT_INVALID) or the
+            # channel itself died (SSH_UNAVAILABLE). DeploymentTransportError
+            # already sanitizes any unknown code to INTERNAL_ERROR at
+            # construction, so letting the real code reach the outcome leaks
+            # nothing and is the difference between a diagnosable failure and a
+            # blind one.
+            result = client.execute(operation, target)
         except DeploymentTransportError as exc:
             error = exc.code
         finally:

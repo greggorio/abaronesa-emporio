@@ -415,6 +415,29 @@ class DeploymentTransportTest(unittest.TestCase):
                 self.assertIsNone(outcome["deploymentState"])
                 self.assertIsNone(outcome["databaseRestoreRequired"])
 
+    def test_14b_indeterminate_preserves_the_execute_cause(self):
+        """An INDETERMINATE verdict must still say why. Collapsing every remote
+        refusal into REMOTE_RESULT_UNAVAILABLE hides whether the helper answered
+        and refused a precondition or the channel itself died, which is the
+        difference between a diagnosable failure and a blind one."""
+        outcome = transport.execute_remote(
+            request=self.request(), transport=FakeRemote(failure="execute"),
+            archive=self.root / "unused", archive_sha256="sha256:" + "a" * 64,
+        )
+        self.assertEqual("INDETERMINATE", outcome["transportStatus"])
+        self.assertEqual("SSH_UNAVAILABLE", outcome["errorCode"])
+
+        class PrivateFailure(FakeRemote):
+            def execute(self, operation, release):
+                raise transport.DeploymentTransportError("INTERNAL_PRIVATE_DETAIL")
+
+        fallback = transport.execute_remote(
+            request=self.request(), transport=PrivateFailure(),
+            archive=self.root / "unused", archive_sha256="sha256:" + "a" * 64,
+        )
+        self.assertEqual("INDETERMINATE", fallback["transportStatus"])
+        self.assertEqual("INTERNAL_ERROR", fallback["errorCode"])
+
     def test_15_confirmed_success_and_indeterminate_never_conflate(self):
         success = transport.execute_remote(
             request=self.request(), transport=FakeRemote(), archive=self.root / "unused",
