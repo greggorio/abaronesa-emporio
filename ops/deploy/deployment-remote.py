@@ -19,6 +19,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -872,19 +873,54 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
             pass
 
 
-def _run_bounded(argv: list[str]) -> tuple[bytes, int]:
-    """Capture the S20 line incrementally and reap on overflow or timeout."""
+CAUSE_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,63}$")
+
+
+def _cli_cause(raw: bytes) -> str | None:
+    """Extract the CLI's own sanitized failure code from its stderr.
+
+    deployment_cli.py answers every pre-journal failure with a single canonical
+    object of one key on stderr. Discarding it left an operator with a transport
+    verdict and no cause: the deployment could fail on the env file mode, the
+    Docker config, the compose model or a binary guard and every one of them
+    looked identical from the runner. Only a closed code shape is accepted, so a
+    corrupted or chatty stream degrades to no cause instead of leaking bytes.
+    """
+    if not raw or len(raw) > STDOUT_LIMIT:
+        return None
+    line = raw.strip().rsplit(b"\n", 1)[-1]
+    try:
+        value = json.loads(line.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict) or set(value) != {"errorCode"}:
+        return None
+    code = value["errorCode"]
+    if not isinstance(code, str) or CAUSE_RE.fullmatch(code) is None:
+        return None
+    return code
+
+
+def _run_bounded(argv: list[str]) -> tuple[bytes, int, bytes]:
+    """Capture the S20 line incrementally and reap on overflow or timeout.
+
+    The child's stderr goes to a temporary file rather than a second pipe: a file
+    write never blocks, so the single-stream select loop below stays exactly as
+    it was and cannot deadlock on a chatty child.
+    """
+    diagnostic = tempfile.TemporaryFile()
     try:
         process = subprocess.Popen(
             argv,
             shell=False,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=diagnostic,
             env={"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "PATH": "/usr/bin:/bin"},
             close_fds=True,
         )
     except OSError as exc:
+        diagnostic.close()
         raise RemoteError("REMOTE_RESULT_UNAVAILABLE") from exc
     if process.stdout is None:  # pragma: no cover - PIPE guarantees a stream.
         _stop_process(process)
@@ -918,7 +954,13 @@ def _run_bounded(argv: list[str]) -> tuple[bytes, int]:
                         _fail("REMOTE_RESULT_INVALID", 3)
                     continue
                 break
-        return bytes(captured), process.wait(timeout=1)
+        returncode = process.wait(timeout=1)
+        try:
+            diagnostic.seek(0)
+            captured_diagnostic = diagnostic.read(STDOUT_LIMIT + 1)
+        except OSError:
+            captured_diagnostic = b""
+        return bytes(captured), returncode, captured_diagnostic
     except RemoteError:
         raise
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -927,6 +969,7 @@ def _run_bounded(argv: list[str]) -> tuple[bytes, int]:
     finally:
         selector.close()
         process.stdout.close()
+        diagnostic.close()
 
 
 def execute(operation_id: str, release: str) -> tuple[dict[str, Any], int]:
@@ -946,7 +989,15 @@ def execute(operation_id: str, release: str) -> tuple[dict[str, Any], int]:
         "--release",
         target,
     ]
-    stdout, returncode = _run_bounded(argv)
+    stdout, returncode, diagnostic = _run_bounded(argv)
+    if returncode not in TERMINAL_EXIT.values():
+        cause = _cli_cause(diagnostic)
+        if cause is not None:
+            # Re-emitted on the helper's own stderr, never on stdout: stdout stays
+            # the strict result channel the transport parses. The transport
+            # captures this stream over SSH, so the cause reaches the job log
+            # without touching the outcome contract.
+            print(json.dumps({"errorCode": cause}, separators=(",", ":")), file=sys.stderr)
     value = _validate_remote_result(stdout, returncode, operation)
     return value, returncode
 
