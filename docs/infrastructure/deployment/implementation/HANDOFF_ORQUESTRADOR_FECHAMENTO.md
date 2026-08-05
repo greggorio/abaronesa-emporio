@@ -118,6 +118,17 @@
 > rollback. S46 é o contrato vigente para uma única primeira instalação de
 > `v0.1.1`; documenta o bootstrap inevitável antes de existir UI/backend e
 > exige substituí-lo pela identidade/UI reais logo após o sucesso.
+>
+> **Atualização S46 correction-01 — 05/08/2026:** a tentativa original parou
+> corretamente antes de qualquer mutação porque `boutique-instagram-service`,
+> tenant alheio, já estava em loop de restart. O critério foi corrigido para
+> preservação diferencial: anomalia externa preexistente não bloqueia nem dá
+> autoridade para repará-la. Também foi confirmado que o control root instalado
+> ainda representa `9731954d…`, incompatível com o SHA terminal `cf3385f…` do
+> workflow. A correction-01 autoriza reconstrução e rotação reversível do pacote
+> terminal antes do JWKS/POST e, fechadas as capabilities, retoma a mesma S46
+> para uma única instalação de `v0.1.1`. Deploy e rollback permanecem em zero
+> no checkpoint; S46 ainda não foi aceita.
 
 ## 1. Mandato e modo de condução
 
