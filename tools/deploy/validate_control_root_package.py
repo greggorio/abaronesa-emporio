@@ -133,6 +133,7 @@ def _validate_builder(errors: list[str]) -> None:
         {
             "ops/deploy/deploy-release.sh",
             "ops/deploy/deployment-remote.py",
+            "ops/db/init-databases.sh",
         }
     ):
         errors.append("builder-executable-set")

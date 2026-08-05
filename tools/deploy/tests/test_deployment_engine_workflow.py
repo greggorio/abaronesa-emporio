@@ -85,6 +85,7 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                 'current_manifest_path=root / "releases/v0.1.0/manifest.json"',
             ),
             ("runtime", "deployment_cli.py", "fake_cli.py"),
+            ("runtime", "destination.chmod(0o755)", "destination.chmod(0o700)"),
             ("runtime", "_remove_ephemeral_root(root, run_id=run_id)", "pass # leaked root"),
         )
         for target_name, old, new in mutants:
@@ -170,6 +171,19 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
             root / "bundle",
         )
         self.assertEqual(deployment_cli._validate_root(root), root)
+
+    def test_database_initializer_preserves_the_versioned_executable_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            releases = Path(raw) / "releases"
+            releases.mkdir(mode=0o700)
+            destination = rehearsal._materialize_database_initializer(releases)
+            observed = stat.S_IMODE(destination.stat().st_mode)
+            versioned = stat.S_IMODE(
+                (ROOT / "ops/db/init-databases.sh").stat().st_mode
+            )
+            self.assertEqual(0o755, observed)
+            self.assertEqual(versioned, observed)
+            self.assertEqual(0, observed & 0o022)
 
     def test_ephemeral_root_mutants_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT) as raw:
@@ -330,6 +344,10 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                     rendered = json.dumps(value, sort_keys=True)
                     self.assertNotIn("private", rendered)
                     self.assertNotIn(os.fspath(parent), rendered)
+                    self.assertNotIn("init-databases.sh", rendered)
+                    self.assertNotIn('"0755"', rendered)
+                    self.assertNotIn('"owner"', rendered)
+                    self.assertNotIn("ON_ERROR_STOP", rendered)
                     if root is not None and root.exists():
                         shutil.rmtree(root)
 

@@ -84,6 +84,7 @@ def validate(data=None,db_script=None,override=None,compose_text=None):
         if set(v.get("networks",{}))!=NETWORKS[name]: errors.append(f"{name} networks")
         test=" ".join(map(str,v.get("healthcheck",{}).get("test",[])))
         if HEALTH[name] not in test: errors.append(f"{name} health")
+        if name == "postgresql" and "pg_isready -h 127.0.0.1" not in test: errors.append("postgresql tcp health")
         deps=v.get("depends_on",{})
         if set(deps)!=DEPENDS[name] or any(x.get("condition")!="service_healthy" for x in deps.values()): errors.append(f"{name} depends")
         if name in MOUNTS and not MOUNTS[name].issubset(_mounts(v)): errors.append(f"{name} mounts")

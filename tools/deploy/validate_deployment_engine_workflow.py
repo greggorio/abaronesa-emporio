@@ -133,6 +133,7 @@ def validate(root: Path = ROOT) -> list[str]:
     for marker in (
         "deployment_plan.generate_bundle(", "deployment_cli.py", "EMPORIO_DEPLOY_ROOT",
         "_prepare_root(bound[\"runId\"])", "_validate_ephemeral_root",
+        "_materialize_database_initializer(releases)", "destination.chmod(0o755)",
         'failed_stage = "BUNDLE_GENERATION"',
         'failed_stage = "DEPLOYMENT_CLI"',
         'failed_stage = "TRANSACTION_EVIDENCE"',

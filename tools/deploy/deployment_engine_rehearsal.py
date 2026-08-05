@@ -607,6 +607,15 @@ def _remove_ephemeral_root(root: Path, *, run_id: int) -> None:
         raise RehearsalError("CLEANUP_INCOMPLETE")
 
 
+def _materialize_database_initializer(releases: Path) -> Path:
+    support = releases / "db"
+    support.mkdir(mode=0o700)
+    destination = support / "init-databases.sh"
+    shutil.copyfile(ROOT / "ops/db/init-databases.sh", destination)
+    destination.chmod(0o755)
+    return destination
+
+
 def _resource_names(run_id: int) -> dict[str, str]:
     suffix = f"s46-engine-{run_id}"
     return {
@@ -788,10 +797,7 @@ def rehearse(trust_directory: Path, assets: Path, output: Path) -> None:
         failed_stage = "BUNDLE_GENERATION"
         releases = root / "releases"
         releases.mkdir(mode=0o700)
-        support = releases / "db"
-        support.mkdir(mode=0o700)
-        shutil.copyfile(ROOT / "ops/db/init-databases.sh", support / "init-databases.sh")
-        (support / "init-databases.sh").chmod(0o700)
+        _materialize_database_initializer(releases)
         env_file, identity, environment_values = _env(root, manifest, bound["runId"])
         names = {
             key: value

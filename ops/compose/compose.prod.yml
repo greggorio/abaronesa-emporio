@@ -28,7 +28,7 @@ services:
       - ../db/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
     networks: [emporio-db]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 12

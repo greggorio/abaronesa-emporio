@@ -58,6 +58,7 @@ LOCK_LINE_RE = re.compile(
 SOURCE_FILES: tuple[str, ...] = (
     "ops/deploy/deployment-remote.py",
     "ops/deploy/deploy-release.sh",
+    "ops/db/init-databases.sh",
     "ops/compose/compose.prod.yml",
     "ops/releases/components.yml",
     "tools/deploy/deployment_cli.py",
@@ -79,6 +80,7 @@ EXECUTABLE_FILES = frozenset(
     {
         "ops/deploy/deploy-release.sh",
         "ops/deploy/deployment-remote.py",
+        "ops/db/init-databases.sh",
     }
 )
 

@@ -47,6 +47,10 @@ def manifest_fixture(**overrides) -> dict:
         "requirementsSha256": "b" * 64,
         "files": [
             {
+                "path": "ops/db/init-databases.sh", "mode": "0755",
+                "size": 1, "sha256": "1" * 64,
+            },
+            {
                 "path": "ops/deploy/deploy-release.sh", "mode": "0755",
                 "size": 1, "sha256": "c" * 64,
             },
@@ -108,6 +112,7 @@ class T03Allowlist(unittest.TestCase):
     def test_executable_set_and_mode_classes_are_exact(self) -> None:
         self.assertEqual(
             {
+                "ops/db/init-databases.sh",
                 "ops/deploy/deploy-release.sh",
                 "ops/deploy/deployment-remote.py",
             },
@@ -339,6 +344,7 @@ class T07ManifestIntegrity(unittest.TestCase):
 
     def test_verify_tree_rejects_mode_tampering(self) -> None:
         payloads = {
+            "ops/db/init-databases.sh": b"#!/bin/sh\n",
             "ops/deploy/deploy-release.sh": b"s",
             "ops/deploy/deployment-remote.py": b"h",
             "tools/example.py": b"t",
@@ -489,6 +495,7 @@ class T11ExtractionFailureLeavesNoResidue(unittest.TestCase):
 
     def test_install_preserves_exact_executable_modes_and_owner(self) -> None:
         payloads = {
+            "ops/db/init-databases.sh": b"#!/bin/sh\n",
             "ops/deploy/deploy-release.sh": b"#!/bin/sh\n",
             "ops/deploy/deployment-remote.py": b"#!/usr/bin/env python3\n",
             "tools/example.py": b"pass\n",
@@ -535,6 +542,8 @@ class T11ExtractionFailureLeavesNoResidue(unittest.TestCase):
             self.assertTrue(helper.is_file())
             self.assertFalse(helper.is_symlink())
             self.assertEqual(0o755, helper.stat().st_mode & 0o777)
+            initializer = target / "ops/db/init-databases.sh"
+            self.assertEqual(0o755, initializer.stat().st_mode & 0o777)
             self.assertEqual((info.st_uid, info.st_gid), (helper.stat().st_uid, helper.stat().st_gid))
             direct = subprocess.run(
                 [os.fspath(helper), "capabilities"],

@@ -8,6 +8,12 @@ class ComposeTests(unittest.TestCase):
         cls.valid=resolved(); cls.script=(ROOT/"ops/db/init-databases.sh").read_text()
         cls.override=(ROOT/"ops/compose/testing/compose.s10.yml").read_text()
     def test_valid(self): validate(copy.deepcopy(self.valid))
+    def test_postgresql_health_waits_for_the_tcp_server(self):
+        command=" ".join(map(str,self.valid["services"]["postgresql"]["healthcheck"]["test"]))
+        self.assertIn("pg_isready -h 127.0.0.1",command)
+        mutant=copy.deepcopy(self.valid)
+        mutant["services"]["postgresql"]["healthcheck"]["test"]=["CMD-SHELL",command.replace(" -h 127.0.0.1","")]
+        with self.assertRaises(ValueError): validate(mutant)
     def assert_mutant(self,fn):
         d=copy.deepcopy(self.valid); fn(d)
         with self.assertRaises(ValueError): validate(d)

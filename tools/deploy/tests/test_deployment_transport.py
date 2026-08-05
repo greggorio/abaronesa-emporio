@@ -143,22 +143,43 @@ class DeploymentTransportTest(unittest.TestCase):
 
     def remote_layout(self, name="remote"):
         root = self.root / name
+        control = root / "shared/control"
         incoming = root / "shared/deploy/incoming"
         snapshots = root / "shared/deploy/snapshots"
         releases = root / "releases"
-        for directory in (root, root / "shared", root / "shared/deploy", incoming,
+        for directory in (root, root / "shared", control, control / "ops",
+                          control / "ops/db", root / "shared/deploy", incoming,
                           snapshots, releases):
             directory.mkdir(mode=0o700, exist_ok=True)
             os.chmod(directory, 0o700)
+        initializer = control / "ops/db/init-databases.sh"
+        initializer.write_bytes(b"#!/bin/sh\nset -eu\n")
+        initializer.chmod(0o755)
         patcher = mock.patch.multiple(
             remote,
             DEPLOY_ROOT=root,
+            CONTROL_ROOT=control,
             INCOMING_ROOT=incoming,
             SNAPSHOT_ROOT=snapshots,
             RELEASES_ROOT=releases,
             INSTALLED_STATE=root / "shared/deploy/installed-state.json",
         )
         return root, incoming, snapshots, releases, patcher
+
+    def test_00_database_initializer_materialization_is_idempotent_and_private(self):
+        _root, _incoming, _snapshots, releases, patcher = self.remote_layout("database-support")
+        with patcher:
+            remote._materialize_database_initializer()
+            destination = releases / "db/init-databases.sh"
+            first = destination.stat()
+            first_payload = destination.read_bytes()
+            remote._materialize_database_initializer()
+            second = destination.stat()
+        self.assertEqual(first_payload, destination.read_bytes())
+        self.assertEqual(first.st_ino, second.st_ino)
+        self.assertEqual(0o700, stat.S_IMODE(destination.parent.stat().st_mode))
+        self.assertEqual(0o755, stat.S_IMODE(destination.stat().st_mode))
+        self.assertEqual(os.geteuid(), destination.stat().st_uid)
 
     def copy_private_bundle(self, source, destination):
         shutil.copytree(source, destination)

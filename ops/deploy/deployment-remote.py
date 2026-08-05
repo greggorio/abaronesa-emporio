@@ -590,6 +590,48 @@ def _archive_file(operation: str) -> Path:
     return INCOMING_ROOT / f"{operation}.tar.part"
 
 
+def _materialize_database_initializer() -> None:
+    """Install the control-root database initializer outside release bundles."""
+    source = CONTROL_ROOT / "ops/db/init-databases.sh"
+    payload = _regular_bytes(
+        source, "REMOTE_CAPABILITY_MISMATCH", ARCHIVE_LIMIT, mode=0o755
+    )
+    support = RELEASES_ROOT / "db"
+    try:
+        support.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    except OSError as exc:
+        raise RemoteError("BUNDLE_INVALID", 4) from exc
+    _secure_directory(support, "BUNDLE_INVALID")
+    destination = support / "init-databases.sh"
+    if destination.exists() or destination.is_symlink():
+        if _regular_bytes(
+            destination, "BUNDLE_INVALID", ARCHIVE_LIMIT, mode=0o755
+        ) == payload:
+            return
+    staging = support / ".init-databases.sh.staging"
+    if staging.exists() or staging.is_symlink():
+        _fail("BUNDLE_INVALID", 4)
+    try:
+        _write_exclusive(staging, payload, "BUNDLE_INVALID")
+        staging.chmod(0o755)
+        if _regular_bytes(
+            staging, "BUNDLE_INVALID", ARCHIVE_LIMIT, mode=0o755
+        ) != payload:
+            _fail("BUNDLE_INVALID", 4)
+        os.replace(staging, destination)
+        _fsync_directory(support, "BUNDLE_INVALID")
+    except RemoteError:
+        raise
+    except OSError as exc:
+        raise RemoteError("BUNDLE_INVALID", 4) from exc
+    if _regular_bytes(
+        destination, "BUNDLE_INVALID", ARCHIVE_LIMIT, mode=0o755
+    ) != payload:
+        _fail("BUNDLE_INVALID", 4)
+
+
 def _hash_archive(path: Path) -> str:
     try:
         details = path.lstat()
@@ -747,6 +789,7 @@ def install(operation_id: str, release: str, archive_sha256: str) -> dict[str, A
     archive = _archive_file(operation)
     if _hash_archive(archive) != expected:
         _fail("BUNDLE_INVALID", 3)
+    _materialize_database_initializer()
     destination = RELEASES_ROOT / target
     staging = RELEASES_ROOT / f".{operation}.installing"
     if destination.exists() or destination.is_symlink():
