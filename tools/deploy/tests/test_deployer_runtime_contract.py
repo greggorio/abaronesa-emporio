@@ -238,6 +238,26 @@ class DeployerRuntimeContractTest(unittest.TestCase):
         )
         self.assert_mutant(root, "resilient-reconciliation-cycle")
 
+    def test_prospective_empty_current_recovery_removed_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "release_control/src/emporio_release_control/deployer_service.py",
+            "self._recover_empty_current_locked(\n                        session, operation, outcome_digest, trace_id\n                    )",
+            "False",
+        )
+        self.assert_mutant(root, "prospective-empty-current-recovery")
+
+    def test_historical_empty_current_artifact_validation_removed_fails(self) -> None:
+        root = self.mutant()
+        self.replace(
+            root,
+            "release_control/src/emporio_release_control/deployer_reconciliation.py",
+            "validate_deployment_outcome(\n                raw_outcome,",
+            "accept_unvalidated_outcome(\n                raw_outcome,",
+        )
+        self.assert_mutant(root, "historical-empty-current-recovery")
+
 
 if __name__ == "__main__":
     unittest.main()

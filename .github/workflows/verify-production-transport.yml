@@ -1,0 +1,134 @@
+name: Verify Production Transport
+run-name: verify-production-transport-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emporio-production
+  cancel-in-progress: false
+
+jobs:
+  trust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate trusted transport probe dispatch
+        env:
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
+          TRUSTED_EVENT: ${{ github.event_name }}
+          TRUSTED_REF: ${{ github.ref }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_ACTOR: ${{ github.actor }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+          TRUSTED_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          TRUSTED_SENDER_ID: ${{ github.event.sender.id }}
+          DEPLOYER_ACTOR_IDS: ${{ vars.DEPLOYER_ACTOR_IDS }}
+        run: python3 tools/deploy/production_transport_probe.py trust --output trust
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: production-transport-trust
+          path: trust/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+
+  probe:
+    needs: trust
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: production-transport-trust
+          path: trust
+      - name: Execute the fixed non-mutating capabilities probe
+        id: transport
+        env:
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+          PRODUCTION_SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+          PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT }}
+          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: python3 tools/deploy/production_transport_probe.py probe --trust trust --output probe
+      - name: Remove any materialized SSH credentials
+        id: cleanup
+        if: always()
+        env:
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+        run: python3 tools/deploy/production_transport_probe.py cleanup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: steps.transport.outcome == 'success' && steps.cleanup.outcome == 'success'
+        with:
+          name: production-transport-probe
+          path: probe/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+
+  outcome:
+    if: always()
+    needs: [trust, probe]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        if: needs.trust.result == 'success'
+        continue-on-error: true
+        with:
+          name: production-transport-trust
+          path: trust
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        if: needs.probe.result == 'success'
+        continue-on-error: true
+        with:
+          name: production-transport-probe
+          path: probe
+      - name: Record the probe outcome without inventing success
+        env:
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_WORKFLOW_REF: ${{ github.workflow_ref }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+          TRUST_RESULT: ${{ needs.trust.result }}
+          PROBE_RESULT: ${{ needs.probe.result }}
+        run: python3 tools/deploy/production_transport_probe.py outcome --trust trust --probe probe --output outcome
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: production-transport-probe-outcome
+          path: outcome/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false

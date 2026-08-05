@@ -1145,6 +1145,96 @@ def test_confirmed_non_success_preserves_clean_current(
         assert operation is not None and operation.state == state
 
 
+def test_confirmed_failed_outcome_recovers_matching_empty_current_atomically(
+    deployer: tuple[Any, ...]
+) -> None:
+    _, service, _, factory = deployer
+    operation_id = "dep_" + "d" * 32
+    create_operation(factory, operation_id=operation_id, bound=True)
+    service.mark_uncertain(
+        operation_id, "WORKFLOW_RUN_BINDING_INVALID", "deployer-reconcile"
+    )
+    value = outcome(
+        "FAILED",
+        transport="CONFIRMED",
+        restore=False,
+        code="REMOTE_CAPABILITY_MISMATCH",
+    )
+    outcome_digest = "sha256:" + "6" * 64
+    service.apply_outcome(operation_id, value, outcome_digest, "deployer-reconcile")
+    service.apply_outcome(operation_id, value, outcome_digest, "deployer-reconcile")
+
+    with factory() as session:
+        operation = session.get(DeploymentOperation, operation_id)
+        assert operation is not None and operation.state == "FAILED"
+        assert operation.database_restore_required is False
+        assert operation.active_slot is None
+        assert session.get(CurrentInstallation, 1) is None
+        actions = list(
+            session.scalars(
+                select(AuditEvent.action).where(AuditEvent.operation_id == operation_id)
+            )
+        )
+        assert actions.count("deployment.uncertain") == 1
+        assert actions.count("deployment.current_recovered") == 1
+        assert actions.count("deployment.outcome") == 1
+
+
+@pytest.mark.parametrize("mutation", ["release", "operation", "audit"])
+def test_confirmed_failed_outcome_never_erases_unproven_current(
+    deployer: tuple[Any, ...], mutation: str
+) -> None:
+    _, service, _, factory = deployer
+    operation_id = "dep_" + "d" * 32
+    create_operation(factory, operation_id=operation_id, bound=True)
+    if mutation == "audit":
+        with factory.begin() as session:
+            session.add(
+                CurrentInstallation(
+                    singleton_id=1,
+                    reconciled=False,
+                    uncertainty_code="WORKFLOW_RUN_BINDING_INVALID",
+                    last_operation_id=operation_id,
+                    updated_at=NOW,
+                )
+            )
+    else:
+        service.mark_uncertain(
+            operation_id, "WORKFLOW_RUN_BINDING_INVALID", "deployer-reconcile"
+        )
+    with factory.begin() as session:
+        current = session.get(CurrentInstallation, 1)
+        assert current is not None
+        if mutation == "release":
+            current.release = "v1.0.0"
+        elif mutation == "operation":
+            current.last_operation_id = "dep_" + "e" * 32
+    value = outcome(
+        "FAILED",
+        transport="CONFIRMED",
+        restore=False,
+        code="REMOTE_CAPABILITY_MISMATCH",
+    )
+    if mutation == "audit":
+        with pytest.raises(RuntimeFailure, match="EMPTY_CURRENT_RECOVERY_INVALID"):
+            service.apply_outcome(
+                operation_id, value, "sha256:" + "7" * 64, "deployer-reconcile"
+            )
+    else:
+        service.apply_outcome(
+            operation_id, value, "sha256:" + "7" * 64, "deployer-reconcile"
+        )
+    with factory() as session:
+        assert session.get(CurrentInstallation, 1) is not None
+        assert not list(
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == "deployment.current_recovered"
+                )
+            )
+        )
+
+
 def test_restore_required_marks_current_unreconciled(deployer: tuple[Any, ...]) -> None:
     _, service, _, factory = deployer
     create_operation(factory, bound=True)

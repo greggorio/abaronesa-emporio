@@ -14,6 +14,7 @@ EXPECTED = {
     "publish-release.yml",
     "deploy-production.yml",
     "rollback-production.yml",
+    "verify-production-transport.yml",
     # Operational-only workflow for the release-control image.
     "publish-release-control.yml",
 }

@@ -19,6 +19,9 @@ EXPECTED_WORKFLOWS = frozenset(
         "publish-release.yml",
         "deploy-production.yml",
         "rollback-production.yml",
+        # Non-mutating production SSH capability probe. It shares the
+        # production concurrency group but cannot deploy or roll back.
+        "verify-production-transport.yml",
         # Operational-only: publishes the release-control image, never a
         # commercial component and never part of the global release BOM.
         "publish-release-control.yml",
@@ -84,19 +87,24 @@ def _validate_readme(root: Path, errors: list[str]) -> None:
         errors.append("readme-unreadable")
         return
     required = (
-        "Existem exatamente seis workflows ativos",
+        "Existem exatamente sete workflows ativos",
         "`ci.yml`",
         "`publish-candidate.yml`",
         "`publish-release.yml`",
         "`deploy-production.yml`",
         "`rollback-production.yml`",
         "`publish-release-control.yml`",
+        "`verify-production-transport.yml`",
         "`rollback-production.yml` é exclusivamente manual",
-        "ainda não foram executados no GitHub",
-        "não foi executado remotamente",
+        "executa exclusivamente `capabilities`",
+        "não realiza deploy, rollback ou mutação comercial",
     )
     errors.extend(f"readme:{marker}" for marker in required if marker not in text)
-    for stale in ("Existem exatamente quatro workflows", "Existem exatamente cinco workflows"):
+    for stale in (
+        "Existem exatamente quatro workflows",
+        "Existem exatamente cinco workflows",
+        "Existem exatamente seis workflows",
+    ):
         if stale in text:
             errors.append("readme-stale-workflow-count")
 

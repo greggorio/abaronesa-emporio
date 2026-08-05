@@ -32,6 +32,7 @@ from .errors import RuntimeFailure
 from .github import GitHubClient
 from .persistence import (
     AuditEvent,
+    CurrentInstallation,
     DeploymentOperation,
     SyncState,
     release_deployer_advisory_lock,
@@ -70,6 +71,12 @@ PREDEPLOY_JOB_CONCLUSIONS = {
     "prepare": "failure",
     "deploy": "skipped",
     "outcome": "failure",
+}
+TERMINAL_RECOVERY_ARTIFACTS = {
+    TRUST_ARTIFACT_NAME,
+    "deployment-handoff",
+    "deployment-result",
+    OUTCOME_NAME,
 }
 
 
@@ -110,6 +117,19 @@ class DeployerReconciler:
                         "idempotency_cleanup_failed",
                         extra={"code": "RECONCILE_FAILED"},
                     )
+                recovery_operation = self._empty_current_recovery_candidate()
+                if recovery_operation is not None:
+                    try:
+                        green = (
+                            self._recover_terminal_empty_current(recovery_operation)
+                            and green
+                        )
+                    except RuntimeFailure as exc:
+                        green = False
+                        self._audit_failure(recovery_operation, exc.code)
+                    except Exception:
+                        green = False
+                        self._audit_failure(recovery_operation, "RECONCILE_FAILED")
                 try:
                     operation_ids = list(
                         session.scalars(
@@ -161,6 +181,197 @@ class DeployerReconciler:
                             "deployment_lock_release_fallback_failed",
                             extra={"code": "RECONCILE_FAILED"},
                         )
+
+    def _empty_current_recovery_candidate(self) -> str | None:
+        """Return only the exact empty singleton left by deployment reconciliation."""
+
+        with self.factory() as session:
+            current = session.get(CurrentInstallation, 1)
+            if current is None or not self.service._empty_current_matches(
+                current, str(current.last_operation_id)
+            ):
+                return None
+            operation_id = str(current.last_operation_id)
+            operation = session.get(DeploymentOperation, operation_id)
+            if (
+                operation is None
+                or operation.operation_type != "deployment"
+                or operation.state != "FAILED"
+                or operation.dispatch_state != "CONFIRMED"
+                or operation.transport_status != "CONFIRMED"
+                or operation.remote_state != "FAILED"
+                or operation.database_restore_required is not False
+                or operation.active_slot is not None
+                or operation.finished_at is None
+                or operation.workflow_run_id is None
+                or operation.workflow_attempt is None
+                or operation.workflow_run_url is None
+                or operation.control_sha is None
+                or operation.outcome_sha256 is None
+                or operation.source_release is not None
+                or operation.source_state_sha256 is not None
+                or operation.backup_id is not None
+                or operation.journal_json not in ({}, None)
+                or operation.evidence_json not in ({}, None)
+            ):
+                return None
+            return operation_id
+
+    def _recover_terminal_empty_current(self, operation_id: str) -> bool:
+        """Revalidate immutable run artifacts before removing an empty marker."""
+
+        code = "EMPTY_CURRENT_RECOVERY_INVALID"
+        with self.factory() as session:
+            operation = session.get(DeploymentOperation, operation_id)
+            if operation is None:
+                raise RuntimeFailure(code)
+            run_id = operation.workflow_run_id
+            attempt = operation.workflow_attempt
+            control_sha = operation.control_sha
+            target_release = operation.target_release
+            outcome_digest = operation.outcome_sha256
+            error_code = operation.error_code
+        if (
+            not isinstance(run_id, int)
+            or isinstance(run_id, bool)
+            or not isinstance(attempt, int)
+            or isinstance(attempt, bool)
+            or not isinstance(control_sha, str)
+            or SHA_RE.fullmatch(control_sha) is None
+            or not isinstance(outcome_digest, str)
+            or DIGEST_RE.fullmatch(outcome_digest) is None
+        ):
+            raise RuntimeFailure(code)
+
+        runs = self.github.list_pages(WORKFLOW_RUNS_PATH, "workflow_runs")
+        matches = [item for item in runs if item.get("id") == run_id]
+        if len(matches) != 1:
+            raise RuntimeFailure(code)
+        run = matches[0]
+        self._validate_run(run, operation_id)
+        actor = run.get("actor")
+        if (
+            run.get("run_attempt") != attempt
+            or run.get("head_sha") != control_sha
+            or run.get("status") != "completed"
+            or run.get("conclusion") != "failure"
+            or run.get("html_url")
+            != f"https://github.com/{REPOSITORY}/actions/runs/{run_id}"
+            or not isinstance(actor, dict)
+        ):
+            raise RuntimeFailure(code)
+
+        artifacts = self.github.list_pages(
+            f"/repos/{REPOSITORY}/actions/runs/{run_id}/artifacts", "artifacts"
+        )
+        by_name = self._validate_terminal_recovery_inventory(
+            artifacts, run_id=run_id, control_sha=control_sha
+        )
+
+        trust_metadata = by_name[TRUST_ARTIFACT_NAME]
+        trust_artifact = self._validate_trust_artifact(
+            [trust_metadata], run_id=run_id, control_sha=control_sha
+        )
+        raw_trust = self.github.get_bytes(
+            f"/repos/{REPOSITORY}/actions/artifacts/{trust_artifact['id']}/zip",
+            limit=MAX_TRUST_ZIP_BYTES,
+        )
+        if (
+            len(raw_trust) != trust_artifact["size"]
+            or digest(raw_trust) != trust_artifact["digest"]
+        ):
+            raise RuntimeFailure(code)
+        try:
+            trust = self._validate_trust_zip(
+                raw_trust,
+                artifact_digest=trust_artifact["digest"],
+                operation_id=operation_id,
+                run=run,
+                run_id=run_id,
+                attempt=attempt,
+                control_sha=control_sha,
+            )
+        except RuntimeFailure as exc:
+            raise RuntimeFailure(code) from exc
+        if trust.get("targetRelease") != target_release:
+            raise RuntimeFailure(code)
+
+        outcome_metadata = by_name[OUTCOME_NAME]
+        try:
+            artifact = validate_deployment_artifact(
+                outcome_metadata, run_id=run_id, head_sha=control_sha
+            )
+            raw_outcome = self.github.get_bytes(
+                f"/repos/{REPOSITORY}/actions/artifacts/{artifact.artifact_id}/zip"
+            )
+            if len(raw_outcome) != artifact.size_in_bytes:
+                raise RuntimeFailure(code)
+            outcome = validate_deployment_outcome(
+                raw_outcome,
+                artifact.artifact_digest,
+                operation_id=operation_id,
+                target_release=target_release,
+                run_id=run_id,
+                attempt=attempt,
+                control_sha=control_sha,
+            )
+            validate_run_conclusion(run.get("conclusion"), outcome)
+        except RuntimeFailure as exc:
+            raise RuntimeFailure(code) from exc
+        if (
+            artifact.artifact_digest != outcome_digest
+            or outcome.get("transportStatus") != "CONFIRMED"
+            or outcome.get("deploymentState") != "FAILED"
+            or outcome.get("databaseRestoreRequired") is not False
+            or outcome.get("errorCode") != error_code
+        ):
+            raise RuntimeFailure(code)
+        self.service.recover_empty_current(
+            operation_id, artifact.artifact_digest, "deployer-reconcile"
+        )
+        return True
+
+    @staticmethod
+    def _validate_terminal_recovery_inventory(
+        artifacts: list[dict[str, Any]], *, run_id: int, control_sha: str
+    ) -> dict[str, dict[str, Any]]:
+        """Require an exclusive, available artifact set bound to one run and SHA."""
+
+        code = "EMPTY_CURRENT_RECOVERY_INVALID"
+        by_name: dict[str, dict[str, Any]] = {}
+        for item in artifacts:
+            name = item.get("name")
+            if not isinstance(name, str) or name in by_name:
+                raise RuntimeFailure(code)
+            by_name[name] = item
+        if (
+            len(artifacts) != len(TERMINAL_RECOVERY_ARTIFACTS)
+            or set(by_name) != TERMINAL_RECOVERY_ARTIFACTS
+        ):
+            raise RuntimeFailure(code)
+        for value in by_name.values():
+            artifact_id = positive_id(value.get("id"), code)
+            size = value.get("size_in_bytes")
+            artifact_digest = value.get("digest")
+            workflow_run = value.get("workflow_run")
+            if (
+                value.get("expired") is not False
+                or isinstance(size, bool)
+                or not isinstance(size, int)
+                or size < 1
+                or size > 64 * 1024 * 1024
+                or not isinstance(artifact_digest, str)
+                or DIGEST_RE.fullmatch(artifact_digest) is None
+                or value.get("url")
+                != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}"
+                or value.get("archive_download_url")
+                != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"
+                or not isinstance(workflow_run, dict)
+                or workflow_run.get("id") != run_id
+                or workflow_run.get("head_sha") != control_sha
+            ):
+                raise RuntimeFailure(code)
+        return by_name
 
     def _operation(self, operation_id: str) -> bool:
         with self.factory() as session:

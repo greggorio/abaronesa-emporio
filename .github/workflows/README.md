@@ -1,8 +1,9 @@
 # Workflows GitHub Actions
 
-Existem exatamente seis workflows ativos: `ci.yml`, `publish-candidate.yml`,
+Existem exatamente sete workflows ativos: `ci.yml`, `publish-candidate.yml`,
 `publish-release.yml`, `deploy-production.yml`, `rollback-production.yml` e
-`publish-release-control.yml`. Os cinco primeiros formam o caminho comercial; o
+`publish-release-control.yml`, além de `verify-production-transport.yml`. Os cinco
+primeiros formam o caminho comercial; o
 `publish-release-control.yml` é exclusivamente manual e publica somente a imagem
 operacional do `release_control`, que nunca entra no candidato nem no BOM da
 release global. A CI executa em pull requests e pushes para `main`;
@@ -31,9 +32,8 @@ exato e somente as seis referências imutáveis do manifesto.
 O artifact candidato continua `deployable: false`. `publish-release.yml` e
 somente manual, valida a historia e publica draft/assets/tag de forma
 compensavel; ele nao e deploy e nao acessa VPS. Os workflows de CI e
-publicação foram validados localmente, mas ainda não foram executados no GitHub. No
-primeiro push, a ausência de candidato anterior exige build dos seis
-componentes.
+publicação são validados localmente e no GitHub antes de qualquer uso
+operacional.
 
 O contrato definitivo usa o grafo `trust -> predecessor -> build -> assemble
 -> integrated -> publish`. A CI entrega plano v2; `predecessor` resolve a
@@ -53,10 +53,16 @@ e release SemVer. Seu grafo `trust -> prepare -> deploy -> outcome` valida a
 release global publicada, obtém um snapshot autenticado, gera o bundle S18 no
 runner e chama remotamente apenas o CLI S20. Somente `deploy` usa o environment
 `production`; a concorrência `emporio-production` não cancela operação em
-andamento. Resultado remoto indeterminado nunca é promovido a sucesso. O
-workflow está configurado e validado localmente, mas ainda não foi executado.
+andamento. Resultado remoto indeterminado nunca é promovido a sucesso. Cada
+execução permanece vinculada à operação, ao SHA e aos artifacts canônicos.
 
 `rollback-production.yml` é exclusivamente manual (`workflow_dispatch`), recebe
 somente `operation_id` e `release`, mantém `contents: read` e apenas valida o
 envelope versionado do rollback. Não publica, não usa SSH, Docker ou segredo e
-não foi executado remotamente.
+não realiza restauração por conta própria.
+
+`verify-production-transport.yml` é exclusivamente manual e não recebe inputs.
+Ele usa o environment `production`, a mesma concorrência fail-closed do deploy e
+executa exclusivamente `capabilities` pelo helper fixo do control root. Seus
+artifacts vinculam repositório, run, attempt, SHA, ator e `controlSha`; a chave
+materializada é destruída em cleanup `always()`. O probe não realiza deploy, rollback ou mutação comercial.

@@ -315,6 +315,39 @@ def validate(root: Path = ROOT) -> None:
         and {"CONFIRMED", "SUCCEEDED", "restore_required"} <= outcome_words,
         "restore-conflict",
     )
+    require(
+        {
+            "FAILED",
+            "_empty_current_matches",
+            "_recover_empty_current_locked",
+            "outcome_digest",
+        }
+        <= outcome_words,
+        "prospective-empty-current-recovery",
+    )
+    recovery_words = _node_vocabulary(
+        _class_method(service_tree, "DeployerService", "_recover_empty_current_locked")
+    )
+    require(
+        {
+            "EMPTY_CURRENT_RECOVERY_AUDIT",
+            "CONFIRMED",
+            "FAILED",
+            "database_restore_required",
+            "AuditEvent",
+            "delete",
+        }
+        <= recovery_words,
+        "transactional-empty-current-recovery",
+    )
+    public_recovery_words = _node_vocabulary(
+        _class_method(service_tree, "DeployerService", "recover_empty_current")
+    )
+    require(
+        {"begin", "_recover_empty_current_locked"}
+        <= public_recovery_words,
+        "transactional-empty-current-recovery",
+    )
     race_words = _node_vocabulary(
         _class_method(service_tree, "DeployerService", "_resolve_integrity_race")
     )
@@ -393,12 +426,35 @@ def validate(root: Path = ROOT) -> None:
     cycle_words = _node_vocabulary(cycle_node)
     require(
         {
-            "cleanup_expired_idempotency", "_operation", "_set_domain",
+            "cleanup_expired_idempotency", "_empty_current_recovery_candidate",
+            "_recover_terminal_empty_current", "_operation", "_set_domain",
             "release_deployer_advisory_lock", "RECONCILE_FAILED",
         }
         <= cycle_words
         and any(isinstance(node, ast.Try) and node.finalbody for node in ast.walk(cycle_node)),
         "resilient-reconciliation-cycle",
+    )
+    historical_recovery_words = _node_vocabulary(
+        _class_method(
+            reconciliation_tree,
+            "DeployerReconciler",
+            "_recover_terminal_empty_current",
+        )
+    )
+    require(
+        {
+            "WORKFLOW_RUNS_PATH",
+            "_validate_run",
+            "_validate_trust_zip",
+            "validate_deployment_artifact",
+            "validate_deployment_outcome",
+            "validate_run_conclusion",
+            "_validate_terminal_recovery_inventory",
+            "recover_empty_current",
+            "databaseRestoreRequired",
+        }
+        <= historical_recovery_words,
+        "historical-empty-current-recovery",
     )
     require(
         not (DEPLOYMENT_STATES ^ set(constants.get("DEPLOYMENT_STATES", ()))),
@@ -485,6 +541,7 @@ def validate(root: Path = ROOT) -> None:
         "deploy-production.yml",
         "forward-only",
         "INDETERMINATE",
+        "deployment.current_recovered",
     ):
         require(marker in doc, "runtime-documentation")
 
@@ -501,6 +558,8 @@ def validate(root: Path = ROOT) -> None:
             "test_confirmed_success_requiring_restore_is_rejected_before_any_write",
             "test_integrity_race_reports_real_active_operation",
             "test_unrelated_integrity_failure_is_sanitized_internal_error",
+            "test_confirmed_failed_outcome_recovers_matching_empty_current_atomically",
+            "test_confirmed_failed_outcome_never_erases_unproven_current",
         }
         <= api_tests,
         "causal-runtime-tests",
@@ -527,6 +586,10 @@ def validate(root: Path = ROOT) -> None:
             "test_individual_failure_does_not_skip_remaining_operations",
             "test_set_domain_failure_and_lock_release_failure_do_not_escape",
             "test_lock_not_acquired_returns_false_without_domain_change",
+            "test_cycle_recovers_terminal_empty_current_once_and_preserves_history",
+            "test_terminal_empty_current_recovery_rejects_each_divergence",
+            "test_empty_current_recovery_is_serialized_and_idempotent",
+            "test_recovery_failure_is_transactional",
         }
         <= reconciliation_tests,
         "causal-reconciliation-tests",

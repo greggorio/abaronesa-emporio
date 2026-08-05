@@ -67,6 +67,9 @@ COMPONENTS = (
     "whatsapp_service",
     "gateway",
 )
+EMPTY_CURRENT_RECOVERY_AUDIT = "deployment.current_recovered"
+EMPTY_CURRENT_UNCERTAIN_AUDIT = "deployment.uncertain"
+EMPTY_CURRENT_RECONCILE_TRACE = "deployer-reconcile"
 
 
 class ActiveOperationFailure(RuntimeFailure):
@@ -926,6 +929,120 @@ class DeployerService:
                 )
             )
 
+    @staticmethod
+    def _empty_current_matches(
+        current: CurrentInstallation, operation_id: str
+    ) -> bool:
+        """Recognize only a marker with no commercial installation evidence."""
+
+        return (
+            current.singleton_id == 1
+            and current.release is None
+            and current.source_commit is None
+            and current.state_sha256 is None
+            and current.previous_release is None
+            and current.installed_at is None
+            and current.reconciled is False
+            and isinstance(current.uncertainty_code, str)
+            and bool(current.uncertainty_code)
+            and current.last_operation_id == operation_id
+        )
+
+    @classmethod
+    def _recover_empty_current_locked(
+        cls,
+        session: Session,
+        operation: DeploymentOperation,
+        outcome_digest: str,
+        trace_id: str,
+    ) -> bool:
+        """Delete one proven empty marker and append one audit in the transaction."""
+
+        cls._require_workflow_binding(operation, "CONFIRMED")
+        if (
+            operation.operation_type != "deployment"
+            or operation.state != "FAILED"
+            or operation.dispatch_state != "CONFIRMED"
+            or operation.transport_status != "CONFIRMED"
+            or operation.remote_state != "FAILED"
+            or operation.database_restore_required is not False
+            or operation.active_slot is not None
+            or operation.finished_at is None
+            or operation.outcome_sha256 != outcome_digest
+            or operation.source_release is not None
+            or operation.source_state_sha256 is not None
+            or operation.backup_id is not None
+            or operation.journal_json not in ({}, None)
+            or operation.evidence_json not in ({}, None)
+        ):
+            raise RuntimeFailure("EMPTY_CURRENT_RECOVERY_INVALID")
+
+        current = session.get(CurrentInstallation, 1, with_for_update=True)
+        recovered = list(
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.operation_id == operation.operation_id,
+                    AuditEvent.action == EMPTY_CURRENT_RECOVERY_AUDIT,
+                )
+            )
+        )
+        if current is None:
+            if len(recovered) == 1:
+                return False
+            raise RuntimeFailure("EMPTY_CURRENT_RECOVERY_INVALID")
+        if recovered or not cls._empty_current_matches(current, operation.operation_id):
+            raise RuntimeFailure("EMPTY_CURRENT_RECOVERY_INVALID")
+
+        uncertain_audits = list(
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.operation_id == operation.operation_id,
+                    AuditEvent.action == EMPTY_CURRENT_UNCERTAIN_AUDIT,
+                    AuditEvent.result == "INDETERMINATE",
+                    AuditEvent.trace_id == EMPTY_CURRENT_RECONCILE_TRACE,
+                )
+            )
+        )
+        if not any(
+            isinstance(item.metadata_json, dict)
+            and item.metadata_json.get("code") == current.uncertainty_code
+            and item.metadata_json.get("transportStatus") == "INDETERMINATE"
+            for item in uncertain_audits
+        ):
+            raise RuntimeFailure("EMPTY_CURRENT_RECOVERY_INVALID")
+
+        marker = str(current.uncertainty_code)
+        session.delete(current)
+        session.add(
+            AuditEvent(
+                trace_id=trace_id,
+                actor_sub=None,
+                action=EMPTY_CURRENT_RECOVERY_AUDIT,
+                result="RECOVERED",
+                operation_id=operation.operation_id,
+                metadata_json={
+                    "code": marker,
+                    "runId": operation.workflow_run_id,
+                    "runAttempt": operation.workflow_attempt,
+                    "outcomeSha256": outcome_digest,
+                },
+            )
+        )
+        return True
+
+    def recover_empty_current(
+        self, operation_id: str, outcome_digest: str, trace_id: str
+    ) -> bool:
+        """Recover a historical empty marker after remote evidence was revalidated."""
+
+        with self.factory.begin() as session:
+            operation = session.get(DeploymentOperation, operation_id, with_for_update=True)
+            if operation is None:
+                raise RuntimeFailure("EMPTY_CURRENT_RECOVERY_INVALID")
+            return self._recover_empty_current_locked(
+                session, operation, outcome_digest, trace_id
+            )
+
     def apply_predeploy_failure(
         self,
         operation_id: str,
@@ -1314,6 +1431,14 @@ class DeployerService:
                     current.uncertainty_code = str(error_code or "DATABASE_RESTORE_REQUIRED")[:100]
                     current.last_operation_id = operation_id
                     current.updated_at = operation.updated_at
+                elif (
+                    state == "FAILED"
+                    and current is not None
+                    and self._empty_current_matches(current, operation_id)
+                ):
+                    self._recover_empty_current_locked(
+                        session, operation, outcome_digest, trace_id
+                    )
                 audit_result = str(state)
             session.add(
                 AuditEvent(

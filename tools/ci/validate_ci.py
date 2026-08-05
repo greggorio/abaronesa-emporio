@@ -27,6 +27,7 @@ REQUIRED_COMMANDS = (
     "python3 tools/gateway/validate_host_nginx.py",
     "python3 -m unittest discover -s tools/gateway/tests -v",
     "python3 tools/ci/migrations_contract.py",
+    "python3 tools/deploy/validate_production_transport_workflow.py",
     "python3 tools/ci/secret_scan.py --tracked",
     "mvn -B verify",
     "npm run lint",

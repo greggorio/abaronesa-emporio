@@ -3,11 +3,12 @@ from __future__ import annotations
 import io
 import stat
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 from test_deployer_remote_contract import (
     ATTEMPT,
@@ -119,6 +120,7 @@ class FakeGitHub:
         raw: bytes | None = None,
         runs_failure: Exception | None = None,
         jobs_failure: Exception | None = None,
+        raw_by_artifact: dict[int, bytes] | None = None,
     ) -> None:
         self.runs = runs or []
         self.artifacts = artifacts or []
@@ -126,6 +128,7 @@ class FakeGitHub:
         self.raw = raw or outcome_zip()
         self.runs_failure = runs_failure
         self.jobs_failure = jobs_failure
+        self.raw_by_artifact = raw_by_artifact or {}
         self.paths: list[str] = []
 
     def list_pages(self, path: str, key: str | None) -> list[dict[str, Any]]:
@@ -143,9 +146,14 @@ class FakeGitHub:
 
     def get_bytes(self, path: str, limit: int | None = None) -> bytes:
         self.paths.append(path)
-        if limit is not None and len(self.raw) > limit:
+        try:
+            artifact_id = int(path.split("/artifacts/", 1)[1].split("/", 1)[0])
+        except (IndexError, ValueError):
+            artifact_id = -1
+        raw = self.raw_by_artifact.get(artifact_id, self.raw)
+        if limit is not None and len(raw) > limit:
             raise RuntimeFailure("GITHUB_RESPONSE_INVALID")
-        return self.raw
+        return raw
 
 
 def run(
@@ -399,6 +407,112 @@ def seed_historical_uncertain(factory: sessionmaker[Session]) -> None:
                 metadata_json={"code": "DEPLOYMENT_OUTCOME_UNAVAILABLE"},
             )
         )
+
+
+def failed_outcome() -> dict[str, Any]:
+    return outcome(
+        deploymentState="FAILED",
+        transportStatus="CONFIRMED",
+        databaseRestoreRequired=False,
+        errorCode="REMOTE_CAPABILITY_MISMATCH",
+    )
+
+
+def outcome_artifact(raw: bytes, artifact_id: int = 901) -> dict[str, Any]:
+    return artifact(
+        id=artifact_id,
+        digest=digest(raw),
+        size_in_bytes=len(raw),
+        url=f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}",
+        archive_download_url=(
+            f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"
+        ),
+    )
+
+
+def recovery_artifact(name: str, artifact_id: int) -> dict[str, Any]:
+    return artifact(
+        id=artifact_id,
+        name=name,
+        digest="sha256:" + f"{artifact_id % 10}" * 64,
+        size_in_bytes=1,
+        url=(
+            f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}"
+        ),
+        archive_download_url=(
+            f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"
+        ),
+    )
+
+
+def seed_terminal_empty_current(factory: sessionmaker[Session]) -> tuple[bytes, bytes]:
+    seed_operation(factory, state="FAILED")
+    trust_raw = trust_zip()
+    outcome_raw = outcome_zip(failed_outcome())
+    now = utc_now()
+    with factory.begin() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None
+        operation.dispatch_state = "CONFIRMED"
+        operation.transport_status = "CONFIRMED"
+        operation.remote_state = "FAILED"
+        operation.database_restore_required = False
+        operation.error_code = "REMOTE_CAPABILITY_MISMATCH"
+        operation.error_message = "Deployment failed"
+        operation.workflow_run_id = RUN_ID
+        operation.workflow_attempt = ATTEMPT
+        operation.workflow_run_url = (
+            f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
+        )
+        operation.control_sha = SHA
+        operation.outcome_sha256 = digest(outcome_raw)
+        operation.journal_json = {}
+        operation.evidence_json = {}
+        session.add(
+            CurrentInstallation(
+                singleton_id=1,
+                reconciled=False,
+                uncertainty_code="WORKFLOW_RUN_BINDING_INVALID",
+                last_operation_id=OPERATION,
+                updated_at=now,
+            )
+        )
+        session.add(
+            AuditEvent(
+                trace_id="deployer-reconcile",
+                actor_sub=None,
+                action="deployment.uncertain",
+                result="INDETERMINATE",
+                operation_id=OPERATION,
+                metadata_json={
+                    "code": "WORKFLOW_RUN_BINDING_INVALID",
+                    "transportStatus": "INDETERMINATE",
+                },
+            )
+        )
+    return trust_raw, outcome_raw
+
+
+def terminal_recovery_github(
+    trust_raw: bytes,
+    outcome_raw: bytes,
+    *,
+    run_value: dict[str, Any] | None = None,
+    artifacts_value: list[dict[str, Any]] | None = None,
+) -> FakeGitHub:
+    trust = trust_artifact(trust_raw, id=900)
+    result = outcome_artifact(outcome_raw, 901)
+    artifacts_value = artifacts_value or [
+        trust,
+        recovery_artifact("deployment-handoff", 902),
+        recovery_artifact("deployment-result", 903),
+        result,
+    ]
+    return FakeGitHub(
+        runs=[run_value or run(conclusion="failure")],
+        artifacts=artifacts_value,
+        raw_by_artifact={900: trust_raw, 901: outcome_raw},
+    )
 
 
 def reconciler(
@@ -874,6 +988,220 @@ def test_terminal_operation_is_not_reprocessed(factory: sessionmaker[Session]) -
     assert github.paths == []
     assert service.applied == []
     assert service.uncertain == []
+
+
+def test_cycle_recovers_terminal_empty_current_once_and_preserves_history(
+    factory: sessionmaker[Session],
+) -> None:
+    trust_raw, outcome_raw = seed_terminal_empty_current(factory)
+    historical_ids = ("dep_" + "b" * 32, "dep_" + "c" * 32)
+    for operation_id in historical_ids:
+        seed_operation(factory, operation_id=operation_id, state="FAILED")
+    with factory() as session:
+        before = {
+            item.operation_id: (
+                item.state,
+                item.dispatch_state,
+                item.transport_status,
+                item.error_code,
+                item.workflow_run_id,
+                item.outcome_sha256,
+                item.version,
+            )
+            for item in session.scalars(select(DeploymentOperation))
+        }
+
+    github = terminal_recovery_github(trust_raw, outcome_raw)
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+    assert target.cycle() is True
+    first_paths = list(github.paths)
+    assert target.cycle() is True
+    assert github.paths == first_paths
+
+    with factory() as session:
+        assert session.get(CurrentInstallation, 1) is None
+        after = {
+            item.operation_id: (
+                item.state,
+                item.dispatch_state,
+                item.transport_status,
+                item.error_code,
+                item.workflow_run_id,
+                item.outcome_sha256,
+                item.version,
+            )
+            for item in session.scalars(select(DeploymentOperation))
+        }
+        assert after == before
+        audits = list(
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == "deployment.current_recovered"
+                )
+            )
+        )
+        assert len(audits) == 1
+        assert audits[0].operation_id == OPERATION
+        assert audits[0].metadata_json == {
+            "code": "WORKFLOW_RUN_BINDING_INVALID",
+            "runId": RUN_ID,
+            "runAttempt": ATTEMPT,
+            "outcomeSha256": digest(outcome_raw),
+        }
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "attempt",
+        "sha",
+        "actor",
+        "run_not_terminal",
+        "artifact_missing",
+        "artifact_expired",
+        "artifact_tampered",
+        "transport_indeterminate",
+        "restore_required",
+        "current_commercial",
+        "different_operation",
+        "rollback",
+    ],
+)
+def test_terminal_empty_current_recovery_rejects_each_divergence(
+    factory: sessionmaker[Session], mutation: str
+) -> None:
+    trust_raw, outcome_raw = seed_terminal_empty_current(factory)
+    run_value = run(conclusion="failure")
+    artifacts_value: list[dict[str, Any]] | None = None
+    if mutation == "attempt":
+        run_value["run_attempt"] = ATTEMPT + 1
+    elif mutation == "sha":
+        run_value["head_sha"] = "2" * 40
+    elif mutation == "actor":
+        run_value["actor"] = {"id": 313092948}
+    elif mutation == "run_not_terminal":
+        run_value["status"] = "in_progress"
+        run_value["conclusion"] = None
+    elif mutation == "artifact_missing":
+        artifacts_value = [
+            trust_artifact(trust_raw, id=900),
+            recovery_artifact("deployment-result", 903),
+            outcome_artifact(outcome_raw, 901),
+        ]
+    elif mutation == "artifact_expired":
+        artifacts_value = [
+            trust_artifact(trust_raw, id=900),
+            recovery_artifact("deployment-handoff", 902),
+            recovery_artifact("deployment-result", 903),
+            outcome_artifact(outcome_raw, 901),
+        ]
+        artifacts_value[1]["expired"] = True
+    elif mutation == "artifact_tampered":
+        outcome_raw = outcome_raw + b"tampered"
+    else:
+        with factory.begin() as session:
+            operation = session.get(DeploymentOperation, OPERATION)
+            current = session.get(CurrentInstallation, 1)
+            assert operation is not None and current is not None
+            if mutation == "transport_indeterminate":
+                operation.transport_status = "INDETERMINATE"
+            elif mutation == "restore_required":
+                operation.database_restore_required = True
+            elif mutation == "current_commercial":
+                current.release = RELEASE
+            elif mutation == "different_operation":
+                current.last_operation_id = "dep_" + "b" * 32
+            elif mutation == "rollback":
+                current.last_operation_id = "rbk_" + "a" * 32
+
+    github = terminal_recovery_github(
+        trust_raw,
+        outcome_raw,
+        run_value=run_value,
+        artifacts_value=artifacts_value,
+    )
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+    assert target.cycle() is True
+    with factory() as session:
+        assert session.get(CurrentInstallation, 1) is not None
+        assert not list(
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == "deployment.current_recovered"
+                )
+            )
+        )
+
+
+def test_empty_current_recovery_is_serialized_and_idempotent(
+    factory: sessionmaker[Session],
+) -> None:
+    _, outcome_raw = seed_terminal_empty_current(factory)
+    github = FakeGitHub()
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda trace: service.recover_empty_current(
+                    OPERATION, digest(outcome_raw), trace
+                ),
+                ("deployer-reconcile", "deployer-reconcile"),
+            )
+        )
+    assert sorted(results) == [False, True]
+    with factory() as session:
+        assert session.get(CurrentInstallation, 1) is None
+        assert len(
+            list(
+                session.scalars(
+                    select(AuditEvent).where(
+                        AuditEvent.action == "deployment.current_recovered"
+                    )
+                )
+            )
+        ) == 1
+
+
+def test_recovery_failure_is_transactional(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trust_raw, outcome_raw = seed_terminal_empty_current(factory)
+    github = terminal_recovery_github(trust_raw, outcome_raw)
+    service = DeployerService(
+        factory, github, b"p" * 32, 365, lambda _release: None  # type: ignore[arg-type]
+    )
+
+    def fail(*_args: Any, **_kwargs: Any) -> bool:
+        raise RuntimeFailure("TRANSACTION_FAILED")
+
+    monkeypatch.setattr(service, "recover_empty_current", fail)
+    target = DeployerReconciler(
+        factory, github, service, FakeSynchronizer()  # type: ignore[arg-type]
+    )
+    assert target.cycle() is True
+    with factory() as session:
+        operation = session.get(DeploymentOperation, OPERATION)
+        assert operation is not None and operation.state == "FAILED"
+        assert session.get(CurrentInstallation, 1) is not None
+        assert not list(
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == "deployment.current_recovered"
+                )
+            )
+        )
 
 
 def test_cycle_uses_deployer_lock_sync_cleanup_and_green_domain(

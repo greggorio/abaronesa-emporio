@@ -86,6 +86,14 @@ de releases continua respondendo `200`, mas apresenta todos os itens como
 inelegiveis; plano e novo deployment respondem `409`. Leituras nunca apagam ou
 reescrevem essa evidencia.
 
+Se um outcome imutável `CONFIRMED/FAILED`, com restore falso, chegar depois de
+uma observação transitória ter criado somente um marcador vazio de incerteza, o
+reconciliador revalida run, attempt, SHA, ator, trust e outcome antes de remover
+esse singleton. A recuperação é transacional, aceita apenas campos comerciais
+nulos, registra uma única auditoria `deployment.current_recovered` e é
+idempotente em replay ou restart. Evidência ausente, ambígua, adulterada ou
+associada a outra operação preserva o marcador e mantém readiness indisponível.
+
 ## Rollback comercial
 
 O runtime anuncia `deployment:rollback` somente depois da ativação S26/S27. A

@@ -69,12 +69,12 @@ class WorkflowInventoryContractTest(unittest.TestCase):
         )
 
     def test_mutant_05_stale_workflow_count_readme_is_rejected(self) -> None:
-        for stale in ("quatro", "cinco"):
+        for stale in ("quatro", "cinco", "seis"):
             with self.subTest(stale=stale):
                 self.assert_mutant_rejected(
                     ".github/workflows/README.md",
                     lambda text, stale=stale: text.replace(
-                        "Existem exatamente seis workflows",
+                        "Existem exatamente sete workflows",
                         f"Existem exatamente {stale} workflows",
                         1,
                     ),
@@ -84,6 +84,14 @@ class WorkflowInventoryContractTest(unittest.TestCase):
         self.assert_mutant_rejected(
             ".github/workflows/README.md",
             lambda text: text.replace("`publish-release-control.yml`", "`other.yml`"),
+        )
+
+    def test_mutant_05c_readme_missing_transport_probe_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            ".github/workflows/README.md",
+            lambda text: text.replace(
+                "`verify-production-transport.yml`", "`other-transport.yml`"
+            ),
         )
 
     def test_mutant_06_release_expected_set_is_rejected(self) -> None:
@@ -102,8 +110,8 @@ class WorkflowInventoryContractTest(unittest.TestCase):
         self.assert_mutant_rejected(
             ".github/workflows/README.md",
             lambda text: text.replace(
-                "ainda não foram executados no GitHub",
-                "foram executados no GitHub",
+                "executa exclusivamente `capabilities`",
+                "executa comandos arbitrários",
                 1,
             ),
         )
