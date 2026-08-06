@@ -1082,7 +1082,8 @@ def rollback(operation_id: str, release: str) -> dict[str, Any]:
         next_state, _ = _load_canonical_json(
             target_bundle / "installed-state.next.json", "SOURCE_BUNDLE_INVALID"
         )
-        deployment_plan.load_current(target_bundle / "installed-state.next.json")
+        if deployment_executor._next_state(target_bundle) != next_state:
+            _fail("SOURCE_BUNDLE_INVALID", 4)
     except RemoteError:
         raise
     except Exception as exc:

@@ -64,6 +64,11 @@ def main() -> int:
         client.capabilities(sha)
         result = client._remote(("rollback", "--operation-id", operation, "--release", release), 900)
         value = transport._parse_single_json(result, "REMOTE_RESULT_INVALID")
+        if result.return_code != 0:
+            code = value.get("errorCode")
+            if isinstance(code, str) and code in transport.PUBLIC_ERRORS:
+                raise transport.DeploymentTransportError(code)
+            raise transport.DeploymentTransportError("REMOTE_RESULT_INVALID")
         expected = {"databaseRestoreRequired", "operationId", "sourceRelease", "state", "targetRelease", "targetStateSha256"}
         if set(value) != expected or value["operationId"] != operation or value["targetRelease"] != release or value["state"] != "SUCCEEDED":
             raise transport.DeploymentTransportError("REMOTE_RESULT_INVALID")
