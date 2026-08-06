@@ -831,9 +831,7 @@ class DeployerReconciler:
         repository = run.get("repository")
         head_repository = run.get("head_repository")
         if (
-            # rollback-production.yml declares no run-name, so REST `name` keeps
-            # the workflow name; only the @ref suffix was never real.
-            run.get("name") != "Rollback Production"
+            run.get("name") != f"rollback-production-{operation_id}"
             or run.get("path") != f".github/workflows/{ROLLBACK_WORKFLOW}"
             or run.get("event") != "workflow_dispatch"
             or run.get("head_branch") != "main"

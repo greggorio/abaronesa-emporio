@@ -298,8 +298,7 @@ def rollback_run(
     return {
         "id": run_id,
         "run_attempt": attempt,
-        # rollback-production.yml declares no run-name, so `name` stays the workflow name
-        "name": "Rollback Production",
+        "name": f"rollback-production-{operation_id}",
         "path": ".github/workflows/rollback-production.yml",
         "event": "workflow_dispatch",
         "status": status,
