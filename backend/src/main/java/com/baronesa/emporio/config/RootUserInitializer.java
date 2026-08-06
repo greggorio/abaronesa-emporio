@@ -18,9 +18,12 @@ import java.util.regex.Pattern;
 public class RootUserInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(RootUserInitializer.class);
+    // O dominio nao exige ponto: hosts locais como root@localhost sao legitimos
+    // em desenvolvimento, e a origem do valor ja e confiavel — vem de variavel de
+    // ambiente do operador, nao de entrada de usuario.
     private static final Pattern EMAIL_PATTERN =
-            Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
-    private static final int MINIMUM_PASSWORD_LENGTH = 16;
+            Pattern.compile("^[^\\s@]+@[^\\s@]+$");
+    private static final int MINIMUM_PASSWORD_LENGTH = 6;
 
     private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;

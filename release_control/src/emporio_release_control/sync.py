@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .artifacts import (
     DIGEST_RE,
+    PUBLISHING_OUTCOME_STATUSES,
     SEMVER_RE,
     CandidateEvidence,
     digest,
@@ -130,7 +131,17 @@ class Synchronizer:
             commit_sha=sha,
         )
 
-    def _candidate_from_run(self, run: dict[str, Any]) -> tuple[CandidateEvidence, datetime]:
+    def _candidate_from_run(
+        self, run: dict[str, Any]
+    ) -> tuple[CandidateEvidence, datetime] | None:
+        """Devolve a evidencia do candidato, ou None quando o run nao publicou um.
+
+        Um run pode terminar em superseded ou no_changes: sao desfechos normais,
+        sem candidato associado. Trata-los como erro fazia um unico run antigo
+        derrubar todo o ciclo de sincronizacao, deixando o dominio em drift
+        permanente e a UI sem listar nenhum candidato, por mais commits novos que
+        houvesse depois dele.
+        """
         run_id, attempt, sha, created_at = self._run(run, "Publish Candidate")
         artifacts = self.github.list_pages(
             f"/repos/{REPOSITORY}/actions/runs/{run_id}/artifacts", "artifacts"
@@ -149,6 +160,8 @@ class Synchronizer:
             run_id=run_id,
             attempt=attempt,
         )
+        if outcome["status"] not in PUBLISHING_OUTCOME_STATUSES:
+            return None
         candidate_id = str(outcome["candidateId"])
         artifact_id = int(outcome["candidateArtifactId"])
         artifact_digest = "sha256:" + str(outcome["candidateArtifactDigest"])
@@ -201,6 +214,58 @@ class Synchronizer:
             raise RuntimeFailure("CANDIDATE_PREDECESSOR_INVALID")
         return candidate, created_at
 
+    def _commit_subject(self, sha: str) -> str | None:
+        """Primeira linha da mensagem do commit, ou None se ela nao vier.
+
+        Buscada uma unica vez por candidato: a linha e guardada e os ciclos
+        seguintes a reaproveitam, para que a sincronizacao periodica nao gaste
+        uma chamada por candidato a cada rodada. A ausencia nunca derruba o
+        ciclo — a evidencia e complementar, e um candidato sem assunto continua
+        publicavel, apenas menos legivel.
+        """
+        try:
+            payload = self.github.get_json(f"/repos/{REPOSITORY}/commits/{sha}")
+        except Exception:
+            return None
+        commit = payload.get("commit")
+        if not isinstance(commit, dict):
+            return None
+        message = commit.get("message")
+        if not isinstance(message, str):
+            return None
+        subject = message.splitlines()[0].strip() if message.strip() else ""
+        return subject[:200] or None
+
+    @staticmethod
+    def _absorbed_candidates(
+        published: set[str],
+        evidence: list[tuple[CandidateEvidence, datetime]],
+    ) -> set[str]:
+        """Candidatos ja contidos em alguma release, incluindo os ancestrais.
+
+        O manifesto de um candidato e cumulativo: o que nao mudou no ciclo e
+        herdado do predecessor, que por sua vez herdou do anterior. Publicar um
+        candidato portanto absorve toda a linhagem atras dele. Marcar apenas o
+        candidato exato deixava os ancestrais eternamente elegiveis, e a lista so
+        crescia — apresentando como publicavel um conteudo que ja estava na
+        release corrente. A linhagem e percorrida pelo predecessor declarado no
+        proprio manifesto, nao por ordem de data.
+        """
+        lineage = {
+            str(candidate.manifest["candidateId"]): (
+                candidate.manifest.get("predecessor") or {}
+            ).get("candidateId")
+            for candidate, _ in evidence
+        }
+        absorbed: set[str] = set()
+        for released in published:
+            node: str | None = released
+            while node is not None and node not in absorbed:
+                absorbed.add(node)
+                ancestor = lineage.get(node)
+                node = str(ancestor) if isinstance(ancestor, str) else None
+        return absorbed
+
     def sync_candidates(self, trace_id: str = "sync-candidates") -> None:
         try:
             runs = self.github.list_pages(
@@ -208,26 +273,46 @@ class Synchronizer:
                 "?branch=main&status=success",
                 "workflow_runs",
             )
-            evidence = [self._candidate_from_run(run) for run in runs]
+            evidence = [
+                item
+                for item in (self._candidate_from_run(run) for run in runs)
+                if item is not None
+            ]
             with self.factory.begin() as session:
                 published = set(session.scalars(select(ReleaseSnapshot.candidate_id)))
+                absorbed = self._absorbed_candidates(published, evidence)
+                known = {
+                    row[0]: row[1]
+                    for row in session.execute(
+                        select(
+                            CandidateSnapshot.candidate_id,
+                            CandidateSnapshot.commit_subject,
+                        )
+                    )
+                }
                 observed: set[str] = set()
                 for candidate, created_at in evidence:
                     candidate_id = str(candidate.manifest["candidateId"])
                     observed.add(candidate_id)
+                    subject = known.get(candidate_id)
+                    if subject is None:
+                        subject = self._commit_subject(
+                            str(candidate.manifest["commitSha"])
+                        )
                     session.merge(
                         CandidateSnapshot(
                             candidate_id=candidate_id,
                             source_commit=str(candidate.manifest["commitSha"]),
                             eligibility=(
                                 "READY"
-                                if candidate_id not in published
+                                if candidate_id not in absorbed
                                 and candidate.manifest["deployable"] is True
                                 else "NOT_ELIGIBLE"
                             ),
                             ci_status="PASSED",
                             manifest_status="VALID",
                             created_at=created_at,
+                            commit_subject=subject,
                             manifest=candidate.manifest,
                             artifact_id=candidate.artifact_id,
                             artifact_digest=candidate.artifact_digest,

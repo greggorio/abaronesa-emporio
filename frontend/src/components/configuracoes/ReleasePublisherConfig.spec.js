@@ -14,7 +14,7 @@ const PUBLISHER_CONFIG = {
   url: "http://127.0.0.1:8090",
 };
 
-function candidate(id = CANDIDATE_ID) {
+function candidate(id = CANDIDATE_ID, commitSubject = "fix: assunto do commit") {
   return {
     candidateId: id,
     sourceCommit: SHA,
@@ -22,6 +22,7 @@ function candidate(id = CANDIDATE_ID) {
     ciStatus: "PASSED",
     manifestStatus: "VALID",
     createdAt: "2026-07-29T12:00:00Z",
+    commitSubject,
   };
 }
 
@@ -131,6 +132,10 @@ function mountComponent({
         "q-input": passthrough,
         "q-btn": passthrough,
         "q-dialog": passthrough,
+        "q-list": passthrough,
+        "q-item": passthrough,
+        "q-item-section": passthrough,
+        "q-item-label": passthrough,
       },
     },
   });
@@ -191,6 +196,68 @@ describe("ReleasePublisherConfig", () => {
     wrapper.vm.versionBump = "MAJOR";
     await nextTick();
     expect(wrapper.get('[data-testid="estimated-version"]').text()).toBe("v2.0.0");
+    wrapper.unmount();
+  });
+
+  it("lista os commits que entram na release sem pedir escolha ao usuário", async () => {
+    const configuredClient = client({
+      listCandidates: vi.fn().mockResolvedValue({
+        items: [
+          candidate("candidate-novo-0000000000", "feat: UI padrão sem tema"),
+          candidate("candidate-antigo-000000000", "fix: fallback de imagem"),
+        ],
+        nextCursor: null,
+      }),
+    });
+    const wrapper = await readyWrapper({ configuredClient });
+
+    const list = wrapper.get('[data-testid="incoming-candidates"]');
+    expect(list.text()).toContain("feat: UI padrão sem tema");
+    expect(list.text()).toContain("fix: fallback de imagem");
+    expect(list.text()).toContain(SHA.slice(0, 7));
+    // Comunicar, nao perguntar: nada na lista e selecionavel.
+    expect(list.findAll("input")).toHaveLength(0);
+    wrapper.unmount();
+  });
+
+  it("aponta sempre para o candidato mais recente, inclusive após concluir uma publicação", async () => {
+    // Sem seletor na tela, uma selecao presa ao candidato ja publicado publicaria
+    // de novo o mesmo commit e ignoraria os pushes que chegaram depois.
+    const listCandidates = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [candidate()], nextCursor: null })
+      .mockResolvedValue({
+        items: [candidate("candidate-novo-0000000000")],
+        nextCursor: null,
+      });
+    const configuredClient = client({
+      listCandidates,
+      getOperation: vi.fn().mockResolvedValue(operation("PUBLISHED")),
+    });
+    const wrapper = await readyWrapper({
+      configuredClient,
+      configuredStore: attemptStore(attempt(OPERATION_ID)),
+    });
+    await flush();
+
+    expect(wrapper.vm.operation.state).toBe("PUBLISHED");
+    expect(wrapper.vm.selectedCandidateId).toBe("candidate-novo-0000000000");
+    wrapper.unmount();
+  });
+
+  it("tentativa persistida mantém seu candidato mesmo com candidato mais novo no main", async () => {
+    const configuredClient = client({
+      listCandidates: vi.fn().mockResolvedValue({
+        items: [candidate("candidate-novo-0000000000"), candidate()],
+        nextCursor: null,
+      }),
+    });
+    const wrapper = await readyWrapper({
+      configuredClient,
+      configuredStore: attemptStore(attempt()),
+    });
+
+    expect(wrapper.vm.selectedCandidateId).toBe(CANDIDATE_ID);
     wrapper.unmount();
   });
 

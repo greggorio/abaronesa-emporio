@@ -226,6 +226,7 @@ function validateCandidate(value) {
       "ciStatus",
       "manifestStatus",
       "createdAt",
+      "commitSubject",
     ]) ||
     typeof value.candidateId !== "string" ||
     value.candidateId.length < 12 ||
@@ -235,7 +236,9 @@ function validateCandidate(value) {
     value.eligibility !== "READY" ||
     value.ciStatus !== "PASSED" ||
     value.manifestStatus !== "VALID" ||
-    !isDateTime(value.createdAt)
+    !isDateTime(value.createdAt) ||
+    !(value.commitSubject === null || typeof value.commitSubject === "string") ||
+    (typeof value.commitSubject === "string" && value.commitSubject.length > 200)
   ) {
     throw invalidResponse();
   }
@@ -246,6 +249,7 @@ function validateCandidate(value) {
     ciStatus: value.ciStatus,
     manifestStatus: value.manifestStatus,
     createdAt: value.createdAt,
+    commitSubject: value.commitSubject,
   };
 }
 

@@ -1,0 +1,47 @@
+// src/themes/defaultTheme.ts
+import type { Theme } from '@/types/theme';
+
+export const DEFAULT_TENANT_ID = 'baronesa';
+
+export const defaultTheme: Theme = {
+  id: 0,
+  name: 'Emporio A Baronesa - Tema Padrao',
+  status: 'PUBLISHED',
+  tenantId: DEFAULT_TENANT_ID,
+  tokens: {
+    'primary': '160 25% 25%',
+    'primary-foreground': '40 20% 95%',
+    'secondary': '160 18% 16%',
+    'secondary-foreground': '40 20% 95%',
+    'background': '160 20% 12%',
+    'foreground': '40 20% 95%',
+    'card': '160 18% 16%',
+    'card-foreground': '40 20% 95%',
+    'popover': '160 18% 16%',
+    'popover-foreground': '40 20% 95%',
+    'muted': '160 18% 16%',
+    'muted-foreground': '40 15% 75%',
+    'accent': '15 55% 68%',
+    'accent-foreground': '160 25% 15%',
+    'destructive': '0 70% 45%',
+    'destructive-foreground': '40 20% 95%',
+    'border': '160 15% 25%',
+    'input': '160 15% 25%',
+    'ring': '15 55% 68%',
+    'mesa-text': '40 20% 95%',
+    'cream': '40 35% 92%',
+    'soft-white': '40 20% 95%',
+    'coral-accent': '15 55% 68%',
+    'forest-dark': '160 25% 25%',
+    'viking-gold': '15 55% 68%',
+    'viking-bone': '40 35% 92%',
+    'viking-charcoal': '160 20% 12%',
+    'button-primary-bg': '160 25% 25%',
+    'button-primary-text': '40 20% 95%',
+    'shadow-glow': '15 55% 68%',
+  },
+  assets: {},
+  content: {},
+  createdAt: '1970-01-01T00:00:00Z',
+  updatedAt: '1970-01-01T00:00:00Z',
+};

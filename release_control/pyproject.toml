@@ -15,6 +15,13 @@ dependencies = [
   "uvicorn>=0.35,<1",
 ]
 
+[project.scripts]
+# Development launchers only; the image runs its own bootstrap. Each script
+# fixes its own mode so the same package can serve publisher and deployer
+# without a stale environment variable deciding which one starts.
+publisher = "emporio_release_control.dev:publisher"
+deployer = "emporio_release_control.dev:deployer"
+
 [dependency-groups]
 dev = [
   "mypy>=1.17,<2",

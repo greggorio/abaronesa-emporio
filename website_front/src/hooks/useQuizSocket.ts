@@ -27,6 +27,7 @@ export const useQuizSocket = (config?: QuizSocketConfig) => {
   const [isConnected, setIsConnected] = useState(false);
   const clientRef = useRef<Client | null>(null);
   const subscriptionsRef = useRef<Map<string, any>>(new Map());
+  const pendingRef = useRef<Array<{ destination: string; callback: (message: any) => void }>>([]);
   const configRef = useRef(config);
 
   // Atualizar referência do config
@@ -52,6 +53,8 @@ export const useQuizSocket = (config?: QuizSocketConfig) => {
       onConnect: () => {
         console.log('[WebSocket] Conectado com sucesso');
         setIsConnected(true);
+        const pending = pendingRef.current.splice(0);
+        pending.forEach(({ destination, callback }) => subscribeNow(destination, callback));
         configRef.current?.onConnect?.();
       },
       onDisconnect: () => {
@@ -82,23 +85,23 @@ export const useQuizSocket = (config?: QuizSocketConfig) => {
   // Subscribe em um tópico
   const subscribe = useCallback(
     (destination: string, callback: (message: any) => void) => {
-      if (!clientRef.current?.connected) {
-        console.warn('[WebSocket] Não conectado, aguardando conexão para se inscrever em:', destination);
-
-        // Tenta se inscrever após conectar
-        const checkConnection = setInterval(() => {
-          if (clientRef.current?.connected) {
-            clearInterval(checkConnection);
-            subscribeNow(destination, callback);
-          }
-        }, 100);
-
-        return () => {
-          clearInterval(checkConnection);
-        };
+      if (clientRef.current?.connected) {
+        return subscribeNow(destination, callback);
       }
 
-      return subscribeNow(destination, callback);
+      const entry = { destination, callback };
+      pendingRef.current.push(entry);
+
+      return () => {
+        pendingRef.current = pendingRef.current.filter(
+          (p) => p.callback !== callback || p.destination !== destination
+        );
+        const sub = subscriptionsRef.current.get(destination);
+        if (sub) {
+          sub.unsubscribe();
+          subscriptionsRef.current.delete(destination);
+        }
+      };
     },
     []
   );
@@ -147,6 +150,7 @@ export const useQuizSocket = (config?: QuizSocketConfig) => {
     connect();
 
     return () => {
+      pendingRef.current = [];
       // Limpar todas as inscrições
       subscriptionsRef.current.forEach((subscription) => {
         subscription.unsubscribe();

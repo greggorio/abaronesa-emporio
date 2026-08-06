@@ -114,6 +114,49 @@ class PublisherIdentityBridgeContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "opt-in-default"):
             validator.validate(root)
 
+    def test_dev_opt_in_mutant_fails(self) -> None:
+        # Desligar a ponte no perfil dev volta a exigir variavel de ambiente a
+        # cada inicializacao, que foi exatamente o que motivou a excecao.
+        root = self.mutant()
+        self.replace(
+            root,
+            "backend/src/main/resources/application-dev.properties",
+            "${RELEASE_CONTROL_IDENTITY_ENABLED:true}",
+            "${RELEASE_CONTROL_IDENTITY_ENABLED:false}",
+        )
+        with self.assertRaisesRegex(ValueError, "dev-opt-in-default"):
+            validator.validate(root)
+
+    def test_key_generation_outside_dev_fails(self) -> None:
+        root = self.mutant()
+        path = root / "backend/src/main/resources/application-prod.properties"
+        path.write_text(
+            path.read_text()
+            + "app.release-control.identity.generate-key-if-absent=true\n"
+        )
+        with self.assertRaisesRegex(ValueError, "key-generation-dev-only"):
+            validator.validate(root)
+
+    def test_key_generation_contract_mutants_fail(self) -> None:
+        for old, new in (
+            (
+                '@Value("${app.release-control.identity.generate-key-if-absent:false}")',
+                '@Value("${app.release-control.identity.generate-key-if-absent:true}")',
+            ),
+            ("if (Files.exists(path)) {", "if (false) {"),
+        ):
+            with self.subTest(old=old):
+                root = self.mutant()
+                self.replace(
+                    root,
+                    "backend/src/main/java/com/baronesa/emporio/releasecontrol/identity/"
+                    "ReleaseControlIdentityConfiguration.java",
+                    old,
+                    new,
+                )
+                with self.assertRaisesRegex(ValueError, "key-generation-contract"):
+                    validator.validate(root)
+
     def test_key_contract_mutants_fail(self) -> None:
         for old, new in (
             ("MIN_RSA_BITS = 3072", "MIN_RSA_BITS = 2048"),

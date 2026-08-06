@@ -34,7 +34,7 @@ public class RedeployController {
     })
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Map<String, String>> triggerRedeploy(@RequestParam(defaultValue = "espresso") String tenantId) {
+    public ResponseEntity<Map<String, String>> triggerRedeploy(@RequestParam(defaultValue = "baronesa") String tenantId) {
         log.info("Recebida solicitação de redeploy via API para tenant: {}", tenantId);
         
         boolean success = redeployService.triggerRedeploy(tenantId);

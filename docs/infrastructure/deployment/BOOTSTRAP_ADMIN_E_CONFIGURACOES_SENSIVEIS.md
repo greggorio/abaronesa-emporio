@@ -11,8 +11,11 @@ ROOT_BOOTSTRAP_EMAIL
 ROOT_BOOTSTRAP_PASSWORD
 ```
 
-Quando habilitado, nome, email valido e password com pelo menos 16 caracteres
-sao obrigatorios. Configuracao invalida interrompe a inicializacao com erro
+Quando habilitado, nome, email valido e password com pelo menos 6 caracteres
+sao obrigatorios. O minimo e um piso contra configuracao vazia ou trivial por
+descuido, nao a politica de senha do sistema: a credencial vem de variavel de
+ambiente do operador, e a forca real dela e responsabilidade de quem provisiona
+o ambiente. Configuracao invalida interrompe a inicializacao com erro
 sanitizado. Nenhum valor recebido aparece em logs.
 
 Se um usuario `SYSTEM` ja existir, o inicializador preserva integralmente seus

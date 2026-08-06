@@ -45,6 +45,9 @@ class CandidateSummary(StrictModel):
     ci_status: Literal["PENDING", "PASSED", "FAILED"] = Field(alias="ciStatus")
     manifest_status: Literal["PENDING", "VALID", "INVALID"] = Field(alias="manifestStatus")
     created_at: datetime = Field(alias="createdAt")
+    # Sempre presente na resposta, nulo quando a mensagem do commit nao pode ser
+    # obtida: assim o cliente tem um formato unico para validar.
+    commit_subject: str | None = Field(alias="commitSubject", default=None)
 
 
 class ReleaseSummary(StrictModel):

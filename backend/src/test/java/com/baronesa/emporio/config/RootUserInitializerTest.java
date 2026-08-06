@@ -63,7 +63,7 @@ class RootUserInitializerTest {
     void shortPasswordFailsClosed() {
         assertThrows(
                 IllegalStateException.class,
-                () -> initializer(true, VALID_NAME, VALID_EMAIL, "short-fixture").run(null));
+                () -> initializer(true, VALID_NAME, VALID_EMAIL, "short").run(null));
     }
 
     @Test

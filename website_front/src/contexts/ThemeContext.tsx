@@ -3,10 +3,10 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { Theme } from '@/types/theme';
 import { useQuizSocket } from '@/hooks/useQuizSocket';
 import { apiConfig } from '@/config/api';
+import { defaultTheme, DEFAULT_TENANT_ID } from '@/themes/defaultTheme';
 
 const SITE_LOCALE_EVENT = 'site:locale-changed';
 const SITE_LANG_KEY = 'site:lang';
-const DEFAULT_TENANT_ID = 'baronesa';
 
 const normalizeLocale = (value?: string | null): string => {
   if (!value) return 'pt-BR';
@@ -63,22 +63,52 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         params.set('tenantId', effectiveTenantId);
       }
 
-      const response = await fetch(`${apiConfig.erpBaseUrl}/api/website/themes/public/theme/active?${params.toString()}`, {
-        headers: {
-          'Accept-Language': localeHeader,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`Erro ao carregar tema: ${response.status}`);
+      let response: Response;
+      try {
+        response = await fetch(`${apiConfig.erpBaseUrl}/api/website/themes/public/theme/active?${params.toString()}`, {
+          headers: {
+            'Accept-Language': localeHeader,
+          },
+        });
+      } catch (networkErr) {
+        console.warn('[Theme] Falha de rede ao carregar tema. Aplicando tema padrao.', networkErr);
+        setError('Falha de rede ao carregar tema. Usando tema padrao.');
+        setTheme(defaultTheme);
+        return;
       }
-      const themeData = await response.json();
+
+      if (!response.ok) {
+        console.warn(`[Theme] Backend respondeu ${response.status}. Aplicando tema padrao.`);
+        setError(`Backend respondeu ${response.status}. Usando tema padrao.`);
+        setTheme(defaultTheme);
+        return;
+      }
+
+      let themeData: Theme | null = null;
+      try {
+        themeData = await response.json();
+      } catch {
+        console.warn('[Theme] Resposta vazia ou invalida. Aplicando tema padrao.');
+        setError('Resposta do backend invalida. Usando tema padrao.');
+        setTheme(defaultTheme);
+        return;
+      }
+
+      if (!themeData || !themeData.tokens) {
+        console.warn('[Theme] Tema sem tokens. Aplicando tema padrao.');
+        setError('Tema sem tokens. Usando tema padrao.');
+        setTheme(defaultTheme);
+        return;
+      }
+
       if (themeData?.tenantId) {
         localStorage.setItem('currentTenantId', themeData.tenantId);
       }
       setTheme(themeData);
     } catch (err) {
-      console.error('Erro ao carregar tema:', err);
+      console.error('Erro inesperado ao carregar tema. Aplicando tema padrao.', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido ao carregar tema');
+      setTheme(defaultTheme);
     } finally {
       setIsLoading(false);
     }

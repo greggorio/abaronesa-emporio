@@ -114,6 +114,30 @@ class WorkflowInventoryContractTest(unittest.TestCase):
             lambda text: text + "\n          docker run forbidden\n",
         )
 
+    def test_mutant_07b_rollback_extra_secret_is_rejected(self) -> None:
+        # O rollback usa segredos de transporte de producao. Qualquer segredo
+        # alem desses amplia o alcance do workflow sem revisao.
+        self.assert_mutant_rejected(
+            ".github/workflows/rollback-production.yml",
+            lambda text: text.replace(
+                "PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT }}",
+                "PRODUCTION_SSH_PORT: ${{ secrets.GHCR_WRITE_TOKEN }}",
+                1,
+            ),
+        )
+
+    def test_mutant_07c_rollback_extra_action_is_rejected(self) -> None:
+        self.assert_mutant_rejected(
+            ".github/workflows/rollback-production.yml",
+            lambda text: text.replace(
+                "      - name: Execute bound commercial rollback",
+                "      - uses: docker/login-action@"
+                + "0" * 40
+                + "\n      - name: Execute bound commercial rollback",
+                1,
+            ),
+        )
+
     def test_mutant_08_remote_execution_claim_is_rejected(self) -> None:
         self.assert_mutant_rejected(
             ".github/workflows/README.md",

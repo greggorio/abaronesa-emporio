@@ -31,7 +31,7 @@ public class ThemeService {
     private final RedeployService redeployService;
     private final WebClient webClient = WebClient.builder().build();
 
-    @Value("${app.default-tenant-id:espresso}")
+    @Value("${app.default-tenant-id:baronesa}")
     private String fallbackDefaultTenantId;
 
     @Value("${app.fallback-tenant-ids:}")

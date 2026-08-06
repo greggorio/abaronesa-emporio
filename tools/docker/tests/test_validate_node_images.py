@@ -251,8 +251,10 @@ for case_number, (flag, subcommand, position) in enumerate(
     ),
     start=1,
 ):
-    test = global_cli_test(flag, subcommand, position, case_number)
-    setattr(NodeImagesContractTest, test.__name__, test)
+    # Nome sem prefixo test_: a variavel do laco fica no escopo do modulo, e
+    # chamada de `test` era coletada como um caso solto, sem instancia.
+    case = global_cli_test(flag, subcommand, position, case_number)
+    setattr(NodeImagesContractTest, case.__name__, case)
 
 
 if __name__ == "__main__":

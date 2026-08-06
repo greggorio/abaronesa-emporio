@@ -27,6 +27,7 @@ S22 acrescentou o modo deployer, com bootstrap mutuamente exclusivo:
 - [OpenAPI futuro de rollback](./api/rollback.openapi.yml).
 - [máquina de estados futura de rollback](./contracts/rollback-state-machine.yml).
 - [matriz de segurança futura de rollback](./contracts/rollback-security.yml).
+- [itens adiados conscientemente](./ROADMAP.md).
 
 Publisher e deployer preservam routers, reconcilers e credenciais separados.
 Ambos usam FastAPI, PostgreSQL 16, JWT RS256/JWKS e GitHub App. O publisher

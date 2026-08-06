@@ -908,3 +908,115 @@ def test_release_sync_rejects_ref_and_asset_binding(
     github.list_pages = bad_ref  # type: ignore[method-assign]
     with pytest.raises(RuntimeFailure, match="RELEASE_REF_INVALID"):
         Synchronizer(factory, github).sync_releases()  # type: ignore[arg-type]
+
+
+def non_publishing_outcome_bundle(
+    status: str = "superseded",
+    candidate_id: str | None = None,
+    artifact_id: str | None = None,
+    artifact_digest: str | None = None,
+) -> tuple[bytes, str]:
+    """Um run sem candidato: os tres campos de identidade vem nulos.
+
+    Espelha tools/candidates/outcome.py, que exige exatamente isso para os
+    desfechos superseded e no_changes.
+    """
+    value = {
+        "schemaVersion": 1,
+        "status": status,
+        "repository": REPOSITORY,
+        "commitSha": SHA,
+        "workflowRunId": "200",
+        "workflowAttempt": 1,
+        "candidateId": candidate_id,
+        "candidateArtifactId": artifact_id,
+        "candidateArtifactDigest": artifact_digest,
+        "predecessorCandidateId": CANDIDATE,
+    }
+    data = canonical(value)
+    raw = zip_bytes(
+        {
+            "outcome.json": data,
+            "outcome.json.sha256": (hashlib.sha256(data).hexdigest() + "\n").encode(),
+        }
+    )
+    return raw, digest(raw)
+
+
+@pytest.mark.parametrize("status", ["superseded", "no_changes"])
+def test_outcome_without_candidate_is_valid_evidence(status: str) -> None:
+    """Antes, um unico run assim travava o dominio de candidatos em drift.
+
+    O validador aceitava so os desfechos publicantes, entao um run legitimamente
+    sem candidato — superseded quando o commit deixou de ser o HEAD, no_changes
+    quando nada mudou — era lido como evidencia corrompida e derrubava o ciclo
+    inteiro, antes de alcancar os candidatos mais novos.
+    """
+    raw, raw_digest = non_publishing_outcome_bundle(status)
+    value = validate_outcome_bundle(raw, raw_digest, run_id=200, attempt=1)
+    assert value["status"] == status
+    assert value["candidateId"] is None
+
+
+def test_outcome_without_candidate_still_rejects_stray_identity() -> None:
+    """A tolerancia nao afrouxa nada: um run que nao publicou nao pode carregar
+    identidade de candidato, porque isso e evidencia inconsistente."""
+    raw, raw_digest = non_publishing_outcome_bundle(
+        "superseded",
+        candidate_id=CANDIDATE,
+        artifact_id="301",
+        artifact_digest="a" * 64,
+    )
+    with pytest.raises(RuntimeFailure, match="OUTCOME_BINDING_INVALID"):
+        validate_outcome_bundle(raw, raw_digest, run_id=200, attempt=1)
+
+
+def lineage_evidence(chain: list[str]) -> list[tuple[Any, datetime]]:
+    """Cadeia sintetica de candidatos, do mais antigo ao mais novo."""
+
+    class Node:
+        def __init__(self, manifest: dict[str, Any]) -> None:
+            self.manifest = manifest
+
+    evidence: list[tuple[Any, datetime]] = []
+    previous: str | None = None
+    for candidate_id in chain:
+        evidence.append(
+            (
+                Node(
+                    {
+                        "candidateId": candidate_id,
+                        "predecessor": {"candidateId": previous},
+                    }
+                ),
+                datetime(2026, 8, 6, tzinfo=UTC),
+            )
+        )
+        previous = candidate_id
+    return evidence
+
+
+def test_publishing_a_candidate_absorbs_its_whole_lineage() -> None:
+    """Um candidato herda do predecessor tudo que nao mudou no ciclo, entao
+    publicar o mais novo incorpora os anteriores. Marcar so o candidato exato
+    deixava os ancestrais elegiveis para sempre e a lista crescia sem fim,
+    oferecendo como publicavel conteudo que ja estava na release corrente."""
+    evidence = lineage_evidence(["c1", "c2", "c3", "c4"])
+    absorbed = Synchronizer._absorbed_candidates({"c3"}, evidence)
+    assert absorbed == {"c1", "c2", "c3"}
+    assert "c4" not in absorbed
+
+
+def test_absorption_stops_at_an_unknown_ancestor() -> None:
+    """A varredura so enxerga os runs ainda listados; um ancestral fora da
+    janela encerra a caminhada sem derrubar o ciclo."""
+    evidence = lineage_evidence(["c1", "c2"])
+    evidence[0][0].manifest["predecessor"] = {"candidateId": "fora-da-janela"}
+    absorbed = Synchronizer._absorbed_candidates({"c2"}, evidence)
+    assert absorbed == {"c1", "c2", "fora-da-janela"}
+
+
+def test_first_candidate_has_no_predecessor_to_absorb() -> None:
+    evidence = lineage_evidence(["c1"])
+    assert Synchronizer._absorbed_candidates(set(), evidence) == set()
+    assert Synchronizer._absorbed_candidates({"c1"}, evidence) == {"c1"}

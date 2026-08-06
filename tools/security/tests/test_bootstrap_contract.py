@@ -70,7 +70,7 @@ class BootstrapContractTest(unittest.TestCase):
         self.assert_invalid()
 
     def test_06_shorter_password_rule_fails(self):
-        self.mutate(self.paths.initializer, "MINIMUM_PASSWORD_LENGTH = 16", "MINIMUM_PASSWORD_LENGTH = 8")
+        self.mutate(self.paths.initializer, "MINIMUM_PASSWORD_LENGTH = 6", "MINIMUM_PASSWORD_LENGTH = 4")
         self.assert_invalid()
 
     def test_07_sensitive_root_log_fails(self):

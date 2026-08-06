@@ -21,7 +21,28 @@ segredos. Não grave valores reais em `.env`.
 `https://api.github.com`, issuer/JWKS HTTPS, allowlist CORS explícita, pepper
 aleatório com 32 bytes ou mais e chave PEM da GitHub App em arquivo.
 
-Crie/atualize o schema antes de iniciar:
+Em desenvolvimento, um comando aplica as migrations pendentes e sobe o runtime
+em loopback, dentro do ambiente travado:
+
+```bash
+uv run publisher     # 127.0.0.1:8090
+uv run deployer      # 127.0.0.1:8091
+```
+
+Cada script fixa o próprio `RELEASE_CONTROL_MODE`, aceita `--host`, `--port`,
+`--reload`, `--skip-migrations` e `--env-file`, e recusa qualquer perfil que não
+seja `development`.
+
+As variáveis vêm de `~/.config/emporio/release-control/<modo>-runtime.env`, ou
+do caminho em `--env-file`/`RELEASE_CONTROL_ENV_FILE`. O que já estiver
+exportado no shell sempre vence, e a origem efetiva é impressa a cada início —
+carregar arquivo automaticamente é cômodo e o preço é rodar com configuração
+velha sem perceber. Faltando variáveis, o launcher lista os nomes ausentes em
+vez de deixar um traceback no lugar do diagnóstico.
+
+A imagem não usa esses scripts: ela executa o próprio bootstrap com
+`python -m alembic` e `python -m uvicorn`, e o perfil `runtime` continua sem ler
+arquivo algum, mantendo a migration como ato explícito e separado:
 
 ```bash
 uv run alembic upgrade head

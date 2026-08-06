@@ -31,6 +31,7 @@ EXPECTED_WORKFLOWS = frozenset(
     }
 )
 CHECKOUT_SHA = "de0fac2e4500dabe0009e67214ff5f5447ce83dd"
+UPLOAD_SHA = "ea165f8d65b6e75b540449e92b4886f43607fa02"
 ACTION_PIN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$")
 
 
@@ -138,11 +139,15 @@ def _validate_rollback(workflow: dict[str, Any], source: str, errors: list[str])
     }:
         errors.append("rollback-concurrency")
     jobs = workflow.get("jobs")
-    if not isinstance(jobs, dict) or set(jobs) != {"protocol"}:
+    if not isinstance(jobs, dict) or set(jobs) != {"rollback"}:
         errors.append("rollback-jobs")
+    # O rollback deixou de ser contrato e passou a executar de fato: ele alcanca
+    # a VPS por SSH e consome os segredos de transporte. O que continua proibido
+    # e o que sempre foi a razao do guarda — nenhum gatilho automatico, nenhuma
+    # permissao de escrita, e nada alem de checkout e upload do resultado.
     uses = _uses(workflow)
-    if uses != [f"actions/checkout@{CHECKOUT_SHA}"]:
-        errors.append("rollback-checkout-only")
+    if uses != [f"actions/checkout@{CHECKOUT_SHA}", f"actions/upload-artifact@{UPLOAD_SHA}"]:
+        errors.append("rollback-actions")
 
     lowered = source.lower()
     for marker in (
@@ -151,11 +156,9 @@ def _validate_rollback(workflow: dict[str, Any], source: str, errors: list[str])
         "workflow_run:",
         "schedule:",
         "docker",
-        "ssh",
         "curl",
         "scp",
         "rsync",
-        "secrets.",
         "github_token",
         "contents: write",
         "actions: write",
@@ -163,6 +166,12 @@ def _validate_rollback(workflow: dict[str, Any], source: str, errors: list[str])
     ):
         if marker in lowered:
             errors.append(f"rollback-forbidden:{marker}")
+    # Segredos permitidos, mas so os do transporte de producao: qualquer outro
+    # indica que o rollback ganhou um alcance que ninguem revisou.
+    allowed_secrets = {"PRODUCTION_SSH_PRIVATE_KEY", "PRODUCTION_SSH_KNOWN_HOSTS"}
+    used_secrets = set(re.findall(r"secrets\.([A-Z0-9_]+)", source))
+    for name in sorted(used_secrets - allowed_secrets):
+        errors.append(f"rollback-secret-forbidden:{name}")
 
 
 def validate(root: Path = ROOT) -> list[str]:

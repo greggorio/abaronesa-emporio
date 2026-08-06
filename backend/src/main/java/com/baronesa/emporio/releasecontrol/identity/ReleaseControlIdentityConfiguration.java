@@ -12,8 +12,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
+import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.interfaces.RSAPublicKey;
@@ -40,9 +42,55 @@ public class ReleaseControlIdentityConfiguration {
     ReleaseControlIdentityKeyMaterial releaseControlIdentityKeyMaterial(
             @Value("${app.release-control.identity.issuer}") String issuer,
             @Value("${app.release-control.identity.private-key-path}") String privateKeyPath,
-            @Value("${app.release-control.identity.key-id}") String keyId
+            @Value("${app.release-control.identity.key-id}") String keyId,
+            @Value("${app.release-control.identity.generate-key-if-absent:false}") boolean generateIfAbsent
     ) {
+        if (generateIfAbsent) {
+            generateKeyIfAbsent(privateKeyPath);
+        }
         return load(issuer, privateKeyPath, keyId);
+    }
+
+    /**
+     * Cria a chave do emissor quando ela ainda nao existe.
+     *
+     * <p>Habilitado somente no perfil de desenvolvimento. Sem isso a ponte teria de
+     * ficar desligada por padrao — ligada sem chave, a aplicacao nao sobe — e cada
+     * desenvolvedor precisaria lembrar de gerar o arquivo e exportar variaveis
+     * antes de iniciar. A chave nasce fora do repositorio, com permissao restrita,
+     * e nunca substitui um arquivo existente. Em producao a propriedade e falsa e
+     * a chave continua sendo material provisionado pelo operador.
+     */
+    static void generateKeyIfAbsent(String privateKeyPath) {
+        if (privateKeyPath == null || privateKeyPath.isBlank()) {
+            return;
+        }
+        Path path = Path.of(privateKeyPath);
+        if (Files.exists(path)) {
+            return;
+        }
+        try {
+            Path parent = path.toAbsolutePath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+            generator.initialize(MIN_RSA_BITS);
+            byte[] encoded = generator.generateKeyPair().getPrivate().getEncoded();
+            String pem = PEM_BEGIN + "\n"
+                    + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+                            .encodeToString(encoded)
+                    + "\n" + PEM_END + "\n";
+            Files.writeString(path, pem, StandardCharsets.US_ASCII);
+            try {
+                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"));
+            } catch (UnsupportedOperationException ignored) {
+                // Sistema de arquivos sem POSIX: o conteudo ja foi escrito.
+            }
+        } catch (IOException | GeneralSecurityException exception) {
+            throw new IllegalStateException(
+                    "release control identity key could not be generated", exception);
+        }
     }
 
     static ReleaseControlIdentityKeyMaterial load(

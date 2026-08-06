@@ -350,6 +350,7 @@ class PublisherService:
                     ci_status=item.ci_status,
                     manifest_status=item.manifest_status,
                     created_at=item.created_at,
+                    commit_subject=item.commit_subject,
                 )
                 for item in items
             ],

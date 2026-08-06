@@ -215,7 +215,7 @@ components:
     CandidateSummary:
       type: object
       additionalProperties: false
-      required: [candidateId, sourceCommit, eligibility, ciStatus, manifestStatus, createdAt]
+      required: [candidateId, sourceCommit, eligibility, ciStatus, manifestStatus, createdAt, commitSubject]
       properties:
         candidateId: {type: string, minLength: 12, maxLength: 128}
         sourceCommit: {$ref: "#/components/schemas/CommitSha"}
@@ -223,6 +223,9 @@ components:
         ciStatus: {type: string, enum: [PENDING, PASSED, FAILED]}
         manifestStatus: {type: string, enum: [PENDING, VALID, INVALID]}
         createdAt: {type: string, format: date-time}
+        # Sempre presente, nulo quando a mensagem do commit nao pode ser obtida:
+        # o cliente valida um formato unico em vez de dois.
+        commitSubject: {type: [string, "null"], maxLength: 200}
     GlobalReleaseSummary:
       type: object
       additionalProperties: false

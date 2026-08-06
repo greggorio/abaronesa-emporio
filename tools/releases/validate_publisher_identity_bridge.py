@@ -115,9 +115,13 @@ def validate(root: Path = ROOT) -> None:
         == 3,
         "opt-in-components",
     )
+    # A ponte e opt-in em todo lugar menos em desenvolvimento. Exigir a variavel
+    # tambem no perfil dev tornava a UI de publicacao inutilizavel sem que quem
+    # desenvolve lembrasse de exportar valores a cada inicializacao — e o custo
+    # era pago sempre, ja que o perfil dev nunca atende trafego real. Producao,
+    # o default sem perfil e os testes continuam desligados por omissao.
     for properties in (
         "backend/src/main/resources/application.properties",
-        "backend/src/main/resources/application-dev.properties",
         "backend/src/main/resources/application-prod.properties",
         "backend/src/test/resources/application-test.properties",
     ):
@@ -127,6 +131,26 @@ def validate(root: Path = ROOT) -> None:
             "${RELEASE_CONTROL_IDENTITY_ENABLED:false}" in text,
             "opt-in-default",
         )
+        require(
+            "app.release-control.identity.generate-key-if-absent" not in text,
+            "key-generation-dev-only",
+        )
+    dev_properties = (root / "backend/src/main/resources/application-dev.properties").read_text()
+    require(
+        "app.release-control.identity.enabled="
+        "${RELEASE_CONTROL_IDENTITY_ENABLED:true}" in dev_properties,
+        "dev-opt-in-default",
+    )
+    # Gerar chave e uma conveniencia de desenvolvimento. Fora do dev, a chave do
+    # emissor continua sendo material provisionado pelo operador, e a aplicacao
+    # deve recusar subir sem ela em vez de fabricar uma.
+    require(
+        'name = "app.release-control.identity.generate-key-if-absent"' not in configuration
+        and "@Value(\"${app.release-control.identity.generate-key-if-absent:false}\")"
+        in configuration
+        and "if (Files.exists(path)) {" in configuration,
+        "key-generation-contract",
+    )
     require(
         'PEM_BEGIN = "-----BEGIN PRIVATE KEY-----"' in configuration
         and "new PKCS8EncodedKeySpec(encoded)" in configuration

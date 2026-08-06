@@ -46,6 +46,7 @@ function candidate(overrides = {}) {
     ciStatus: "PASSED",
     manifestStatus: "VALID",
     createdAt: "2026-07-29T12:00:00Z",
+    commitSubject: "fix: assunto do commit",
     ...overrides,
   };
 }
@@ -286,6 +287,8 @@ describe("releasePublisherClient candidates and releases", () => {
     candidate({ manifestStatus: "INVALID" }),
     candidate({ sourceCommit: SHA.toUpperCase().replaceAll("1", "A") }),
     candidate({ createdAt: "2026-02-30T12:00:00Z" }),
+    candidate({ commitSubject: 42 }),
+    candidate({ commitSubject: "x".repeat(201) }),
     { ...candidate(), extra: true },
   ])("rejects divergent candidate %#", async (mutant) => {
     const publisherTransport = vi.fn(async (config) => {

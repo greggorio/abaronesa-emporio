@@ -100,7 +100,7 @@ def test_migration_head_contains_exact_deployer_tables_and_preserves_publisher(
     }
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0003_commercial_rollback"
+            "0004_candidate_commit_subject"
         )
 
 

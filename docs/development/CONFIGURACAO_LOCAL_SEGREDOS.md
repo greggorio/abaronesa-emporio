@@ -73,6 +73,23 @@ Uber, `ESPRESSO_SYNC_API_KEY` e `WEBSITE_ERP_SYNC_KEY` sao integracoes
 opcionais e podem permanecer vazias quando o fluxo correspondente nao for
 usado.
 
+### Fallback de desenvolvimento local
+
+Para reduzir atrito no boot local sem commitar segredos reais, o
+`website_back` possui um `application-dev.properties` que sobrescreve
+apenas o profile `dev` com defaults operacionais:
+
+- `integration.system-token-secret`
+- `spring.datasource.password`
+
+Esses defaults NAO sao injetados em nenhum outro profile (`prod`,
+`staging`, `homolog` etc.) e existem somente para que o comando
+`mvn spring-boot:run` nao exija `.env.local` carregado no shell. Em
+qualquer ambiente compartilhado, configure as variaveis via ambiente
+(`set -a; source .env.local; set +a` ou injecao do runner) e mantenha
+os valores sincronizados entre `backend` e `website_back` - vide secao
+"Preparar o ambiente local" acima.
+
 ## Limites e rotacao
 
 Este procedimento serve somente ao desenvolvimento manual local; nao define

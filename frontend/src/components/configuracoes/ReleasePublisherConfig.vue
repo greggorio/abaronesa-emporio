@@ -81,7 +81,7 @@
         class="bg-grey-2 text-grey-9"
         data-testid="no-candidates-state"
       >
-        Nenhum candidato elegível.
+        {{ nothingToPublishMessage }}
       </q-banner>
 
       <q-form
@@ -90,16 +90,31 @@
         data-testid="publisher-form"
         @submit.prevent="openConfirmation"
       >
-        <q-select
-          v-model="selectedCandidateId"
-          :options="candidateOptions"
-          emit-value
-          map-options
-          outlined
-          label="Candidato"
-          aria-label="Candidato"
-          :disable="operationActive"
-        />
+        <!--
+          A tela comunica, nao pergunta. Escolher candidato obrigaria quem publica
+          a raciocinar sobre dependencias entre eles, e nao ha o que escolher: o
+          manifesto e cumulativo, entao o mais recente ja incorpora os anteriores.
+          A lista existe para dizer o que entra na proxima release, e serve de
+          insumo para o changelog logo abaixo.
+        -->
+        <q-card flat bordered data-testid="incoming-candidates">
+          <q-card-section class="q-pb-none">
+            <div class="text-subtitle2">
+              Commits que entram nesta release
+            </div>
+            <div class="text-caption text-grey-7">
+              {{ incomingCaption }}
+            </div>
+          </q-card-section>
+          <q-list dense>
+            <q-item v-for="entry in incomingCandidates" :key="entry.candidateId">
+              <q-item-section>
+                <q-item-label>{{ entry.subject }}</q-item-label>
+                <q-item-label caption>{{ entry.when }} · {{ entry.sha }}</q-item-label>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card>
 
         <q-select
           v-model="versionBump"
@@ -352,13 +367,38 @@ let pollingStartedAt = 0;
 let disposed = false;
 
 const versionBumpOptions = ["MAJOR", "MINOR", "PATCH"];
-const candidateOptions = computed(() =>
+const candidateDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+// Cada entrada e um commit do main ainda nao incorporado a release corrente.
+// Data, sha curto e assunto dizem a quem publica o que exatamente entra.
+const incomingCandidates = computed(() =>
   candidates.value.map((candidate) => ({
-    label: `${candidate.candidateId} — ${candidate.sourceCommit.slice(0, 12)}`,
-    value: candidate.candidateId,
+    candidateId: candidate.candidateId,
+    when: candidateDateFormatter.format(new Date(candidate.createdAt)),
+    sha: candidate.sourceCommit.slice(0, 7),
+    subject: candidate.commitSubject ?? "(sem assunto no commit)",
   })),
 );
 const currentRelease = computed(() => releases.value[0]?.release ?? "Nenhuma");
+
+// Sem release publicada ainda, falar em "release atual" nao diz nada a quem le;
+// os textos passam a descrever a primeira publicacao.
+const hasPublishedRelease = computed(() => releases.value.length > 0);
+const incomingCaption = computed(() =>
+  hasPublishedRelease.value
+    ? `Tudo que está no main e ainda não foi incorporado à ${currentRelease.value}.`
+    : "Tudo que está no main. Esta será a primeira release publicada.",
+);
+const nothingToPublishMessage = computed(() =>
+  hasPublishedRelease.value
+    ? `Nada a publicar: ${currentRelease.value} já contém tudo que está no main.`
+    : "Nenhum candidato disponível para publicar.",
+);
 const selectedCandidateReady = computed(() =>
   candidates.value.some(
     (candidate) =>
@@ -503,10 +543,11 @@ async function refreshLists() {
   mergeCandidates(candidatePage.items);
   nextCandidateCursor.value = candidatePage.nextCursor;
   releases.value = publishedReleases;
-  if (
-    selectedCandidateId.value === null &&
-    candidates.value.length > 0
-  ) {
+  // Sem seletor na tela, o candidato acompanha sempre o mais recente: publicar
+  // e publicar o topo do main. A unica excecao e uma tentativa ja persistida,
+  // que precisa concluir com o candidato que ela registrou, e nao com outro que
+  // tenha surgido no meio do caminho.
+  if (pendingAttempt.value === null && candidates.value.length > 0) {
     selectedCandidateId.value = candidates.value[0].candidateId;
   }
 }

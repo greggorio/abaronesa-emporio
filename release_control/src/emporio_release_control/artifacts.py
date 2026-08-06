@@ -22,6 +22,13 @@ CANDIDATE_SCHEMA = ROOT / "ops/releases/candidate-manifest.schema.json"
 RELEASE_SCHEMA = ROOT / "ops/releases/global-release.schema.json"
 OUTCOME_SCHEMA = ROOT / "ops/releases/release-publication-outcome.schema.json"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+# Espelha tools/candidates/outcome.py, que e a fonte da verdade sobre os estados
+# que um run de candidato pode terminar. Aceitar so os publicantes fazia o
+# sincronizador tratar um run legitimamente sem candidato — superseded quando o
+# commit deixou de ser o HEAD, no_changes quando nada mudou — como evidencia
+# corrompida, e um unico run assim travava o dominio inteiro em drift.
+PUBLISHING_OUTCOME_STATUSES = frozenset({"published", "already_published"})
+OUTCOME_STATUSES = PUBLISHING_OUTCOME_STATUSES | {"no_changes", "superseded"}
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SEMVER_RE = re.compile(r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
@@ -180,24 +187,38 @@ def validate_outcome_bundle(
         "candidateArtifactDigest",
         "predecessorCandidateId",
     }
+    publishing = value.get("status") in PUBLISHING_OUTCOME_STATUSES
     if (
         not isinstance(value, dict)
         or canonical(value) != data
         or set(value) != expected_keys
         or value.get("schemaVersion") != 1
         or value.get("repository") != REPOSITORY
-        or value.get("status") not in {"published", "already_published"}
+        or value.get("status") not in OUTCOME_STATUSES
         or value.get("workflowRunId") != str(run_id)
         or value.get("workflowAttempt") != attempt
         or SHA_RE.fullmatch(str(value.get("commitSha", ""))) is None
-        or not isinstance(value.get("candidateId"), str)
-        or re.fullmatch(r"[1-9][0-9]*", str(value.get("candidateArtifactId", ""))) is None
-        or re.fullmatch(r"[0-9a-f]{64}", str(value.get("candidateArtifactDigest", ""))) is None
-        or (
-            value.get("status") == "already_published"
-            and value.get("predecessorCandidateId") != value.get("candidateId")
-        )
     ):
+        raise RuntimeFailure("OUTCOME_BINDING_INVALID")
+    references = (
+        value.get("candidateId"),
+        value.get("candidateArtifactId"),
+        value.get("candidateArtifactDigest"),
+    )
+    if publishing:
+        if (
+            not isinstance(references[0], str)
+            or re.fullmatch(r"[1-9][0-9]*", str(references[1])) is None
+            or re.fullmatch(r"[0-9a-f]{64}", str(references[2])) is None
+            or (
+                value.get("status") == "already_published"
+                and value.get("predecessorCandidateId") != value.get("candidateId")
+            )
+        ):
+            raise RuntimeFailure("OUTCOME_BINDING_INVALID")
+    elif references != (None, None, None):
+        # Um run que nao publicou nao pode carregar identidade de candidato: se
+        # carrega, a evidencia esta inconsistente e nao deve ser aceita.
         raise RuntimeFailure("OUTCOME_BINDING_INVALID")
     return value
 

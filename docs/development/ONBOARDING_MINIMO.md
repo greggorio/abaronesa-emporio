@@ -94,6 +94,16 @@ VITE_RELEASE_CONTROL_MODE=publisher
 VITE_RELEASE_PUBLISHER_URL=http://127.0.0.1:8090
 ```
 
+O publisher sobe com um comando, que já aplica as migrations pendentes:
+
+```bash
+cd release_control && uv run publisher
+```
+
+As variáveis vêm de `~/.config/emporio/release-control/publisher-runtime.env`,
+começando por `RELEASE_CONTROL_PROFILE=development`. O que estiver exportado no
+shell vence o arquivo, e faltando variável o launcher lista os nomes ausentes.
+
 Suba ERP, publisher e frontend nessa ordem. Entre como root `ROLE_SYSTEM` e
 acesse **Painel de Controle -> Desenvolvimento -> Gerenciamento de Releases**.
 Não reutilize diretamente o JWT HS512 nem salve o token trocado. Os guias

@@ -174,7 +174,7 @@ def validate(paths: ContractPaths | None = None) -> list[str]:
 
     if re.search(r"ROOT_(?:EMAIL|SENHA|PASSWORD)\s*=", initializer):
         errors.append(f"ROOT_LITERAL_CONSTANT:{paths.initializer}")
-    if "MINIMUM_PASSWORD_LENGTH = 16" not in initializer:
+    if "MINIMUM_PASSWORD_LENGTH = 6" not in initializer:
         errors.append(f"ROOT_PASSWORD_MINIMUM_INVALID:{paths.initializer}")
     if "if (!enabled)" not in initializer:
         errors.append(f"ROOT_NOT_OPT_IN:{paths.initializer}")

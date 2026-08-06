@@ -206,6 +206,11 @@ class CandidateSnapshot(Base):
     ci_status: Mapped[str] = mapped_column(String(20))
     manifest_status: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Assunto do commit que originou o candidato. Sem ele a unica coisa que a
+    # interface consegue oferecer para escolher e um hash, o que torna a lista
+    # ilegivel assim que passa de meia duzia de itens. Anulavel porque a evidencia
+    # e complementar: um candidato sem assunto continua publicavel.
+    commit_subject: Mapped[str | None] = mapped_column(String(200), nullable=True)
     manifest: Mapped[dict[str, Any]] = mapped_column(JSONB)
     artifact_id: Mapped[int] = mapped_column(BigInteger)
     artifact_digest: Mapped[str] = mapped_column(String(71))
@@ -298,4 +303,4 @@ def migration_is_current(engine: Engine) -> bool:
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one_or_none()
-    return revision == "0003_commercial_rollback"
+    return revision == "0004_candidate_commit_subject"

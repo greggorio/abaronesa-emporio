@@ -86,6 +86,22 @@ inelegível, pois a descoberta aceita somente runs concluídos com sucesso.
 Esta automação está configurada, mas ainda não foi executada remotamente. Não
 há promoção para release, deploy, SSH ou acesso à VPS.
 
+## Elegibilidade e absorção
+
+Um candidato é elegível enquanto nenhuma release o tiver absorvido. Publicar uma
+release absorve o candidato indicado e, por transitividade, toda a sua linhagem
+de antecessores: o manifesto é cumulativo, então o candidato mais recente já
+contém os anteriores, e mantê-los listados sugeriria uma escolha que não existe.
+
+A travessia usa `predecessor.candidateId` de cada manifesto e para quando um
+antecessor não é conhecido localmente — o corte é conservador, e o efeito de um
+elo ausente é apenas manter candidatos antigos visíveis, nunca esconder um que
+ainda não entrou em release alguma.
+
+Absorver apenas um candidato entre vários já commitados no `main`, sem levar
+junto seus antecessores, não é suportado. É o caso do hotfix sobre uma release
+anterior e está no roadmap.
+
 ## Outcome e concorrência
 
 Cada execução verde produz exatamente um `candidate-outcome`. `published` e

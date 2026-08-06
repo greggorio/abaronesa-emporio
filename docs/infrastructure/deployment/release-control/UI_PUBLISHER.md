@@ -60,9 +60,21 @@ A UI aceita somente candidatos simultaneamente `READY`, com CI `PASSED` e
 manifesto `VALID`. Releases publicadas são carregadas integralmente, em até dez
 páginas, deduplicadas e ordenadas por SemVer numérica.
 
+Elegível é o candidato ainda não absorvido por nenhuma release. Absorção segue a
+linhagem: publicar um candidato absorve também todos os seus antecessores, porque
+o manifesto é cumulativo e o mais recente já contém os anteriores. Um candidato
+absorvido deixa de ser candidato e não reaparece na tela.
+
+A tela comunica, não pergunta. Ela lista os commits do `main` que ainda não estão
+na release corrente e que entrarão na próxima — data, sha curto e assunto do
+commit. Não há seleção: escolher candidato obrigaria quem publica a raciocinar
+sobre dependências entre eles, e não há o que escolher, já que a publicação usa
+sempre o candidato mais recente. Absorção seletiva de um único candidato entre
+vários já commitados no `main` — o caso do hotfix sobre uma release anterior —
+está no roadmap, não neste MVP.
+
 Campos do formulário:
 
-- candidato validado;
 - tipo de atualização `MAJOR`, `MINOR` ou `PATCH`;
 - descrição de 1 a 500 caracteres após trim;
 - changelog de 1 a 10000 caracteres após trim.
@@ -71,7 +83,8 @@ Campos do formulário:
 versão estimada. A estimativa é apenas orientação: o manifesto e o workflow
 continuam sendo a autoridade da versão efetiva.
 
-Antes do envio, a confirmação mostra candidato, incremento e estimativa.
+Antes do envio, a confirmação mostra o candidato efetivo, o incremento e a
+estimativa.
 Cancelar não cria tentativa nem chave idempotente.
 
 ## Idempotência e recuperação
@@ -131,7 +144,8 @@ e erro interno. Shape ou código desconhecido resulta em mensagem genérica.
 3. Abra **Painel de Controle**, aba **Desenvolvimento**.
 4. Selecione **Gerenciamento de Releases**.
 5. Aguarde capabilities, candidatos e histórico serem validados.
-6. Escolha candidato e incremento, preencha descrição e changelog.
+6. Confira a lista de commits que entram, escolha o incremento e preencha
+   descrição e changelog.
 7. Confira a estimativa e confirme.
 8. Acompanhe o estado reconciliado até o terminal.
 
@@ -143,7 +157,8 @@ e erro interno. Shape ou código desconhecido resulta em mensagem genérica.
   autorização.
 - Publisher indisponível: confirme profile `development`, bind loopback e
   porta 8090.
-- Sem candidatos: nenhum candidato READY/PASSED/VALID está disponível.
+- Nada a publicar: a release corrente já contém tudo que está no `main`. Isso
+  não é erro; erros têm banner próprio.
 - Envio incerto: use **Retomar envio**, preservando a mesma tentativa.
 - Polling pausado: use **Atualizar estado**; não descarte sem antes considerar
   que a operação remota pode existir.
