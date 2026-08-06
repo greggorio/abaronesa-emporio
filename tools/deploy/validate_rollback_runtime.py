@@ -30,6 +30,9 @@ def validate() -> None:
     reconciliation = text("release_control/src/emporio_release_control/deployer_reconciliation.py")
     constants = text("release_control/src/emporio_release_control/constants.py")
     protocol = text("ops/deploy/rollback_protocol.py")
+    remote = text("ops/deploy/deployment-remote.py")
+    transport = text("tools/deploy/rollback_transport.py")
+    workflow = text(".github/workflows/rollback-production.yml")
     require('"/api/deployment-control/v1/rollbacks"' in api, "rollback-post-route")
     require('"/api/deployment-control/v1/rollbacks/{operation_id}"' in api, "rollback-get-route")
     require('"deployment:rollback"' in api, "rollback-capability")
@@ -56,7 +59,27 @@ def validate() -> None:
     outcome = json.loads(text("ops/deploy/schemas/rollback-workflow-outcome.schema.json"))
     require(outcome["additionalProperties"] is False, "outcome-closed")
     require(outcome["properties"]["kind"]["const"] == "rollback-workflow-outcome", "outcome-kind")
-    require((ROOT / ".github/workflows/rollback-production.yml").is_file(), "workflow")
+    for marker in (
+        "run-name: rollback-production-${{ inputs.operation_id }}",
+        "tools/deploy/rollback_transport.py --output outcome",
+        "name: rollback-workflow-outcome",
+        "environment: production",
+    ):
+        require(marker in workflow, f"workflow:{marker}")
+    for marker in (
+        "def rollback(operation_id: str, release: str)",
+        'action="ROLLBACK"',
+        'action="VERIFY"',
+        'RemoteError("ROLLBACK_RECOVERY_FAILED"',
+    ):
+        require(marker in remote, f"remote:{marker}")
+    for marker in (
+        'client._remote(("rollback"',
+        '"kind": "rollback-workflow-outcome"',
+        '"transportStatus": "CONFIRMED"',
+        '"rollbackState": "SUCCEEDED"',
+    ):
+        require(marker in transport, f"transport:{marker}")
     require((ROOT / "docs/infrastructure/deployment/release-control/ROLLBACK_RUNTIME.md").is_file(), "runtime-doc")
     ast.parse(api)
     ast.parse(service)

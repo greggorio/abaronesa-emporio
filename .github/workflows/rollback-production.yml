@@ -1,4 +1,5 @@
 name: Rollback Production
+run-name: rollback-production-${{ inputs.operation_id }}
 
 on:
   workflow_dispatch:
@@ -20,25 +21,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  protocol:
+  rollback:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 120
+    environment: production
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: main
           persist-credentials: false
-      - name: Validate versioned rollback envelope
+      - name: Execute bound commercial rollback
         env:
-          OPERATION_ID: ${{ inputs.operation_id }}
-          RELEASE: ${{ inputs.release }}
-        run: |
-          python3 ops/deploy/rollback_protocol.py \
-            --operation-id "$OPERATION_ID" \
-            --state PRECHECKING \
-            --release "$RELEASE" \
-            --evidence-sha256 sha256:0000000000000000000000000000000000000000000000000000000000000000
-      - name: Emit bounded handoff marker
-        run: |
-          test -n "${{ inputs.operation_id }}"
-          test -n "${{ inputs.release }}"
+          TRUSTED_REPOSITORY: ${{ github.repository }}
+          TRUSTED_EVENT: ${{ github.event_name }}
+          TRUSTED_REF: ${{ github.ref }}
+          TRUSTED_SHA: ${{ github.sha }}
+          TRUSTED_RUN_ID: ${{ github.run_id }}
+          TRUSTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          TRUSTED_ACTOR_ID: ${{ github.actor_id }}
+          TRUSTED_OPERATION_ID: ${{ inputs.operation_id }}
+          TRUSTED_RELEASE: ${{ inputs.release }}
+          DEPLOYER_ACTOR_IDS: ${{ vars.DEPLOYER_ACTOR_IDS }}
+          PRODUCTION_SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+          PRODUCTION_SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT }}
+          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+          PRODUCTION_SSH_PUBLIC_KEY_SHA256: ${{ vars.PRODUCTION_SSH_PUBLIC_KEY_SHA256 }}
+        run: python3 tools/deploy/rollback_transport.py --output outcome
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: rollback-workflow-outcome
+          path: outcome/
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false

@@ -38,6 +38,9 @@ sys.path.insert(0, str(ROOT / "tools" / "deploy"))
 # shebang execution must not add __pycache__ files to that tree.
 sys.dont_write_bytecode = True
 import deployment_plan  # noqa: E402
+import deployment_cli  # noqa: E402
+import deployment_executor  # noqa: E402
+import production_adapter  # noqa: E402
 
 
 DEPLOY_ROOT = Path("/opt/sistemas/emporio")
@@ -1054,11 +1057,140 @@ def cleanup(operation_id: str) -> dict[str, Any]:
     return {"cleaned": True, "operationId": operation}
 
 
+def rollback(operation_id: str, release: str) -> dict[str, Any]:
+    """Switch the six application services to the verified predecessor."""
+    _validate_identity()
+    _validate_root()
+    operation = _validate_operation(operation_id)
+    target = _validate_release(release)
+    source = _link_release("current", "CURRENT_STATE_CONFLICT")
+    previous = _link_release("previous", "CURRENT_STATE_CONFLICT")
+    if source is None or source == target or previous != target:
+        _fail("CURRENT_STATE_CONFLICT", 4)
+    source_bundle = RELEASES_ROOT / source
+    target_bundle = RELEASES_ROOT / target
+    try:
+        plan = deployment_plan.validate_bundle(source_bundle)
+        deployment_plan.validate_bundle(target_bundle)
+        if plan.get("targetRelease") != source or plan.get("sourceRelease") != target:
+            _fail("CURRENT_STATE_CONFLICT", 4)
+        current_state, current_raw = _load_canonical_json(
+            INSTALLED_STATE, "CURRENT_STATE_CONFLICT"
+        )
+        if current_state.get("release") != source or current_state.get("reconciled") is not True:
+            _fail("CURRENT_STATE_CONFLICT", 4)
+        next_state, _ = _load_canonical_json(
+            target_bundle / "installed-state.next.json", "SOURCE_BUNDLE_INVALID"
+        )
+        deployment_plan.load_current(target_bundle / "installed-state.next.json")
+    except RemoteError:
+        raise
+    except Exception as exc:
+        raise RemoteError("SOURCE_BUNDLE_INVALID", 4) from exc
+
+    adapter = production_adapter.ProductionDeploymentAdapter(
+        root=DEPLOY_ROOT,
+        bundle=source_bundle,
+        plan=plan,
+        runner=production_adapter.SubprocessRunner(),
+        clock=deployment_cli.SystemClock(),
+        docker_binary=deployment_cli._binary("docker"),
+        curl_binary=deployment_cli._binary("curl"),
+    )
+    context = deployment_executor.ActionContext(
+        operation_id=operation,
+        action="ROLLBACK",
+        bundle=source_bundle,
+        source_release=target,
+        target_release=source,
+        services=production_adapter.COMPONENTS,
+        databases=(),
+        database_restore_required=False,
+    )
+    recovery_context = deployment_executor.ActionContext(
+        operation_id=operation,
+        action="VERIFY",
+        bundle=source_bundle,
+        source_release=target,
+        target_release=source,
+        services=production_adapter.COMPONENTS,
+        databases=production_adapter.DATABASES,
+        database_restore_required=False,
+    )
+    lock = deployment_executor._open_lock(DEPLOY_ROOT / "shared/deploy/journals")
+    services_at_target = False
+    try:
+        before = adapter.probe(context)
+        if before.status not in {"ABSENT", "SUCCEEDED"}:
+            _fail("CURRENT_STATE_CONFLICT", 4)
+        if before.status != "SUCCEEDED":
+            adapter.execute(context)
+        if adapter.probe(context).status != "SUCCEEDED":
+            _fail("ROLLBACK_FAILED", 6)
+        services_at_target = True
+
+        confirmed = dict(next_state)
+        confirmed["reconciled"] = True
+        confirmed["installedAt"] = _now()
+        confirmed_raw = deployment_executor._persist_installed_state(
+            INSTALLED_STATE, confirmed
+        )
+        for name, selected in (("previous", source), ("current", target)):
+            link = DEPLOY_ROOT / name
+            temporary = DEPLOY_ROOT / f".{name}.{operation}"
+            if temporary.exists() or temporary.is_symlink():
+                _fail("UNSAFE_LINK_STATE", 4)
+            temporary.symlink_to(f"releases/{selected}")
+            os.replace(temporary, link)
+        _fsync_directory(DEPLOY_ROOT, "OPERATIONAL_IO_FAILED")
+        return {
+            "databaseRestoreRequired": False,
+            "operationId": operation,
+            "sourceRelease": source,
+            "state": "SUCCEEDED",
+            "targetRelease": target,
+            "targetStateSha256": "sha256:" + hashlib.sha256(confirmed_raw).hexdigest(),
+        }
+    except Exception as exc:
+        # Once the service set has moved, every later failure is compensated
+        # back to the exact pre-rollback state before reporting failure.  This
+        # keeps `current`, `previous`, installed-state and the running stack in
+        # agreement even when persistence or link fsync fails.
+        if services_at_target:
+            try:
+                adapter.execute(recovery_context)
+                if adapter.probe(recovery_context).status != "SUCCEEDED":
+                    raise production_adapter.ProductionAdapterError(
+                        "ROLLBACK_RECOVERY_FAILED"
+                    )
+                deployment_executor._persist_installed_state(
+                    INSTALLED_STATE, current_state
+                )
+                for name, selected in (("previous", target), ("current", source)):
+                    link = DEPLOY_ROOT / name
+                    temporary = DEPLOY_ROOT / f".{name}.{operation}.recovery"
+                    if temporary.exists() or temporary.is_symlink():
+                        temporary.unlink()
+                    temporary.symlink_to(f"releases/{selected}")
+                    os.replace(temporary, link)
+                _fsync_directory(DEPLOY_ROOT, "OPERATIONAL_IO_FAILED")
+            except Exception as recovery_exc:
+                raise RemoteError("ROLLBACK_RECOVERY_FAILED", 6) from recovery_exc
+        if isinstance(exc, RemoteError):
+            raise
+        raise RemoteError("ROLLBACK_FAILED", 6) from exc
+    finally:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+        finally:
+            os.close(lock)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="deployment-remote.py")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("capabilities")
-    for name in ("snapshot", "execute"):
+    for name in ("snapshot", "execute", "rollback"):
         command = commands.add_parser(name)
         command.add_argument("--operation-id", required=True)
         command.add_argument("--release", required=True)
@@ -1084,6 +1216,8 @@ def main(argv: list[str] | None = None) -> int:
             result = install(args.operation_id, args.release, args.archive_sha256)
         elif args.command == "execute":
             result, exit_code = execute(args.operation_id, args.release)
+        elif args.command == "rollback":
+            result = rollback(args.operation_id, args.release)
         elif args.command == "cleanup":
             result = cleanup(args.operation_id)
         else:  # pragma: no cover - argparse owns the closed command set.
