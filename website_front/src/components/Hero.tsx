@@ -50,7 +50,7 @@ const getIconByName = (iconName: string) => {
 };
 
 const Hero = () => {
-  const { theme, isLoading, error, refreshTheme } = useTheme();
+  const { theme, isLoading, error } = useTheme();
   const [key, setKey] = useState(0);
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
@@ -88,21 +88,13 @@ const Hero = () => {
     );
   }
 
+  // Sem tema cadastrado, ou com o serviço de temas indisponível, o site segue
+  // renderizando com os valores padrão declarados acima. Um visitante nunca vê
+  // uma tela de erro no lugar da página inicial; a falha fica no console para
+  // diagnóstico. Antes deste retorno antecipado, qualquer instalação nova ficava
+  // com a home quebrada até que um tema fosse publicado.
   if (error) {
-    console.error('Erro ao carregar tema:', error);
-    return (
-      <section className="relative min-h-[75vh] md:min-h-[78vh] lg:min-h-[80vh] flex items-center justify-center bg-background" key={`hero-error-${key}`}>
-        <div className="text-center">
-          <p className="text-destructive">Erro ao carregar tema: {error}</p>
-          <Button
-            onClick={() => refreshTheme()}
-            className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            Tentar novamente
-          </Button>
-        </div>
-      </section>
-    );
+    console.error('Tema indisponível; exibindo conteúdo padrão.', error);
   }
 
   return (

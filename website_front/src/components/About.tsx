@@ -40,7 +40,7 @@ const About = () => {
           <div className="space-y-6">
             <div className="relative">
               <img
-                src={theme?.assets?.heroBackgroundImageUrl}
+                src={theme?.assets?.heroBackgroundImageUrl || '/assets/restaurant-photos/estabelecimento_interior.png'}
                 alt={t("site.about.imageAlt")}
                 className="rounded-lg shadow-2xl w-full h-auto"
               />
