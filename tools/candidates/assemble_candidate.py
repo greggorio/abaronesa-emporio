@@ -3,6 +3,17 @@ import argparse,json,os,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2];sys.path.insert(0,str(ROOT/"tools/releases"));sys.path.insert(0,str(ROOT/"tools/candidates"))
 import artifact_io,candidate_manifest,image_result,catalog,lineage
+def result_paths(results):
+ """Locate the component results under either layout download-artifact produces.
+
+ A directory per artifact is created only when the pattern matches more than
+ one; a single matching component lands the file straight in --results. Reading
+ just the nested shape turned a build of exactly one component into a build of
+ none, which surfaced far away as an opaque result partition error. Only these
+ two shapes are accepted, and the component identity always comes from the
+ payload, never from the directory name."""
+ results=Path(results)
+ return sorted(set(results.glob("candidate-component-*/component-result.json"))|set(results.glob("component-result.json")))
 def main():
  p=argparse.ArgumentParser();p.add_argument("--effective",type=Path,required=True);p.add_argument("--results",type=Path,required=True);p.add_argument("--context",type=Path,required=True);p.add_argument("--output",type=Path,required=True);a=p.parse_args()
  try:
@@ -11,7 +22,7 @@ def main():
   selection=json.loads((a.context/"selection.json").read_text())
   if selection!=effective["predecessor"]:raise ValueError("effective predecessor selection")
   results=[]
-  for path in sorted(a.results.glob("candidate-component-*/component-result.json")):
+  for path in result_paths(a.results):
    value=json.loads(path.read_text());cid=value.get("component");repo=catalog.load_yaml()["components"].get(cid,{}).get("image_repository")
    errors=image_result.validate(value,cid,repo,effective["commitSha"],os.environ["GITHUB_RUN_ID"],os.environ["GITHUB_RUN_ATTEMPT"])
    if errors:raise ValueError(",".join(errors))
