@@ -993,11 +993,11 @@ def execute(operation_id: str, release: str) -> tuple[dict[str, Any], int]:
     if returncode not in TERMINAL_EXIT.values():
         cause = _cli_cause(diagnostic)
         if cause is not None:
-            # Re-emitted on the helper's own stderr, never on stdout: stdout stays
-            # the strict result channel the transport parses. The transport
-            # captures this stream over SSH, so the cause reaches the job log
-            # without touching the outcome contract.
-            print(json.dumps({"errorCode": cause}, separators=(",", ":")), file=sys.stderr)
+            # A pre-journal failure has no terminal deployment result. Raise the
+            # already-sanitized cause so main emits its canonical one-key error
+            # object on stdout, the only stream guaranteed to survive the forced
+            # SSH command path used in production.
+            raise RemoteError(cause, 6)
     value = _validate_remote_result(stdout, returncode, operation)
     return value, returncode
 

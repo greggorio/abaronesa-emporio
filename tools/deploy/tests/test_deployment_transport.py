@@ -411,6 +411,18 @@ class DeploymentTransportTest(unittest.TestCase):
                 )
                 self.assert_code(code, client.execute, OPERATION, "v1.2.3")
 
+                client = transport.OpenSshTransport(
+                    self.config(),
+                    FakeRunner(
+                        [
+                            transport.ProcessResult(
+                                6, transport.canonical({"errorCode": code}), b""
+                            )
+                        ]
+                    ),
+                )
+                self.assert_code(code, client.execute, OPERATION, "v1.2.3")
+
         for diagnostic in (
             b'{"errorCode":"NOT_PUBLIC"}\n',
             b'{"errorCode":"COMPOSE_CONFIG_FAILED","extra":true}\n',

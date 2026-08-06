@@ -869,7 +869,9 @@ class OpenSshTransport:
         result = self._remote(("execute", "--operation-id", operation, "--release", release), EXECUTE_TIMEOUT)
         if result.return_code not in (0, 20, 21):
             raise DeploymentTransportError(
-                _parse_remote_cause(result.stderr) or "REMOTE_RESULT_INVALID"
+                _parse_remote_cause(result.stderr)
+                or _parse_remote_cause(result.stdout)
+                or "REMOTE_RESULT_INVALID"
             )
         value = _parse_single_json(result, "REMOTE_RESULT_INVALID", allowed=(0, 20, 21))
         expected_state = {0: "SUCCEEDED", 20: "ROLLED_BACK", 21: "FAILED"}[result.return_code]
@@ -908,11 +910,11 @@ def _parse_single_json(result: ProcessResult, code: str, allowed: tuple[int, ...
     return value
 
 
-def _parse_remote_cause(stderr: bytes) -> str | None:
+def _parse_remote_cause(stream: bytes) -> str | None:
     """Accept only the helper's closed, sanitized final diagnostic line."""
-    if not isinstance(stderr, bytes) or not stderr or len(stderr) > MAX_STDOUT:
+    if not isinstance(stream, bytes) or not stream or len(stream) > MAX_STDOUT:
         return None
-    line = stderr.strip().rsplit(b"\n", 1)[-1]
+    line = stream.strip().rsplit(b"\n", 1)[-1]
     try:
         value = json.loads(line.decode("utf-8"))
     except (UnicodeError, json.JSONDecodeError):
