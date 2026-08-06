@@ -1,6 +1,7 @@
 package com.baronesa.emporio.releasecontrol.identity.deployer;
 
 import io.jsonwebtoken.Jwts;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +24,11 @@ public class DeployerReleaseControlIdentityService {
     private final DeployerReleaseControlIdentityKeyMaterial keyMaterial;
     private final Clock clock;
 
+    // Required: the class declares two constructors, so Spring cannot pick one on
+    // its own and falls back to a no-arg default that does not exist. Without the
+    // annotation the bean only fails where it is actually created — production,
+    // the single environment with deployer-identity.enabled=true.
+    @Autowired
     public DeployerReleaseControlIdentityService(DeployerReleaseControlIdentityKeyMaterial keyMaterial) {
         this(keyMaterial, Clock.systemUTC());
     }
