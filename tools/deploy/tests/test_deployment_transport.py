@@ -396,12 +396,20 @@ class DeploymentTransportTest(unittest.TestCase):
         self.assert_code("REMOTE_RESULT_INVALID", client.execute, OPERATION, "v1.2.3")
 
     def test_12b_remote_prejournal_cause_is_preserved_fail_closed(self):
-        diagnostic = b'noise\n{"errorCode":"COMPOSE_CONFIG_FAILED"}\n'
-        client = transport.OpenSshTransport(
-            self.config(),
-            FakeRunner([transport.ProcessResult(6, b"", diagnostic)]),
-        )
-        self.assert_code("COMPOSE_CONFIG_FAILED", client.execute, OPERATION, "v1.2.3")
+        for code in (
+            "COMPOSE_CONFIG_FAILED",
+            "INVALID_ARGUMENT",
+            "LINK_RECONCILIATION_FAILED",
+            "OPERATIONAL_IO_FAILED",
+            "UNSAFE_LINK_STATE",
+        ):
+            with self.subTest(code=code):
+                diagnostic = f'noise\n{{"errorCode":"{code}"}}\n'.encode()
+                client = transport.OpenSshTransport(
+                    self.config(),
+                    FakeRunner([transport.ProcessResult(6, b"", diagnostic)]),
+                )
+                self.assert_code(code, client.execute, OPERATION, "v1.2.3")
 
         for diagnostic in (
             b'{"errorCode":"NOT_PUBLIC"}\n',
