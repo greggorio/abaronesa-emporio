@@ -323,7 +323,6 @@ class DeployerService:
             target.state != "PUBLISHED"
             or manifest.get("kind") != "global-release"
             or manifest.get("deployable") is not True
-            or manifest.get("immutable") is not True
             or current.release is None
             or _semver(target.release) >= _semver(current.release)
             or current_snapshot.manifest.get("previousRelease") != target.release

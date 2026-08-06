@@ -77,7 +77,6 @@ def manifest(
         "previousRelease": previous,
         "kind": "global-release",
         "deployable": True,
-        "immutable": True,
         "sourceCommit": release[-1] * 40,
         "components": [
             {"id": name, "digest": f"sha256:{index + digest_offset:064x}"}
