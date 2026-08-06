@@ -941,6 +941,42 @@ def test_rollback_state_machine_restore_recovery_and_terminal_replay(
         assert current is not None and current.release == "v1.0.0" and current.reconciled
 
 
+def test_rollback_terminal_workflow_artifact_materializes_success_path(
+    deployer: tuple[Any, ...],
+) -> None:
+    _, service, _, factory = deployer
+    add_release(factory, "v1.0.0", None)
+    operation_id = "rbk_" + "9" * 32
+    create_operation(
+        factory,
+        operation_id=operation_id,
+        operation_type="rollback",
+        source_release="v1.1.0",
+        target_release="v1.0.0",
+        bound=True,
+    )
+    service.apply_rollback_outcome(
+        operation_id,
+        {
+            "rollbackState": "SUCCEEDED",
+            "transportStatus": "CONFIRMED",
+            "databaseRestoreRequired": False,
+            "errorCode": None,
+            "evidence": {"targetStateSha256": "sha256:" + "9" * 64},
+        },
+        "sha256:" + "8" * 64,
+        "trace",
+    )
+    with factory() as session:
+        operation = session.get(DeploymentOperation, operation_id)
+        current = session.get(CurrentInstallation, 1)
+        assert operation is not None and operation.state == "SUCCEEDED"
+        assert [event["state"] for event in operation.journal_json["events"]] == [
+            "PRECHECKING", "SWITCHING", "VERIFYING", "SUCCEEDED"
+        ]
+        assert current is not None and current.release == "v1.0.0" and current.reconciled
+
+
 def test_uncertain_outcome_does_not_regress_confirmed_dispatch(
     deployer: tuple[Any, ...]
 ) -> None:

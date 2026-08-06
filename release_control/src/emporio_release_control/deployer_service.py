@@ -1254,10 +1254,23 @@ class DeployerService:
                 raise RuntimeFailure("STATE_TRANSITION_INVALID")
             if transport not in {"CONFIRMED", "INDETERMINATE"}:
                 raise RuntimeFailure("STATE_TRANSITION_INVALID")
+            terminal_path: tuple[str, ...] = ()
             if transport == "INDETERMINATE":
                 state = "UNCERTAIN"
             elif state != operation.state and (operation.state, state) not in ROLLBACK_TRANSITIONS:
-                raise RuntimeFailure("STATE_TRANSITION_INVALID")
+                # The versioned workflow publishes one terminal artifact, not
+                # a stream of intermediate artifacts. Materialize the only
+                # valid successful path after the bound, confirmed artifact
+                # has passed every identity and schema check.
+                if operation.state == "QUEUED" and state == "SUCCEEDED":
+                    terminal_path = (
+                        "PRECHECKING",
+                        *(("RESTORING",) if restore_required else ()),
+                        "SWITCHING",
+                        "VERIFYING",
+                    )
+                else:
+                    raise RuntimeFailure("STATE_TRANSITION_INVALID")
             now = utc_now()
             operation.outcome_sha256 = outcome_digest
             operation.transport_status = transport
@@ -1272,6 +1285,8 @@ class DeployerService:
             )
             operation.evidence_json = outcome_evidence
             operation.updated_at = now
+            for intermediate in terminal_path:
+                self._append_journal(operation, intermediate, now)
             self._append_journal(operation, state, now)
             if state in ROLLBACK_TERMINAL_STATES:
                 operation.state = state
