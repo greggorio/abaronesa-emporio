@@ -598,11 +598,17 @@ def _validate_journal_semantics(value: dict[str, Any]) -> None:
         ):
             raise KeyError
         migrate_status = step_map["MIGRATE"]["status"]
-        if (
-            migrate_status in {"RUNNING", "SUCCEEDED", "FAILED"}
-            and value.get("databaseRestoreRequired") is not True
-        ):
-            raise KeyError
+        # The flag answers "must a rollback also restore the database", so it is
+        # raised the moment migrations begin and stays raised while the outcome is
+        # still open. A deployment that reached SUCCEEDED has no rollback to plan
+        # for and the migrated schema is the intended state, so the flag must be
+        # lowered: the control plane refuses a confirmed SUCCEEDED that still
+        # demands a restore, and every release carrying migrations would otherwise
+        # need a manual adjudication to reconcile.
+        if migrate_status in {"RUNNING", "SUCCEEDED", "FAILED"}:
+            expected_restore = value["state"] != "SUCCEEDED"
+            if value.get("databaseRestoreRequired") is not expected_restore:
+                raise KeyError
         active_steps = {
             "QUEUED": None,
             "PULLING": "PULL",
@@ -1427,6 +1433,10 @@ def _run_transaction(
                             journal_path,
                         )
                     raise
+                # Lowered before the terminal transition so the persisted journal
+                # and the outcome derived from it agree: nothing is left to
+                # restore once the deployment is committed.
+                journal["databaseRestoreRequired"] = False
                 _transition(journal, "SUCCEEDED", clock, journal_path)
                 continue
             if state == "ROLLING_BACK":

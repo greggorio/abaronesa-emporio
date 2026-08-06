@@ -455,7 +455,7 @@ def _transaction_valid(
     return bool(
         journal.get("state") == "SUCCEEDED"
         and journal.get("errorCode") is None
-        and journal.get("databaseRestoreRequired") is True
+        and journal.get("databaseRestoreRequired") is False
         and tuple(step.get("name") for step in steps) == EXPECTED_STEPS
         and all(step.get("status") == "SUCCEEDED" for step in steps[:6])
         and len(steps) == 7
@@ -974,7 +974,7 @@ def _validate_rehearsal(value: dict[str, Any], *, success: bool) -> None:
         or value.get("cliExit") != 0
         or not isinstance(value.get("journal"), dict)
         or value.get("journal", {}).get("state") != "SUCCEEDED"
-        or value.get("journal", {}).get("databaseRestoreRequired") is not True
+        or value.get("journal", {}).get("databaseRestoreRequired") is not False
         or value.get("journal", {}).get("errorCode") is not None
         or tuple(
             step.get("name") for step in value.get("journal", {}).get("steps", [])

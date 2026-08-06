@@ -121,7 +121,7 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                     "state": "SUCCEEDED",
                     "errorCode": None,
                     "rollbackErrorCode": None,
-                    "databaseRestoreRequired": True,
+                    "databaseRestoreRequired": False,
                     "steps": [
                         {
                             "name": name,
@@ -368,7 +368,7 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
         self.assertEqual(rehearsal.EXPECTED_STEPS, deployment_executor.STEPS)
         self.assertEqual(runner.run.call_count, 1)
 
-    def test_success_transaction_requires_restore_true_and_rollback_pending(self) -> None:
+    def test_success_transaction_lowers_restore_and_keeps_rollback_pending(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             (root / "releases/v0.1.1").mkdir(parents=True)
@@ -376,7 +376,7 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
             journal = {
                 "state": "SUCCEEDED",
                 "errorCode": None,
-                "databaseRestoreRequired": True,
+                "databaseRestoreRequired": False,
                 "steps": [
                     {
                         "name": name,
@@ -396,7 +396,7 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                 rehearsal._transaction_valid(journal, state, backup, root)
             )
             restore_mutant = json.loads(json.dumps(journal))
-            restore_mutant["databaseRestoreRequired"] = False
+            restore_mutant["databaseRestoreRequired"] = True
             self.assertFalse(
                 rehearsal._transaction_valid(restore_mutant, state, backup, root)
             )
@@ -423,7 +423,7 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                 "state": "FAILED",
                 "errorCode": "PULL_FAILED",
                 "rollbackErrorCode": None,
-                "databaseRestoreRequired": True,
+                "databaseRestoreRequired": False,
                 "steps": [
                     {
                         "name": name,
@@ -440,7 +440,7 @@ class DeploymentEngineWorkflowTest(unittest.TestCase):
                     21,
                     rehearsal.canonical(
                         {
-                            "databaseRestoreRequired": True,
+                            "databaseRestoreRequired": False,
                             "errorCode": "PULL_FAILED",
                             "operationId": rehearsal.OPERATION,
                             "state": "FAILED",

@@ -140,7 +140,7 @@ def validate(root: Path = ROOT) -> list[str]:
         "current_path=None", "current_manifest_path=None",
         '"BACKUP"', '"MIGRATE"', '"UPDATE"', '"VERIFY"', '"COMMIT_STATE"', '"ROLLBACK"',
         "postgres:16.10-alpine3.22@sha256:029660641a0cfc575b14f336ba448fb8a75fd595d42e1fa316b9fb4378742297",
-        'journal.get("databaseRestoreRequired") is True', '"transactionStatus"',
+        'journal.get("databaseRestoreRequired") is False', '"transactionStatus"',
         '"cleanupStatus"', '"causeCode"', '"postgresManifestResolved"',
         "backup-manifest.json", "journalUnchanged", "containersUnchanged",
         '"down", "-v", "--remove-orphans"', '"image", "rm"',

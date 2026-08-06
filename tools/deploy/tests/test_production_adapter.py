@@ -1461,7 +1461,10 @@ class ProductionAdapterTest(unittest.TestCase):
         )
         self.assertEqual(exit_code, 0)
         self.assertEqual(journal["state"], "SUCCEEDED")
-        self.assertTrue(journal["databaseRestoreRequired"])
+        # Raised while MIGRATE runs, lowered on commit: a deployment that
+        # succeeded has no rollback to plan for, and the control plane refuses
+        # a confirmed SUCCEEDED that still demands a restore.
+        self.assertFalse(journal["databaseRestoreRequired"])
         self.assertEqual(tuple(step["name"] for step in journal["steps"]), core.STEPS)
         self.assertTrue(
             all(step["status"] == "SUCCEEDED" for step in journal["steps"][:6])
