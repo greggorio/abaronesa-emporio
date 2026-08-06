@@ -395,6 +395,29 @@ class DeploymentTransportTest(unittest.TestCase):
         client = transport.OpenSshTransport(self.config(), FakeRunner([transport.ProcessResult(0, transport.canonical(value))]))
         self.assert_code("REMOTE_RESULT_INVALID", client.execute, OPERATION, "v1.2.3")
 
+    def test_12b_remote_prejournal_cause_is_preserved_fail_closed(self):
+        diagnostic = b'noise\n{"errorCode":"COMPOSE_CONFIG_FAILED"}\n'
+        client = transport.OpenSshTransport(
+            self.config(),
+            FakeRunner([transport.ProcessResult(6, b"", diagnostic)]),
+        )
+        self.assert_code("COMPOSE_CONFIG_FAILED", client.execute, OPERATION, "v1.2.3")
+
+        for diagnostic in (
+            b'{"errorCode":"NOT_PUBLIC"}\n',
+            b'{"errorCode":"COMPOSE_CONFIG_FAILED","extra":true}\n',
+            b"not-json\n",
+            b"",
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                client = transport.OpenSshTransport(
+                    self.config(),
+                    FakeRunner([transport.ProcessResult(6, b"", diagnostic)]),
+                )
+                self.assert_code(
+                    "REMOTE_RESULT_INVALID", client.execute, OPERATION, "v1.2.3"
+                )
+
     def test_13_loss_before_remote_mutation_is_confirmed_failed(self):
         remote = FakeRemote(failure="capabilities")
         outcome = transport.execute_remote(
