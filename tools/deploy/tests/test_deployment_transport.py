@@ -399,6 +399,7 @@ class DeploymentTransportTest(unittest.TestCase):
         for code in (
             "COMPOSE_CONFIG_FAILED",
             "INVALID_ARGUMENT",
+            "JOURNAL_CORRUPT",
             "LINK_RECONCILIATION_FAILED",
             "OPERATIONAL_IO_FAILED",
             "UNSAFE_LINK_STATE",

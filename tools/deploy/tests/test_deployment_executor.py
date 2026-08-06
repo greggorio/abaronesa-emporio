@@ -301,6 +301,12 @@ class DeploymentExecutorTest(unittest.TestCase):
         )
         self.assertTrue(self.state_path.is_file())
 
+    def test_02b_legacy_first_install_success_with_restore_flag_remains_auditable(self) -> None:
+        journal = self.execute()
+        self.assertIsNone(journal["sourceRelease"])
+        journal["databaseRestoreRequired"] = True
+        executor._validate_journal(journal)
+
     def test_03_update_requires_and_accepts_coherent_source_state(self) -> None:
         bundle, current, _target = self.update_bundle()
         self.state_path.write_bytes(planner.canonical_bytes(current) + b"\n")

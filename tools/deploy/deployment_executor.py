@@ -607,7 +607,15 @@ def _validate_journal_semantics(value: dict[str, Any]) -> None:
         # need a manual adjudication to reconcile.
         if migrate_status in {"RUNNING", "SUCCEEDED", "FAILED"}:
             expected_restore = value["state"] != "SUCCEEDED"
-            if value.get("databaseRestoreRequired") is not expected_restore:
+            legacy_first_install_success = (
+                value["state"] == "SUCCEEDED"
+                and value.get("sourceRelease") is None
+                and value.get("databaseRestoreRequired") is True
+            )
+            if (
+                value.get("databaseRestoreRequired") is not expected_restore
+                and not legacy_first_install_success
+            ):
                 raise KeyError
         active_steps = {
             "QUEUED": None,
